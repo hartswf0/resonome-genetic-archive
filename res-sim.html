@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Resonance – Media for Thinking the Unthinkable</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}
+  #info{position:absolute;top:10px;left:10px;z-index:3}
+  #info label{margin-right:8px}
+  canvas{position:absolute;top:0;left:0}
+  #phase,#energy,#heatMap{background:#000;border:1px solid #444;position:absolute;z-index:2}
+  #phase{top:10px;right:10px;width:120px;height:120px}
+  #energy{top:140px;right:10px;width:120px;height:120px}
+  #heatMap{bottom:10px;left:10px;width:256px;height:256px}
+  button{vertical-align:middle;margin-left:4px}
+</style>
+</head>
+<body>
+<div id="info">
+  <p><strong>Resonance Simulation – Media for Thinking the Unthinkable</strong></p>
+  <label>Damping <input id="c" type="range" min="0.01" max="1" step="0.01" value="0.2"></label>
+  <label>Drive Torque <input id="F0" type="range" min="0" max="20" step="0.1" value="5"></label>
+  <label>Drive ω <input id="driveFreq" type="range" min="1" max="6" step="0.01" value="2"></label>
+  <button id="recordBtn">Record</button>
+  <button id="playBtn"  disabled>Play</button>
+  <button id="csvBtn"   disabled>CSV</button>
+</div>
+
+<canvas id="glCanvas"></canvas>
+<canvas id="phase"  title="Phase lag (blue = drive, red = bob)"></canvas>
+<canvas id="energy" title="Energy bars"></canvas>
+<canvas id="heatMap" title="Parameter space – click to jump"></canvas>
+
+<script>
+/* ---------- CONFIG ---------- */
+const cfg = {m:1, k:20, get omega0(){return Math.sqrt(this.k/this.m)}};
+const ui = {
+  c:0.2, F0:5, driveFreq:2, sweepSpeed:0.0005, autoSweep:true
+};
+
+/* ---------- GL SETUP ---------- */
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl');
+function resize(){canvas.width=innerWidth; canvas.height=innerHeight; gl.viewport(0,0,innerWidth,innerHeight);}
+window.addEventListener('resize',resize); resize();
+
+const vertSrc = `
+attribute vec2 aPos;
+uniform vec2 uScale;
+void main(){gl_Position=vec4(aPos*uScale,0.0,1.0);}
+`;
+const fragSrc = `
+precision mediump float;
+uniform vec3 uColor;
+void main(){gl_FragColor=vec4(uColor,1.0);}
+`;
+function compile(type,src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,vertSrc));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fragSrc));
+gl.linkProgram(prog); gl.useProgram(prog);
+const uScale = gl.getUniformLocation(prog,'uScale');
+const uColor = gl.getUniformLocation(prog,'uColor');
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,0,1]),gl.STATIC_DRAW);
+const aPos=gl.getAttribLocation(prog,'aPos'); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,2,gl.FLOAT,false,0,0);
+
+/* ---------- PHYSICS ---------- */
+let angle = Math.PI/6, vel = 0, t=0, dt=0.02, sweepDir=1;
+let recorder=null, recordIdx=0;
+
+/* ---------- AUDIO ---------- */
+const actx = new (window.AudioContext||webkitAudioContext)();
+const osc = actx.createOscillator(); osc.type='sine'; osc.connect(actx.destination); osc.start();
+
+/* ---------- CANVASES ---------- */
+const phaseCv=document.getElementById('phase'); const pcx=phaseCv.getContext('2d');
+const energyCv=document.getElementById('energy'); const ecx=energyCv.getContext('2d');
+const heatCv=document.getElementById('heatMap');  const hcx=heatCv.getContext('2d');
+
+/* ---------- HEAT MAP ---------- */
+let heatReady=false;
+function buildHeatMap(){
+  if(heatReady) return;
+  for(let cx=0;cx<128;cx++) for(let cy=0;cy<128;cy++){
+    const c = 0.01+cx/128, f = 1+cy/128*5;
+    let maxA=0, a=Math.PI/6, v=0, t=0;
+    while(t<10){
+      const acc = (ui.F0/cfg.m)*Math.cos(f*t) - (c/cfg.m)*v - (cfg.k/cfg.m)*a;
+      v+=acc*dt; a+=v*dt; t+=dt; maxA=Math.max(maxA,Math.abs(a));
+    }
+    hcx.fillStyle=`hsl(${Math.min(240,maxA*100)},100%,50%)`;
+    hcx.fillRect(cx*2,(127-cy)*2,2,2);
+  }
+  heatReady=true;
+}
+heatCv.addEventListener('click',e=>{
+  const rect=heatCv.getBoundingClientRect();
+  const x=Math.floor((e.clientX-rect.left)/2), y=127-Math.floor((e.clientY-rect.top)/2);
+  ui.c = 0.01+x/128;
+  ui.driveFreq = 1+y/128*5;
+  angle=Math.PI/6; vel=0;
+  syncUI();
+});
+
+/* ---------- UI SYNC ---------- */
+function syncUI(){
+  ['c','F0','driveFreq'].forEach(id=>document.getElementById(id).value=ui[id]);
+}
+['c','F0','driveFreq'].forEach(id=>document.getElementById(id).addEventListener('input',e=>{
+  ui[id]=+e.target.value;
+}));
+
+/* ---------- DRAW HELPERS ---------- */
+function drawPhase(){
+  const drivePhase=(ui.driveFreq*t)%(2*Math.PI);
+  const bobPhase=Math.atan2(vel, angle*cfg.omega0);
+  pcx.clearRect(0,0,120,120);
+  pcx.strokeStyle='#8888ff'; pcx.beginPath(); pcx.arc(60,60,50,0,2*Math.PI); pcx.stroke();
+  pcx.strokeStyle='#ff4444'; pcx.beginPath(); pcx.moveTo(60,60);
+  pcx.lineTo(60+50*Math.cos(bobPhase),60+50*Math.sin(bobPhase)); pcx.stroke();
+  pcx.fillStyle='#fff'; pcx.fillText('Δφ='+(bobPhase-drivePhase).toFixed(2),5,110);
+}
+function drawEnergy(){
+  const KE = 0.5*cfg.m*Math.pow(vel*5,2);
+  const PE = 0.5*cfg.k*Math.pow(angle*5,2);
+  ecx.clearRect(0,0,120,120);
+  ecx.fillStyle='#00ff00'; ecx.fillRect(10,110-KE,30,KE);
+  ecx.fillStyle='#ff8800'; ecx.fillRect(50,110-PE,30,PE);
+  ecx.fillStyle='#fff'; ecx.fillText('KE',15,105); ecx.fillText('PE',55,105);
+}
+function sonify(){
+  osc.frequency.setValueAtTime(220+440*(ui.driveFreq/cfg.omega0), actx.currentTime);
+}
+
+/* ---------- RECORD / PLAY ---------- */
+function setBtn(id,state){document.getElementById(id).disabled=!state;}
+document.getElementById('recordBtn').addEventListener('click',()=>{
+  if(recorder){
+    recorder=null; setBtn('playBtn',false); setBtn('csvBtn',false);
+    document.getElementById('recordBtn').textContent='Record';
+  }else{
+    recorder=[]; setBtn('playBtn',true); setBtn('csvBtn',true);
+    document.getElementById('recordBtn').textContent='Stop';
+  }
+});
+document.getElementById('playBtn').addEventListener('click',()=>{
+  if(!recorder) return;
+  recordIdx=0;
+  const iv=setInterval(()=>{
+    if(recordIdx>=recorder.length){clearInterval(iv);return;}
+    const s=recorder[recordIdx++];
+    angle=s.angle; ui.driveFreq=s.driveFreq; syncUI();
+  },20);
+});
+document.getElementById('csvBtn').addEventListener('click',()=>{
+  if(!recorder) return;
+  const csv=recorder.map(r=>`${r.t},${r.angle},${r.driveFreq}`).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='resonance.csv'; a.click();
+});
+
+/* ---------- RENDER LOOP ---------- */
+function render(){
+  requestAnimationFrame(render);
+
+  if(ui.autoSweep){
+    ui.driveFreq += sweepDir*ui.sweepSpeed;
+    if(ui.driveFreq>6||ui.driveFreq<1){sweepDir*=-1;}
+    document.getElementById('driveFreq').value=ui.driveFreq;
+  }
+
+  const acc = (ui.F0/cfg.m)*Math.cos(ui.driveFreq*t) - (ui.c/cfg.m)*vel - (cfg.k/cfg.m)*angle;
+  vel += acc*dt;
+  angle += vel*dt;
+  t += dt;
+
+  /* draw pendulum */
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform2f(uScale, Math.sin(angle)*.5, -Math.cos(angle)*.5);
+  gl.uniform3f(uColor, 1,.3,.3);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  drawPhase(); drawEnergy(); sonify(); buildHeatMap();
+  if(recorder) recorder.push({t,angle,driveFreq:ui.driveFreq});
+}
+render();
+  </script>
+</body>
+</html>

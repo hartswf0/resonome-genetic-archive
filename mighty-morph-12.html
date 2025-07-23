@@ -1,0 +1,2043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        /* General Reset and Body Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* Prevent text selection by default */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden; /* Prevent body scroll */
+            cursor: none; /* Hide default cursor to emphasize custom interaction */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh, zoom */
+            font-family: 'Courier New', monospace; /* Classic monospace font */
+            color: #E0FFFF; /* Light cyan text color */
+        }
+
+        /* Main Canvas (single canvas for both decks) */
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            transition: opacity 0.5s ease; /* For fading when UI is shown */
+        }
+        
+        /* Loading Indicator */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(224, 255, 255, 0.5); /* Semi-transparent cyan */
+            font-size: 1.2em;
+            z-index: 100;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Unified Master Control Panel */
+        #master-control-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px; /* Spacing between control groups */
+            z-index: 50;
+            opacity: 1; /* Initially visible */
+            transition: opacity 0.4s ease, transform 0.4s ease; /* Smooth show/hide and scale */
+            backdrop-filter: blur(5px);
+            background: rgba(0, 0, 0, 0.4);
+            padding: min(5vw, 25px); /* Responsive padding: 5vw or max 25px */
+            border-radius: 15px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            pointer-events: auto; /* Active when visible */
+            
+            /* Mobile Responsiveness for Panel */
+            max-width: 95vw; /* Limit width on small screens */
+            max-height: 95vh; /* Limit height on small screens */
+            overflow-y: auto; /* Allow scrolling if content overflows vertically */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+
+            /* Morphic Glow */
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.2);
+            animation: panel-glow 3s infinite alternate ease-in-out;
+        }
+
+        #master-control-panel.hidden {
+            opacity: 0;
+            pointer-events: none; /* Make non-interactive when hidden */
+            transform: translate(-50%, -50%) scale(0.95); /* Slight scale down on hide */
+        }
+
+        @keyframes panel-glow {
+            from { box-shadow: 0 0 15px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.2); }
+            to { box-shadow: 0 0 25px rgba(0, 255, 255, 0.8), inset 0 0 15px rgba(0, 255, 255, 0.4); }
+        }
+        
+        /* Control Group Layout */
+        .control-group {
+            display: flex;
+            flex-direction: column; /* Stack label and control */
+            align-items: center;
+            gap: 8px;
+            width: 100%; /* Take full width of panel */
+        }
+
+        .control-group label {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(224, 255, 255, 0.8);
+        }
+
+        /* BPM Display and Buttons - Make them cell-like */
+        .bpm-display-panel { /* Specific for the panel BPM display */
+            font-size: 2.2em; /* Large BPM number */
+            font-weight: bold;
+            color: #00FFFF;
+            padding: 10px 15px; /* More padding */
+            min-width: 80px; /* Ensure consistent width */
+            text-align: center;
+            background: rgba(224, 255, 255, 0.1); /* Cell background */
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border */
+            border-radius: 8px; /* Consistent border radius */
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6); /* Inner shadow for depth */
+        }
+        
+        .bpm-btns {
+            display: flex;
+            gap: 12px; /* Spacing between BPM buttons */
+        }
+
+        .bpm-btn {
+            width: clamp(45px, 12vw, 55px); /* Responsive sizing, matches step cells */
+            height: clamp(45px, 12vw, 55px); /* Responsive sizing, matches step cells */
+            background: rgba(224, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border */
+            color: #E0FFFF;
+            font-size: 2.5em; /* Larger symbols */
+            line-height: 1; /* Center symbol */
+            cursor: pointer;
+            border-radius: 8px; /* Consistent with cells */
+            transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+            display: flex; /* For centering unicode symbols */
+            align-items: center;
+            justify-content: center;
+        }
+        .bpm-btn:hover {
+            background: rgba(224, 255, 255, 0.2);
+            border-color: #E0FFFF;
+        }
+        .bpm-btn:active {
+            background: #E0FFFF;
+            color: #000;
+            box-shadow: 0 0 10px #E0FFFF;
+            transform: scale(0.98); /* Slight press effect */
+        }
+
+        /* Slider Styles (Chunkier, Dot Grid Matrix-like) */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 200px; /* Wider slider */
+            max-width: 100%; /* Ensure it fits within parent on smaller screens */
+            height: 24px; /* Much thicker slider track */
+            background: rgba(0, 255, 255, 0.15); /* Themed background */
+            border-radius: 8px; /* Consistent with cells */
+            outline: none;
+            cursor: grab;
+            margin: 0;
+            padding: 0;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6); /* Inner shadow for depth */
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border for track */
+            transition: background 0.1s ease, border-color 0.1s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px; /* Cell-like thumb */
+            height: 28px; /* Cell-like thumb */
+            border-radius: 4px; /* Slightly rounded square for pixel-art feel */
+            background: #00FFFF; /* Cyan thumb */
+            cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; /* Strong glow */
+            border: 2px solid #00FFFF; /* Matching border */
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+            margin-top: -6px; /* Adjust to center vertically on thicker track */
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            cursor: grabbing;
+            background: #E0FFFF; /* White on active grab */
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1); /* Slight pulse on grab */
+        }
+
+        /* Firefox specific slider styles */
+        input[type="range"]::-moz-range-track { 
+            height: 24px;
+            background: rgba(0, 255, 255, 0.15);
+            border-radius: 8px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px; /* Slightly rounded square */
+            background: #00FFFF;
+            cursor: grab;
+            box-shadow: 0 0 10px #00FFFF;
+            border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        input[type="range"]:active::-moz-range-thumb {
+            cursor: grabbing;
+            background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1);
+        }
+        
+        /* Sampler Buttons */
+        .sampler-btns {
+            display: flex;
+            gap: 10px;
+        }
+        .sampler-btn {
+            width: clamp(45px, 12vw, 55px); /* Responsive sizing */
+            height: clamp(45px, 12vw, 55px); /* Responsive sizing */
+            background: rgba(224, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border */
+            color: #E0FFFF;
+            font-size: 2.5em; /* Larger symbols */
+            line-height: 1; /* Center symbol */
+            cursor: pointer;
+            border-radius: 8px; /* Consistent with cells */
+            transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+            display: flex; /* For centering unicode symbols */
+            align-items: center;
+            justify-content: center;
+        }
+        .sampler-btn:hover { background: rgba(224, 255, 255, 0.2); border-color: #E0FFFF; }
+        .sampler-btn:active { background: #E0FFFF; color: #000; box-shadow: 0 0 10px #E0FFFF; transform: scale(0.98); }
+        .sampler-btn.active { background: #FF0096; border-color: #FF0096; color: #000; box-shadow: 0 0 10px #FF0096; } /* Active (recording/playing) color: Magenta */
+        .sampler-btn[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+        }
+
+
+        /* Crossfader (bottom center) - Always Visible */
+        #crossfader-container {
+            position: fixed;
+            bottom: min(3vh, 30px); /* Responsive position */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60; /* Above canvases, below main panel */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+        }
+
+        #crossfader-slider {
+            width: min(70vw, 400px); /* Responsive width */
+        }
+        #crossfader-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            font-size: 0.75em;
+            color: rgba(224, 255, 255, 0.7);
+            user-select: text; /* Allow selection for labels */
+        }
+
+        /* Vertical Sliders (Side controls) - Always Visible */
+        .vertical-slider-container {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 60px; /* Wider container for better touch */
+            height: min(80vh, 300px); /* Responsive height */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 60;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 10px 0;
+        }
+
+        #fuzz-slider-container { left: min(2vw, 20px); } /* Responsive position */
+        #influence-slider-container { right: min(2vw, 20px); } /* Responsive position */
+
+        .vertical-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: min(70vh, 250px); /* Responsive length */
+            height: 24px; /* Chunkier track */
+            background: rgba(0, 255, 255, 0.15);
+            border-radius: 8px;
+            outline: none;
+            transform: rotate(-90deg); /* Vertical orientation */
+            transform-origin: center; /* Rotate around center */
+            cursor: grab;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            transition: background 0.1s ease, border-color 0.1s ease;
+        }
+        /* Thumb styles for vertical sliders, consistent with horizontal */
+        .vertical-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 28px; height: 28px; border-radius: 4px;
+            background: #00FFFF; cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        .vertical-slider:active::-webkit-slider-thumb {
+            cursor: grabbing; background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5); transform: scale(1.1);
+        }
+        .vertical-slider::-moz-range-thumb {
+            width: 28px; height: 28px; border-radius: 4px;
+            background: #00FFFF; cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        .vertical-slider:active::-moz-range-thumb {
+            cursor: grabbing; background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5); transform: scale(1.1);
+        }
+
+        .vertical-label {
+            color: #E0FFFF;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: absolute;
+            bottom: -20px; 
+            white-space: nowrap; /* Prevent wrapping */
+            user-select: text; /* Allow selection for labels */
+        }
+        #fuzz-label { color: #FF00FF; } /* Magenta for Fuzz */
+        #influence-label { color: #00FF00; } /* Green for Influence */
+
+        /* Play/Pause Button */
+        #play-pause-button {
+            position: fixed;
+            bottom: min(10vh, 100px); /* Position it above crossfader */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 55px; /* Consistent with other buttons */
+            height: 55px; /* Consistent with other buttons */
+            background: rgba(224, 255, 255, 0.1);
+            color: #E0FFFF;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 8px; /* Consistent with other buttons */
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 60; /* Above canvases, below main panel */
+            font-size: 2.5em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        #play-pause-button:hover { background: rgba(224, 255, 255, 0.2); border-color: #E0FFFF; }
+        #play-pause-button:active { background: #E0FFFF; color: #000; box-shadow: 0 0 10px #E0FFFF; transform: scale(0.98); }
+        #play-pause-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-50%) translateY(20px);
+        }
+
+
+        /* Start Button (initial screen) */
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+        }
+
+        #start-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+        #start-button.hidden { 
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.9); /* Subtle scale down on hide */
+        }
+
+        /* Info Text */
+        .info-text {
+            font-size: 0.75em;
+            text-align: center;
+            color: rgba(224, 255, 255, 0.6);
+            margin-top: 10px;
+            line-height: 1.4;
+            user-select: text; /* Allow selection for info text */
+        }
+        .sampler-info { /* Special styling for sampler info if needed */
+            margin-top: -5px; 
+            margin-bottom: 5px; 
+        }
+
+        /* --- UI ELEMENTS for "single canvas" concepts --- */
+        /* Hidden BPM Control (Circular) */
+        #bpm-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 70%);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(0,255,255,0.8);
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            cursor: pointer;
+            z-index: 5; /* Below main panel */
+            user-select: none;
+            backdrop-filter: blur(2px);
+        }
+        
+        #bpm-control.visible {
+            opacity: 1;
+        }
+        
+        #bpm-control:hover {
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: rgba(0,255,255,0.6);
+        }
+
+        /* Hidden Layer Control Panel */
+        #layer-control-panel {
+            position: fixed;
+            top: 50%;
+            left: min(2vw, 20px); /* Position it near left vertical slider */
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            opacity: 0;
+            pointer-events: none; /* Initially non-interactive */
+            transition: opacity 0.3s ease;
+            z-index: 10; /* Below main panel */
+            backdrop-filter: blur(5px);
+        }
+
+        #layer-control-panel.visible {
+            opacity: 1;
+            pointer-events: auto; /* Interactive when visible */
+        }
+
+        .layer-icon {
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.6);
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .layer-icon:hover {
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border-color: rgba(255,255,255,0.3);
+            color: rgba(255,255,255,0.8);
+        }
+
+        .layer-icon.active { /* Currently playing */
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: #0ff;
+            box-shadow: 0 0 10px #0ff;
+            color: #0ff;
+        }
+
+        .layer-icon.selected { /* Currently being edited */
+            border-color: #fff;
+            box-shadow: 0 0 15px #fff;
+            transform: scale(1.1);
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <!-- The single canvas for both visual decks -->
+        <canvas id="canvas" class="morphic-canvas"></canvas>
+    </div>
+
+    <div class="loading" id="loading">Initializing Morphic Field...</div>
+    
+    <div id="master-control-panel" class="hidden">
+        <div class="control-group">
+            <label>BPM</label>
+            <div class="bpm-display-panel" id="bpm-display-panel">120</div> <!-- Specific for the panel BPM display -->
+            <div class="bpm-btns">
+                <button class="bpm-btn" id="bpm-down-btn">𓃑</button>
+                <button class="bpm-btn" id="bpm-up-btn">𓉗</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>DRONE VOLUME</label>
+            <input type="range" id="drone-volume-slider" min="0" max="1" step="0.01" value="0.7">
+        </div>
+
+        <div class="control-group">
+            <label>SEQUENCER VOLUME</label>
+            <input type="range" id="seq-volume-slider" min="0" max="1" step="0.01" value="0.7">
+        </div>
+        
+        <div class="control-group">
+            <label>MASTER OUTPUT VOLUME</label>
+            <input type="range" id="master-output-volume-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>SAMPLE</label>
+            <div class="sampler-btns">
+                <button class="sampler-btn" id="capture-sample-btn">𓈌</button>
+                <button class="sampler-btn" id="play-sample-btn" disabled>𓈋</button>
+            </div>
+            <div class="info-text sampler-info">
+                Capture: Records live drone audio (4s). Play: Loops captured sample.
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>SAMPLE VOLUME</label>
+            <input type="range" id="sample-volume-slider" min="0" max="1" step="0.01" value="0">
+        </div>
+
+        <div class="info-text">
+            Left side: Drone (Mouse X/Y sculpts).<br>
+            Right side: Sequencer (Click grid to toggle notes).<br><br>
+            SHIFT+CLICK / 2-Finger Tap: Toggle UI.
+        </div>
+    </div>
+
+    <!-- Always visible performance controls -->
+    <div id="crossfader-container">
+        <div id="crossfader-labels">
+            <span>DRONE</span>
+            <span>SAMPLE</span> <!-- Label changed to reflect new crossfader role -->
+        </div>
+        <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+    </div>
+
+    <div id="fuzz-slider-container" class="vertical-slider-container">
+        <input type="range" id="fuzz-slider" class="vertical-slider" min="0" max="1" step="0.01" value="0">
+        <span id="fuzz-label" class="vertical-label">GLOBAL FUZZ</span>
+    </div>
+    <div id="influence-slider-container" class="vertical-slider-container">
+        <input type="range" id="influence-slider" class="vertical-slider" min="0" max="1" step="0.01" value="1.0">
+        <span id="influence-label" class="vertical-label">INFLUENCE</span>
+    </div>
+
+    <!-- Play/Pause for Sequencer (global) -->
+    <button id="play-pause-button">❚❚</button> <!-- Starts playing by default -->
+
+    <!-- Global BPM control (circular) -->
+    <div id="bpm-control">
+        <div id="bpm-display">120</div>
+    </div>
+
+    <!-- Layer control panel -->
+    <div id="layer-control-panel"></div>
+
+    <!-- Start button, disappears after first interaction -->
+    <button id="start-button">Enter Morphic Field</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global portal app object
+        const portalApp = {};
+        window.portalApp = portalApp;
+
+        // Utility: HSV to RGBA converter
+        function hsvToRgb(h, s, v, a = 1.0) {
+            let r, g, b;
+            const i = Math.floor(h * 6);
+            const f = h * 6 - i;
+            const p = v * (1 - s);
+            const q = v * (1 - f * s);
+            const t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`;
+        }
+        portalApp.hsvToRgb = hsvToRgb;
+
+        // Utility: Distortion curve for Fuzz
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; i++) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        // --- GLOBAL AUDIO NODES ---
+        portalApp.audioContext = null;
+        portalApp.masterGain = null;
+        portalApp.globalAnalyser = null;
+        portalApp.globalFrequencyData = null;
+        portalApp.globalAudioLevel = 0;
+
+        portalApp.globalFuzzNode = null;
+        portalApp.globalFuzzWetGain = null;
+        portalApp.globalFuzzDryGain = null;
+        portalApp.globalFuzzAmount = 0.0;
+
+        // Inputs to the crossfader (Drone and Sample)
+        portalApp.droneCrossfaderInput = null;
+        portalApp.sampleCrossfaderInput = null;
+        // Output of the crossfader
+        portalApp.crossfaderOutput = null;
+
+        // Sampler specific audio nodes
+        portalApp.samplerMasterGain = null;
+        portalApp.samplerBuffer = null;
+        portalApp.samplerSource = null;
+        portalApp.isSampling = false;
+        portalApp.isSamplerPlaying = false;
+        portalApp.recorder = null;
+        portalApp.recordedChunks = [];
+        portalApp.captureDestination = null;
+        portalApp.captureDuration = 4; // seconds
+
+        // --- GLOBAL THREE.JS SETUP ---
+        portalApp.scene = new THREE.Scene();
+        portalApp.camera = null; // Initialized in initApplication
+        portalApp.renderer = null; // Initialized in initApplication
+
+        // --- MODULES (Conceptual "Decks") ---
+        portalApp.droneModule = null; // Manages drone audio and visuals on left half
+        portalApp.sequencerModule = null; // Manages sequencer audio and visuals on right half
+
+        // --- GLOBAL UI STATE ---
+        portalApp.uiVisible = true; // For main control panel
+        portalApp.crossfaderValue = 0.5; // Blends drone vs sample
+        portalApp.masterOutputVolume = 0.5;
+
+        // UI Hide timers (for BPM and Layer panels)
+        portalApp.hideBpmTimer = null;
+        portalApp.hideLayerControlTimer = null;
+
+        // Manages the Drone (visuals on left half, audio source)
+        class DroneModule {
+            constructor() {
+                this.mesh = null;
+                this.particles = null;
+                this.time = 0;
+                this.mouse = new THREE.Vector2(0.25, 0.5); // Initial position for drone on left half
+                this.audioLevel = 0; // Local audio level derived from global
+
+                // Drone-specific visual parameters
+                this.visualIntensity = 0.5;
+                this.visualFlow = 0.6;
+                this.visualBloom = 0.8;
+
+                // Drone-specific audio parameters
+                this.droneAudioFrequency = 220;
+                this.droneAudioResonance = 0.7;
+                this.droneOscillators = [];
+                this.droneFilters = [];
+                this.outputGain = null; // This is the drone's actual output gain
+            }
+
+            init(scene, camera, renderer, audioContext, droneCrossfaderInput) {
+                this.scene = scene;
+                this.camera = camera;
+                this.renderer = renderer;
+                this.audioContext = audioContext;
+
+                this.outputGain = this.audioContext.createGain();
+                this.outputGain.gain.value = 0.7; // Base gain, controlled by "DRONE VOLUME" slider
+                this.outputGain.connect(droneCrossfaderInput); // Connects to crossfader input
+
+                this.createVisuals();
+                this.createAudio();
+            }
+
+            createVisuals() {
+                // Plane representing the left half of the overall scene (world width 20 units)
+                // Positioned from x=-10 to x=0 in world coordinates
+                const geometry = new THREE.PlaneGeometry(10, 20, 128, 128);
+                // The mesh's local origin is its center. To make it the left half, shift it left by half its width.
+                const offset = -5; // Half of 10-unit width
+
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform vec2 mouse;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        
+                        // Map global mouse UV (0-1, 0-1) to local UV (0-1, 0-1) for this plane's shader logic
+                        // This plane corresponds to global UV.x from 0 to 0.5
+                        vec2 localMouse = vec2(mouse.x * 2.0, mouse.y); // Scale global mouseX to local 0-1
+                        float dist = distance(vUv, localMouse);
+                        
+                        float wave = sin(dist * 15.0 - time * 2.0) * 0.1;
+                        float ripple = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                        
+                        float morphic = sin(pos.x * 4.0 + time * flow) * 
+                                       cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                        
+                        pos.z += wave + ripple + morphic;
+                        vDistortion = abs(wave + ripple + morphic);
+                        vPosition = pos;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float bloom;
+                    uniform float harmonic;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float dist = length(center);
+                        
+                        float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                        float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                        float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4); 
+                        brightness = max(0.1, brightness);
+                        
+                        vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                        
+                        // Add visual cursor glow based on global mouse position
+                        // Map global mouse UV to the drone's local UV space for glow
+                        vec2 globalMouse = mouse;
+                        vec2 localMouse = vec2(globalMouse.x * 2.0, globalMouse.y);
+                        
+                        float cursorDist = distance(vUv, localMouse);
+                        float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0); 
+                        color += vec3(0.1, 0.2, 0.3) * cursorGlow; 
+                        
+                        float alpha = 0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2;
+                        alpha *= smoothstep(1.5, 0.0, dist);
+                        alpha += cursorGlow * 0.5;
+                        
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: this.visualIntensity },
+                        flow: { value: this.visualFlow },
+                        bloom: { value: this.visualBloom },
+                        harmonic: { value: 0.4 },
+                        mouse: { value: this.mouse }, // This is the GLOBAL mouse UV
+                        audioLevel: { value: 0 }
+                    },
+                    transparent: true, blending: THREE.AdditiveBlending
+                });
+
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.x = offset; 
+                this.scene.add(this.mesh);
+            }
+
+            createAudio() {
+                const baseFreqs = [55, 73.42, 98]; // Fewer voices for drone to conserve resources
+                baseFreqs.forEach((freq, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    const filter = this.audioContext.createBiquadFilter();
+                    
+                    osc.type = ['sine', 'sawtooth', 'triangle'][i % 3];
+                    osc.frequency.value = freq;
+                    gain.gain.value = 0.1 / baseFreqs.length;
+                    
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 1000 + i * 500;
+                    filter.Q.value = 5;
+                    
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.outputGain);
+                    osc.start();
+                    this.droneOscillators.push(osc);
+                    this.droneFilters.push(filter);
+                });
+            }
+
+            updateAudioParameters() {
+                if (!this.audioContext || this.droneOscillators.length === 0) return;
+                
+                const baseFreq = this.droneAudioFrequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2];
+                
+                this.droneOscillators.forEach((osc, i) => {
+                    osc.frequency.setTargetAtTime(frequencies[i], this.audioContext.currentTime, 0.1);
+                });
+                
+                this.droneFilters.forEach(filter => {
+                    filter.frequency.setTargetAtTime(
+                        200 + this.visualIntensity * 1500, 
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                    filter.Q.setTargetAtTime(
+                        this.droneAudioResonance * 15 + 1,
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                });
+            }
+
+            update(globalTime, globalAudioLevel, globalMouse) {
+                this.time = globalTime;
+                this.audioLevel = globalAudioLevel;
+                this.mouse.copy(globalMouse); // Get global mouse from portalApp
+
+                if (!this.mesh || !this.mesh.material || !this.mesh.material.uniforms) return;
+
+                this.mesh.material.uniforms.time.value = this.time;
+                this.mesh.material.uniforms.intensity.value = this.visualIntensity;
+                this.mesh.material.uniforms.flow.value = this.visualFlow;
+                this.mesh.material.uniforms.bloom.value = this.visualBloom;
+                this.mesh.material.uniforms.mouse.value.copy(this.mouse);
+                this.mesh.material.uniforms.audioLevel.value = this.audioLevel;
+
+                this.updateAudioParameters();
+            }
+
+            setMousePosition(x, y) {
+                this.mouse.set(x, y);
+            }
+        }
+
+        // Manages the Sequencer (visuals on right half, audio voices)
+        class SequencerModule {
+            constructor() {
+                this.mesh = null; // Main visual field part
+                this.time = 0;
+                this.audioLevel = 0;
+                this.beatPulse = 0; // Visual pulse from notes
+
+                // Sequencer-specific visual parameters
+                this.visualIntensity = 0.7;
+                this.visualFlow = 0.8;
+
+                // Sequencer properties
+                this.bpm = 120;
+                this.secondsPerStep = (60 / this.bpm) / 4; // 16th notes
+                this.currentStep = 0;
+                this.nextStepTime = 0;
+                this.schedulerInterval = null;
+                this.lookahead = 0.1;
+                this.isPlaying = true; // Sequencer starts playing by default
+
+                // Layer Management
+                this.numLayers = 4; // Using 4 layers for clarity on the 8x4 grid
+                this.layers = []; // Array of layer objects: { nodeStates: [], colorIndex: 0, isActive: boolean }
+                this.activeLayerIndex = 0; // Layer currently selected for editing (corresponds to row 0-3)
+                this.layerColors = [ // Specific colors for layers (HSV)
+                    [0.0, 0.8, 1.0], // Red-Orange (Layer 0)
+                    [0.2, 0.8, 1.0], // Yellow-Green (Layer 1)
+                    [0.6, 0.8, 1.0], // Blue-Purple (Layer 2)
+                    [0.8, 0.8, 1.0]  // Pink-Magenta (Layer 3)
+                ];
+                this.influence = 1.0; // Slider controlled
+
+                // Audio voices for sequencer notes
+                this.sequencerVoices = [];
+                this.outputGain = null; // This is the sequencer's actual output gain
+
+                // Three.js meshes for the grid cells
+                this.sequencerVisualNodes = [];
+
+                // Raycaster for 3D interaction
+                this.raycaster = new THREE.Raycaster();
+                this.mouseVector = new THREE.Vector2(); // For raycaster input
+            }
+
+            init(scene, camera, renderer, audioContext, globalAnalyser, globalFuzzDryGain, globalFuzzWetGain) {
+                this.scene = scene;
+                this.camera = camera;
+                this.renderer = renderer;
+                this.audioContext = audioContext;
+                this.globalAnalyser = globalAnalyser;
+                this.globalFuzzDryGain = globalFuzzDryGain;
+                this.globalFuzzWetGain = globalFuzzWetGain;
+
+                this.outputGain = this.audioContext.createGain();
+                this.outputGain.gain.value = 0.7; // Base gain, controlled by "SEQUENCER VOLUME" slider
+
+                // Sequencer output connects to global analyser AND to the global fuzz mix (bypassing crossfader)
+                this.outputGain.connect(this.globalAnalyser);
+                this.outputGain.connect(this.globalFuzzDryGain);
+                this.outputGain.connect(this.globalFuzzWetGain);
+
+                this.createVisuals();
+                this.createAudio();
+                this.initializeLayers();
+                this.createSequencerVisualNodes(); // Create 3D meshes for grid
+                this.startSequencerScheduler();
+            }
+
+            createVisuals() {
+                // Plane representing the right half of the overall scene (world width 20 units)
+                // Positioned from x=0 to x=10 in world coordinates
+                const geometry = new THREE.PlaneGeometry(10, 20, 128, 128); 
+                const offset = 5; // Half of 10-unit width
+
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform float beatPulse; 
+                    uniform vec2 mouse; // Global mouse UV
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        
+                        float morphic = sin(pos.x * 2.0 + time * flow * 0.2) * 
+                                        cos(pos.y * 2.0 - time * flow * 0.1) * intensity * 0.5;
+                        
+                        pos.z += morphic + beatPulse * 0.5;
+                        vDistortion = abs(morphic + beatPulse * 0.5);
+                        vPosition = pos;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform float beatPulse;
+                    uniform vec2 mouse; // Global mouse UV
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float dist = length(center);
+                        
+                        float hue = 0.55 + time * 0.02 + vDistortion * 2.0 + audioLevel * 0.3;
+                        float sat = 0.7 + vDistortion * 0.3;
+                        float brightness = 0.15 + vDistortion * 1.5 + audioLevel * 0.8 + beatPulse * 0.5;
+
+                        // Pulsating grid lines
+                        vec2 grid = fract(vUv * 8.0); 
+                        float gridLineX = (1.0 - step(0.02, grid.x)); 
+                        float gridLineY = (1.0 - step(0.02, grid.y)); 
+                        float gridIntensity = max(gridLineX, gridLineY) * (0.1 + beatPulse * 0.2); 
+                        brightness += gridIntensity;
+
+                        vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+
+                        // Add visual cursor glow (only for right half of the screen)
+                        vec2 globalMouse = mouse;
+                        float cursorDist;
+                        if (globalMouse.x > 0.5) { // Only show glow on right half
+                            // Map global mouse UV (0.5-1.0, 0-1) to sequencer local UV (0-1, 0-1)
+                            vec2 localMouse = vec2((globalMouse.x - 0.5) * 2.0, globalMouse.y);
+                            cursorDist = distance(vUv, localMouse);
+                        } else {
+                            cursorDist = 100.0; // Effectively turn off glow on left
+                        }
+                       
+                        float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0); 
+                        color += vec3(0.1, 0.2, 0.3) * cursorGlow; 
+                        
+                        float alpha = 0.9 - dist * 0.5 + vDistortion + audioLevel * 0.1;
+                        alpha = clamp(alpha, 0.0, 1.0); 
+                        
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: this.visualIntensity },
+                        flow: { value: this.visualFlow },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: this.beatPulse },
+                        mouse: { value: new THREE.Vector2(0.5, 0.5) } // Global mouse UV
+                    },
+                    transparent: true, blending: THREE.AdditiveBlending
+                });
+
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.x = offset; 
+                this.scene.add(this.mesh);
+            }
+
+            createAudio() {
+                const baseFreqs = [55, 73.42, 98, 130.81, 174.61, 233.08, 311.13, 415.30];
+                this.sequencerVoices = baseFreqs.map((freq, i) => {
+                    const voice = {
+                        osc: this.audioContext.createOscillator(),
+                        gain: this.audioContext.createGain(),
+                        filter: this.audioContext.createBiquadFilter()
+                    };
+                    voice.osc.type = 'triangle';
+                    voice.osc.frequency.value = freq;
+                    voice.gain.gain.value = 0; // Starts silent
+                    voice.filter.type = 'lowpass';
+                    voice.filter.frequency.value = 2000;
+                    voice.filter.Q.value = 5;
+
+                    voice.osc.connect(voice.filter);
+                    voice.filter.connect(voice.gain);
+                    voice.gain.connect(this.outputGain);
+                    voice.osc.start();
+                    return voice;
+                });
+            }
+
+            initializeLayers() {
+                for (let i = 0; i < this.numLayers; i++) {
+                    this.layers.push({
+                        id: i,
+                        nodeStates: Array(8).fill(false), // All nodes off by default
+                        colorIndex: i % this.layerColors.length, // Assign a color to each layer
+                        isActive: false // Layer is not active for playback by default
+                    });
+                }
+                // Set a default pattern for the first layer for immediate sound/visuals on load
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+                this.layers[0].isActive = true; // First layer is active for playback by default
+            }
+
+            createSequencerVisualNodes() {
+                this.sequencerVisualNodes = [];
+                // Dimensions in world units. The sequencer plane is 10x20.
+                const gridWidthWorld = 10 * 0.8; // 80% of 10 units wide
+                const gridHeightWorld = 20 * 0.8; // 80% of 20 units tall
+                
+                // Calculate local coordinates for the grid's top-left corner relative to its mesh's center
+                // Mesh center is at (0,0) in its local coordinate system.
+                // Grid needs to be centered within the 10x20 mesh.
+                const startXLocal = - (gridWidthWorld / 2); // Left edge of the grid
+                const startYLocal = (gridHeightWorld / 2); // Top edge of the grid (Y is up in Three.js)
+
+                // Individual node dimensions
+                const nodeSizeWorld = gridWidthWorld / 8; // Width for each of 8 columns
+                const nodeHeightWorld = gridHeightWorld / 4; // Height for each of 4 rows
+
+                for (let y = 0; y < 4; y++) { // Rows (layers)
+                    for (let x = 0; x < 8; x++) { // Columns (steps)
+                        // Calculate position for the center of each node
+                        const posX = startXLocal + (x * nodeSizeWorld) + (nodeSizeWorld / 2);
+                        const posY = startYLocal - (y * nodeHeightWorld) - (nodeHeightWorld / 2);
+                        
+                        const geometry = new THREE.PlaneGeometry(nodeSizeWorld * 0.9, nodeHeightWorld * 0.9); // Slight padding between nodes
+                        const material = new THREE.MeshPhongMaterial({ 
+                            color: 0xcccccc, 
+                            transparent: true, 
+                            opacity: 0.5, 
+                            depthTest: false, // Ensures nodes draw over the field mesh
+                            blending: THREE.AdditiveBlending 
+                        });
+                        const nodeMesh = new THREE.Mesh(geometry, material);
+                        // Position relative to the sequencer mesh's center and slightly forward
+                        nodeMesh.position.set(posX, posY, 0.1); 
+                        this.mesh.add(nodeMesh); // Add node to sequencer mesh's children
+                        this.sequencerVisualNodes.push(nodeMesh);
+                    }
+                }
+                this.updateSequencerVisualNodes(); // Set initial colors/states
+            }
+
+            updateSequencerVisualNodes() {
+                if (!this.sequencerVisualNodes || this.sequencerVisualNodes.length === 0) return;
+
+                let nodeIndex = 0;
+                for (let y = 0; y < 4; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const mesh = this.sequencerVisualNodes[nodeIndex];
+                        if (!mesh) { nodeIndex++; continue; }
+
+                        const layerState = this.layers[y]; // Get state for this specific layer/row
+                        const nodeIsActive = layerState.nodeStates[x];
+                        const isPlayingStep = (this.currentStep === x && this.isPlaying);
+                        
+                        // Use the color of the *current selected layer* for all nodes on display
+                        const hsvColor = this.layerColors[this.activeLayerIndex] || this.layerColors[0]; 
+                        const baseColor = new THREE.Color().setHSL(hsvColor[0], hsvColor[1], hsvColor[2]);
+
+                        if (nodeIsActive) {
+                            // If node is active, use selected layer's color
+                            mesh.material.color.copy(baseColor);
+                            mesh.material.opacity = 1.0;
+                        } else {
+                            // Inactive nodes are dim grey with a border-like effect
+                            mesh.material.color.setHex(0x222222); /* Darker interior */
+                            mesh.material.opacity = 0.5;
+                            // Add a border-like glow for inactive cells from the image hint
+                            mesh.material.emissive.setHex(0x101010); /* Subtle emissive for border effect */
+                        }
+
+                        if (isPlayingStep) {
+                            // Current playing step, glow white
+                            mesh.material.color.setHex(0xFFFFFF); 
+                            mesh.material.opacity = 1.0;
+                            mesh.scale.set(1.15 * (1 + this.beatPulse * 0.1), 1.15 * (1 + this.beatPulse * 0.1), 1.15); // Pulse effect
+                            mesh.material.emissive.setHex(0x888888); /* Stronger emissive for playing pulse */
+                        } else {
+                            mesh.scale.set(1.0, 1.0, 1.0); // Reset scale
+                            if (!nodeIsActive) {
+                                mesh.material.emissive.setHex(0x000000); /* No emissive for inactive */
+                            } else {
+                                mesh.material.emissive.setHex(0x050505); /* Very subtle emissive for active, non-playing */
+                            }
+                        }
+                        nodeIndex++;
+                    }
+                }
+            }
+
+            startSequencerScheduler() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                this.schedulerInterval = setInterval(() => this.scheduler(), this.lookahead * 1000 * 0.5);
+                console.log('Sequencer started/restarted with BPM:', this.bpm);
+            }
+
+            scheduler() {
+                if (!this.isPlaying || !this.audioContext || this.audioContext.state !== 'running') {
+                    // Update visual current step even if paused, but don't schedule audio
+                    if (this.isPlaying === false && this.schedulerInterval) {
+                         this.currentStep = (this.currentStep + 1) % 8;
+                         this.updateSequencerVisualNodes();
+                    }
+                    return;
+                }
+
+                while (this.nextStepTime < this.audioContext.currentTime + this.lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    this.nextStepTime += this.secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            scheduleStep(step, time) {
+                this.beatPulse = 1.0; // Trigger visual pulse
+
+                // Update current step for visual nodes
+                this.updateSequencerVisualNodes();
+
+                // Play notes only from layers that are both 'active' and have the current 'step' enabled
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.sequencerVoices[step];
+                        if (voice) {
+                            voice.gain.gain.cancelScheduledValues(time);
+                            voice.gain.gain.setValueAtTime(0, time);
+                            voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                            voice.gain.gain.exponentialRampToValueAtTime(0.001, time + this.secondsPerStep * 0.8);
+
+                            // Apply some modulation based on layer parameters or mouse interaction
+                            voice.filter.frequency.setTargetAtTime(1000 + layer.id * 500, time, 0.05);
+                            voice.filter.Q.setTargetAtTime(3 + layer.id, time, 0.05);
+                        }
+                    }
+                });
+            }
+
+            // Handles clicks on the sequencer canvas area (right half)
+            handleCanvasClick(e) {
+                const rect = this.renderer.domElement.getBoundingClientRect(); // Get canvas size and position
+                
+                // Normalize mouse coordinates to Three.js clip space (-1 to +1)
+                // accounting for only the RIGHT half of the screen
+                this.mouseVector.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; // X for entire canvas
+                this.mouseVector.y = - ((e.clientY - rect.top) / rect.height) * 2 + 1; // Y for entire canvas
+
+                // Set the raycaster from the camera and mouse position
+                this.raycaster.setFromCamera(this.mouseVector, this.camera);
+
+                // Intersect the ray with the sequencer's 3D grid nodes
+                const intersects = this.raycaster.intersectObjects(this.sequencerVisualNodes);
+
+                if (intersects.length > 0) {
+                    // Get the first intersected object (closest to camera)
+                    const intersectedMesh = intersects[0].object;
+                    
+                    // Find which node corresponds to this mesh
+                    const nodeIndex = this.sequencerVisualNodes.indexOf(intersectedMesh);
+
+                    if (nodeIndex !== -1) {
+                        // Calculate layer (row) and step (column) from the linear nodeIndex
+                        const layer = Math.floor(nodeIndex / 8); // 0-3
+                        const step = nodeIndex % 8; // 0-7
+
+                        const currentLayerState = this.layers[layer];
+                        currentLayerState.nodeStates[step] = !currentLayerState.nodeStates[step];
+                        
+                        this.activeLayerIndex = layer; // Automatically select the layer being edited
+                        portalApp.updateLayerControlUI(); // Update layer icons to show selection
+                        this.updateSequencerVisualNodes(); // Update 3D nodes to reflect state change
+                        portalApp.updateStateInURL();
+                    }
+                }
+            }
+
+
+            update(globalTime, globalAudioLevel, globalMouse) {
+                this.time = globalTime;
+                this.audioLevel = globalAudioLevel;
+                // Global mouse is also passed to sequencer shader for its own cursor glow
+                if (this.mesh && this.mesh.material && this.mesh.material.uniforms) {
+                    this.mesh.material.uniforms.mouse.value.copy(globalMouse); 
+                    this.mesh.material.uniforms.time.value = this.time;
+                    this.mesh.material.uniforms.intensity.value = this.visualIntensity;
+                    this.mesh.material.uniforms.flow.value = this.visualFlow;
+                    this.mesh.material.uniforms.audioLevel.value = this.audioLevel;
+                    this.mesh.material.uniforms.beatPulse.value = this.beatPulse;
+                }
+
+                if (this.beatPulse > 0.001) {
+                    this.beatPulse *= 0.9;
+                } else {
+                    this.beatPulse = 0;
+                }
+            }
+
+            setBPM(bpm) {
+                this.bpm = bpm;
+                this.secondsPerStep = (60 / this.bpm) / 4;
+                if (this.audioContext && this.audioContext.state === 'running') {
+                    this.startSequencerScheduler(); // Restart scheduler for new tempo
+                }
+            }
+
+            setInfluence(val) {
+                this.influence = val;
+            }
+
+            togglePlayPause() {
+                this.isPlaying = !this.isPlaying;
+                if (this.isPlaying && this.audioContext && this.audioContext.state !== 'running') {
+                    this.audioContext.resume();
+                }
+            }
+        }
+
+        // --- GLOBAL APP INITIALIZATION & UI MANAGEMENT ---
+        
+        portalApp.initApplication = async () => {
+            if (portalApp.audioContext) return; // Already initialized
+
+            try {
+                portalApp.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await portalApp.audioContext.resume();
+
+                // Setup global audio chain
+                portalApp.masterGain = portalApp.audioContext.createGain();
+                portalApp.masterGain.gain.value = portalApp.masterOutputVolume; // Initial master volume
+                portalApp.masterGain.connect(portalApp.audioContext.destination);
+
+                portalApp.globalAnalyser = portalApp.audioContext.createAnalyser();
+                portalApp.globalAnalyser.fftSize = 256;
+                portalApp.globalAnalyser.connect(portalApp.masterGain); // Analyser feeds to master gain
+                portalApp.globalFrequencyData = new Uint8Array(portalApp.globalAnalyser.frequencyBinCount);
+
+                // Global Fuzz setup (connected BEFORE masterGain, but AFTER analyser inputs)
+                portalApp.globalFuzzNode = portalApp.audioContext.createWaveShaper();
+                portalApp.globalFuzzNode.curve = makeDistortionCurve(portalApp.globalFuzzAmount * 100);
+                portalApp.globalFuzzNode.oversample = '4x';
+                portalApp.globalFuzzWetGain = portalApp.audioContext.createGain();
+                portalApp.globalFuzzDryGain = portalApp.audioContext.createGain();
+                portalApp.globalFuzzWetGain.gain.value = portalApp.globalFuzzAmount;
+                portalApp.globalFuzzDryGain.gain.value = 1 - portalApp.globalFuzzAmount;
+                
+                // Final output of ALL audio modules connect to these dry/wet gains
+                portalApp.globalFuzzDryGain.connect(portalApp.masterGain);
+                portalApp.globalFuzzWetGain.connect(portalApp.globalFuzzNode);
+                portalApp.globalFuzzNode.connect(portalApp.masterGain);
+
+
+                // Setup crossfader (Drone vs Sample)
+                portalApp.droneCrossfaderInput = portalApp.audioContext.createGain(); // Input A to crossfader
+                portalApp.sampleCrossfaderInput = portalApp.audioContext.createGain(); // Input B to crossfader
+                portalApp.crossfaderOutput = portalApp.audioContext.createGain(); // Output of crossfader
+
+                // Connect crossfader inputs to its output
+                portalApp.droneCrossfaderInput.connect(portalApp.crossfaderOutput);
+                portalApp.sampleCrossfaderInput.connect(portalApp.crossfaderOutput);
+                
+                // Crossfader output connects to globalAnalyser and then to globalFuzzMixer
+                portalApp.crossfaderOutput.connect(portalApp.globalAnalyser);
+                portalApp.crossfaderOutput.connect(portalApp.globalFuzzDryGain);
+                portalApp.crossfaderOutput.connect(portalApp.globalFuzzWetGain);
+
+                // Sampler Master Gain (Controls sampler volume from slider)
+                portalApp.samplerMasterGain = portalApp.audioContext.createGain();
+                portalApp.samplerMasterGain.gain.value = 0; // Default off, controlled by slider
+                portalApp.samplerMasterGain.connect(portalApp.sampleCrossfaderInput); // Sampler feeds into Crossfader B
+
+
+                // Setup Three.js (single canvas)
+                const canvas = document.getElementById('canvas');
+                portalApp.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+                portalApp.renderer.setSize(window.innerWidth, window.innerHeight);
+                portalApp.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                portalApp.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                portalApp.camera.position.z = 5; // Adjust camera to see entire 20x20 plane (drone is -10 to 0, seq is 0 to 10)
+
+
+                // Initialize Modules
+                // Drone Module (connects to droneCrossfaderInput)
+                portalApp.droneModule = new DroneModule();
+                portalApp.droneModule.init(portalApp.scene, portalApp.camera, portalApp.renderer, portalApp.audioContext, portalApp.droneCrossfaderInput);
+
+                // Sequencer Module (connects directly to global analyser and fuzz mixer)
+                portalApp.sequencerModule = new SequencerModule();
+                portalApp.sequencerModule.init(portalApp.scene, portalApp.camera, portalApp.renderer, portalApp.audioContext, portalApp.globalAnalyser, portalApp.globalFuzzDryGain, portalApp.globalFuzzWetGain);
+
+                // Sampler Setup (capture destination connects FROM masterGain to capture ALL audio)
+                portalApp.captureDestination = portalApp.audioContext.createMediaStreamDestination();
+                portalApp.masterGain.connect(portalApp.captureDestination); 
+
+
+                // Apply loaded state (order is crucial: modules initialized, then state applied)
+                portalApp.applyDeferredState();
+
+                // Setup UI Listeners
+                portalApp.setupUILeseners();
+
+                // Hide start button
+                document.getElementById('start-button').classList.add('hidden');
+                
+                // Set initial UI visibility (main panel will be hidden/shown, others always visible)
+                portalApp.toggleUI(portalApp.uiVisible); 
+
+                // Ensure initial values are applied
+                portalApp.updateCrossfader(portalApp.crossfaderValue);
+                portalApp.updateGlobalFuzz(portalApp.globalFuzzAmount);
+                portalApp.updateMasterVolume(portalApp.masterOutputVolume);
+                portalApp.updateSampleVolume(document.getElementById('sample-volume-slider').value); // Ensure sample volume is set from loaded value
+
+                portalApp.animate();
+                window.dispatchEvent(new Event('resize')); // Trigger initial resize
+
+                console.log("Morphic Resonance Deck Initialized.");
+
+            } catch (error) {
+                console.error('Failed to initialize AudioContext:', error);
+                alert('Audio cannot be started. Please ensure your browser allows autoplay or try refreshing. Error: ' + error.message);
+            }
+        };
+
+        portalApp.animate = () => {
+            requestAnimationFrame(portalApp.animate);
+
+            // Update global audio level for visualizers
+            if (portalApp.globalAnalyser && portalApp.globalFrequencyData) {
+                let sum = 0;
+                portalApp.globalAnalyser.getByteFrequencyData(portalApp.globalFrequencyData);
+                for (let i = 0; i < portalApp.globalFrequencyData.length; i++) {
+                    sum += portalApp.globalFrequencyData[i];
+                }
+                portalApp.globalAudioLevel = (sum / portalApp.globalFrequencyData.length) / 255;
+            }
+
+            // Get global mouse position for shaders
+            const globalMousePos = new THREE.Vector2(
+                portalApp.mouse.x / window.innerWidth, // mouse.x is clientX
+                1.0 - portalApp.mouse.y / window.innerHeight // mouse.y is clientY, invert for UV
+            );
+
+            // Update modules
+            if (portalApp.droneModule) portalApp.droneModule.update(performance.now() / 1000, portalApp.globalAudioLevel, globalMousePos);
+            if (portalApp.sequencerModule) portalApp.sequencerModule.update(performance.now() / 1000, portalApp.globalAudioLevel, globalMousePos);
+            
+            // Render the combined scene
+            if (portalApp.renderer && portalApp.scene && portalApp.camera) {
+                portalApp.renderer.render(portalApp.scene, portalApp.camera);
+            }
+        };
+
+        // --- UI CONTROL FUNCTIONS ---
+
+        portalApp.setupUILeseners = () => {
+            // Main Panel BPM Controls
+            document.getElementById('bpm-up-btn').onclick = () => portalApp.changeBPM(5);
+            document.getElementById('bpm-down-btn').onclick = () => portalApp.changeBPM(-5);
+
+            // Main Panel Volume Sliders
+            document.getElementById('drone-volume-slider').oninput = (e) => {
+                if (portalApp.droneModule && portalApp.droneModule.outputGain) portalApp.droneModule.outputGain.gain.value = parseFloat(e.target.value);
+                portalApp.updateCrossfader(portalApp.crossfaderValue); // Re-apply crossfader for instant volume update
+                portalApp.updateStateInURL();
+            };
+            document.getElementById('seq-volume-slider').oninput = (e) => {
+                if (portalApp.sequencerModule && portalApp.sequencerModule.outputGain) portalApp.sequencerModule.outputGain.gain.value = parseFloat(e.target.value);
+                portalApp.updateStateInURL();
+            };
+            document.getElementById('master-output-volume-slider').oninput = (e) => {
+                portalApp.updateMasterVolume(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Sampler Controls
+            document.getElementById('capture-sample-btn').onclick = () => portalApp.captureSample();
+            document.getElementById('play-sample-btn').onclick = () => portalApp.playSample();
+            document.getElementById('sample-volume-slider').oninput = (e) => {
+                portalApp.updateSampleVolume(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Crossfader (Drone vs Sample)
+            document.getElementById('crossfader-slider').oninput = (e) => {
+                portalApp.updateCrossfader(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Global Fuzz
+            document.getElementById('fuzz-slider').oninput = (e) => {
+                portalApp.updateGlobalFuzz(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Sequencer Influence
+            const influenceSlider = document.getElementById('influence-slider');
+            influenceSlider.oninput = (e) => {
+                if (portalApp.sequencerModule) portalApp.sequencerModule.setInfluence(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Mouse Scroll Wheel for Influence Slider
+            window.addEventListener('wheel', (e) => {
+                if (!portalApp.sequencerModule) return;
+                e.preventDefault(); 
+                let currentValue = parseFloat(influenceSlider.value);
+                const step = 0.02; 
+                if (e.deltaY < 0) { currentValue = Math.min(1.0, currentValue + step); } 
+                else { currentValue = Math.max(0.0, currentValue - step); }
+                influenceSlider.value = currentValue;
+                portalApp.sequencerModule.setInfluence(currentValue);
+                portalApp.updateStateInURL();
+            }, { passive: false });
+
+            // Global Play/Pause Button
+            document.getElementById('play-pause-button').onclick = () => {
+                if (portalApp.sequencerModule) portalApp.sequencerModule.togglePlayPause();
+                document.getElementById('play-pause-button').textContent = portalApp.sequencerModule.isPlaying ? '❚❚' : '►';
+                portalApp.updateStateInURL();
+            };
+            
+            // Canvas Interaction (Unified Logic for MOUSE)
+            const canvas = document.getElementById('canvas');
+            portalApp.mouse = { x: 0, y: 0, down: false }; // Global mouse state for drag
+
+            canvas.addEventListener('mousedown', (e) => {
+                portalApp.mouse.down = true;
+                portalApp.mouse.x = e.clientX;
+                portalApp.mouse.y = e.clientY;
+
+                if (e.clientX < window.innerWidth / 2) { // Left half (Drone interaction)
+                    // No explicit action here, mousemove handles sculpting
+                } else { // Right half (Sequencer interaction)
+                    if (portalApp.sequencerModule) {
+                        portalApp.sequencerModule.handleCanvasClick(e);
+                    }
+                }
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                portalApp.mouse.x = e.clientX;
+                portalApp.mouse.y = e.clientY;
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                portalApp.mouse.down = false;
+            });
+            canvas.addEventListener('mouseleave', () => {
+                portalApp.mouse.down = false;
+            });
+
+            // Canvas Interaction (Unified Logic for TOUCH)
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling/zooming
+                portalApp.mouse.down = true;
+                portalApp.mouse.x = e.touches[0].clientX;
+                portalApp.mouse.y = e.touches[0].clientY;
+
+                if (e.touches.length === 2) { // 2-finger tap for UI
+                    portalApp.toggleUI();
+                } else if (e.touches.length === 3) { // 3-finger tap for Layer Control
+                    portalApp.toggleLayerControl();
+                } else if (e.touches.length === 1) { // Single finger for interaction
+                    if (e.touches[0].clientX < window.innerWidth / 2) { // Left half (Drone interaction)
+                        // Handled by touchmove
+                    } else { // Right half (Sequencer interaction)
+                        if (portalApp.sequencerModule) {
+                            portalApp.sequencerModule.handleCanvasClick(e.touches[0]);
+                        }
+                    }
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (e.touches.length === 1 && portalApp.mouse.down) {
+                    portalApp.mouse.x = e.touches[0].clientX;
+                    portalApp.mouse.y = e.touches[0].clientY;
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', (e) => {
+                if (e.touches.length === 0) {
+                    portalApp.mouse.down = false;
+                }
+            }, { passive: false });
+
+            // Keyboard event for Layer Control
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'l' || e.key === 'L') { 
+                    portalApp.toggleLayerControl();
+                }
+            });
+
+            // BPM Control click handler (for the circular button)
+            document.getElementById('bpm-control').addEventListener('click', (e) => {
+                e.stopPropagation(); 
+                portalApp.changeBPM(5); // Cycle BPM directly
+                portalApp.scheduleHideBPMControl(); 
+            });
+            
+            // Layer Control Panel click handler (for any area outside icons)
+            document.getElementById('layer-control-panel').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('layer-control-panel')) {
+                    portalApp.scheduleHideLayerControl();
+                }
+            });
+
+            // General click to hide any visible controls
+            document.addEventListener('click', (e) => {
+                if (portalApp.bpmControlVisible && !e.target.closest('#bpm-control')) {
+                    portalApp.scheduleHideBPMControl();
+                }
+                if (portalApp.layerControlVisible && !e.target.closest('#layer-control-panel')) {
+                    portalApp.scheduleHideLayerControl();
+                }
+            });
+
+            // Prevent immediate hide on hover (desktop only)
+            document.getElementById('bpm-control').addEventListener('mouseenter', () => clearTimeout(portalApp.hideBpmTimer));
+            document.getElementById('bpm-control').addEventListener('mouseleave', () => portalApp.scheduleHideBPMControl());
+            document.getElementById('layer-control-panel').addEventListener('mouseenter', () => clearTimeout(portalApp.hideLayerControlTimer));
+            document.getElementById('layer-control-panel').addEventListener('mouseleave', () => portalApp.scheduleHideLayerControl());
+
+            // Window Resize Listener
+            window.addEventListener('resize', () => {
+                if (portalApp.renderer && portalApp.camera) {
+                    portalApp.camera.aspect = window.innerWidth / window.innerHeight;
+                    portalApp.camera.updateProjectionMatrix();
+                    portalApp.renderer.setSize(window.innerWidth, window.innerHeight);
+                }
+            });
+        };
+
+        // --- GLOBAL STATE UPDATE FUNCTIONS ---
+
+        // Schedule hide for BPM control
+        portalApp.scheduleHideBPMControl = () => {
+            clearTimeout(portalApp.hideBpmTimer);
+            portalApp.hideBpmTimer = setTimeout(() => {
+                document.getElementById('bpm-control').classList.remove('visible');
+                portalApp.bpmControlVisible = false;
+            }, 3000);
+        };
+
+        // Schedule hide for Layer control
+        portalApp.scheduleHideLayerControl = () => {
+            clearTimeout(portalApp.hideLayerControlTimer);
+            portalApp.hideLayerControlTimer = setTimeout(() => {
+                document.getElementById('layer-control-panel').classList.remove('visible');
+                portalApp.layerControlVisible = false;
+            }, 3000);
+        };
+
+        portalApp.updateControlsUI = () => {
+            // Update values on DOM elements for the main control panel
+            if (portalApp.sequencerModule) {
+                document.getElementById('bpm-display-panel').textContent = portalApp.sequencerModule.bpm;
+                document.getElementById('seq-volume-slider').value = portalApp.sequencerModule.outputGain.gain.value;
+                document.getElementById('influence-slider').value = portalApp.sequencerModule.influence;
+                document.getElementById('bpm-display').textContent = portalApp.sequencerModule.bpm; // For the circular BPM display
+            }
+            if (portalApp.droneModule) {
+                 document.getElementById('drone-volume-slider').value = portalApp.droneModule.outputGain.gain.value;
+            }
+            
+            document.getElementById('master-output-volume-slider').value = portalApp.masterOutputVolume;
+            document.getElementById('crossfader-slider').value = portalApp.crossfaderValue;
+            document.getElementById('fuzz-slider').value = portalApp.globalFuzzAmount;
+            
+            if (portalApp.samplerMasterGain) {
+                document.getElementById('sample-volume-slider').value = portalApp.samplerMasterGain.gain.value;
+            }
+            document.getElementById('play-sample-btn').disabled = !portalApp.samplerBuffer;
+            document.getElementById('play-sample-btn').classList.toggle('active', portalApp.isSamplerPlaying);
+            
+            portalApp.updateLayerControlUI(); // Ensure layer selection is updated
+        };
+
+        portalApp.changeBPM = (delta) => {
+            if (!portalApp.sequencerModule) return;
+            portalApp.sequencerModule.setBPM(Math.max(60, Math.min(240, portalApp.sequencerModule.bpm + delta))); 
+            document.getElementById('bpm-display-panel').textContent = portalApp.sequencerModule.bpm; // Update panel BPM
+            document.getElementById('bpm-display').textContent = portalApp.sequencerModule.bpm; // Update circular BPM
+            portalApp.updateStateInURL(); 
+        };
+
+        portalApp.updateMasterVolume = (value) => {
+            portalApp.masterOutputVolume = value;
+            if (portalApp.masterGain && portalApp.audioContext && !isNaN(value)) {
+                portalApp.masterGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.05);
+            }
+        };
+
+        portalApp.updateCrossfader = (value) => {
+            portalApp.crossfaderValue = value;
+            if (!portalApp.droneModule || !portalApp.samplerMasterGain || !portalApp.audioContext) return;
+
+            // Equal-power crossfading for audio (Drone vs Sample)
+            const gainDrone = Math.cos(value * 0.5 * Math.PI); // Drone on left
+            const gainSample = Math.sin(value * 0.5 * Math.PI); // Sample on right
+
+            // Apply to their respective crossfader inputs' gains
+            if (portalApp.droneCrossfaderInput && !isNaN(gainDrone) && !isNaN(portalApp.droneModule.outputGain.gain.value)) {
+                portalApp.droneCrossfaderInput.gain.setTargetAtTime(gainDrone * portalApp.droneModule.outputGain.gain.value, portalApp.audioContext.currentTime, 0.01);
+            }
+            if (portalApp.sampleCrossfaderInput && !isNaN(gainSample) && !isNaN(portalApp.samplerMasterGain.gain.value)) {
+                portalApp.sampleCrossfaderInput.gain.setTargetAtTime(gainSample * portalApp.samplerMasterGain.gain.value, portalApp.audioContext.currentTime, 0.01);
+            }
+
+            // Visual crossfading of the canvas sections (based on overall UI visibility)
+            const baseOpacity = portalApp.uiVisible ? 0.2 : 1.0;
+            if (portalApp.droneModule && portalApp.droneModule.mesh && portalApp.droneModule.mesh.material) {
+                portalApp.droneModule.mesh.material.opacity = baseOpacity * gainDrone; 
+            }
+            if (portalApp.sequencerModule && portalApp.sequencerModule.mesh && portalApp.sequencerModule.mesh.material) {
+                // The sequencer's background fades with the Sample's crossfader value visually.
+                // This implies the sequencer background is tied to the "sample" side.
+                portalApp.sequencerModule.mesh.material.opacity = baseOpacity * gainSample; 
+            }
+        };
+
+        portalApp.updateGlobalFuzz = (value) => {
+            portalApp.globalFuzzAmount = value;
+            if (portalApp.globalFuzzNode && portalApp.audioContext && !isNaN(value)) {
+                portalApp.globalFuzzNode.curve = makeDistortionCurve(value * 100);
+                portalApp.globalFuzzDryGain.gain.setTargetAtTime(1 - value, portalApp.audioContext.currentTime, 0.01);
+                portalApp.globalFuzzWetGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.01);
+            }
+        };
+
+        portalApp.updateSampleVolume = (value) => {
+            if (portalApp.samplerMasterGain && portalApp.audioContext && !isNaN(value)) {
+                portalApp.samplerMasterGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.05);
+            }
+            // Re-apply crossfader mix with new base sampler volume
+            portalApp.updateCrossfader(portalApp.crossfaderValue); 
+        };
+
+        portalApp.createLayerControlIcons = () => {
+            const layerControlPanel = document.getElementById('layer-control-panel');
+            if (!portalApp.sequencerModule) return; 
+
+            portalApp.sequencerModule.layers.forEach((layer, index) => {
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'layer-icon';
+                iconDiv.textContent = String.fromCharCode(0x2460 + index); // Circled numbers
+                iconDiv.dataset.layerIndex = index;
+                iconDiv.addEventListener('click', (e) => {
+                    e.stopPropagation(); 
+                    portalApp.selectLayer(index);
+                    portalApp.scheduleHideLayerControl(); 
+                });
+                layerControlPanel.appendChild(iconDiv);
+            });
+        };
+
+        portalApp.selectLayer = (index) => {
+            if (!portalApp.sequencerModule || index < 0 || index >= portalApp.sequencerModule.layers.length) return;
+
+            if (portalApp.sequencerModule.activeLayerIndex === index) { 
+                // If clicking the currently selected layer, toggle its active (playback) state
+                portalApp.sequencerModule.layers[index].isActive = !portalApp.sequencerModule.layers[index].isActive;
+            } else {
+                // If selecting a different layer, make it the active editing layer
+                portalApp.sequencerModule.activeLayerIndex = index;
+            }
+            portalApp.sequencerModule.updateSequencerVisualNodes(); // Update 3D nodes to show pattern of newly selected layer
+            portalApp.updateLayerControlUI(); // Update UI to reflect changes
+            portalApp.updateStateInURL(); 
+        };
+
+        portalApp.updateLayerControlUI = () => {
+            const layerIcons = document.querySelectorAll('#layer-control-panel .layer-icon');
+            layerIcons.forEach((icon, i) => {
+                if (!portalApp.sequencerModule) return; 
+
+                const layer = portalApp.sequencerModule.layers[i];
+                // Toggle 'active' class based on layer's isActive playback state
+                icon.classList.toggle('active', layer.isActive);
+                // Toggle 'selected' class based on activeLayerIndex (for editing)
+                icon.classList.toggle('selected', i === portalApp.sequencerModule.activeLayerIndex);
+
+                // Set background color of icon based on its layer's assigned color
+                const layerColor = portalApp.sequencerModule.layerColors[layer.colorIndex] || portalApp.sequencerModule.layerColors[0];
+                icon.style.backgroundColor = portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2], 0.2); 
+                
+                // Set border color based on state
+                if(icon.classList.contains('active')) {
+                    icon.style.borderColor = portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2]);
+                    icon.style.boxShadow = `0 0 10px ${portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2])}`;
+                } else {
+                    icon.style.borderColor = `rgba(255,255,255,0.1)`;
+                    icon.style.boxShadow = 'none';
+                }
+
+                // Override border/shadow if selected (editing)
+                if (icon.classList.contains('selected')) {
+                    icon.style.borderColor = '#fff';
+                    icon.style.boxShadow = '0 0 15px #fff';
+                }
+            });
+        };
+
+        portalApp.toggleLayerControl = () => {
+            const panel = document.getElementById('layer-control-panel');
+            portalApp.layerControlVisible = !portalApp.layerControlVisible;
+            if (portalApp.layerControlVisible) {
+                panel.classList.add('visible');
+                portalApp.updateLayerControlUI(); 
+                portalApp.scheduleHideLayerControl();
+            } else {
+                panel.classList.remove('visible');
+            }
+        };
+
+        portalApp.toggleUI = (forceVisibility = null) => {
+            portalApp.uiVisible = (forceVisibility !== null) ? forceVisibility : !portalApp.uiVisible;
+            
+            const elementsToToggle = [
+                document.getElementById('master-control-panel'),
+                document.getElementById('play-pause-button')
+            ];
+            
+            if (portalApp.uiVisible) {
+                elementsToToggle.forEach(el => el.classList.remove('hidden'));
+            } else {
+                elementsToToggle.forEach(el => el.classList.add('hidden'));
+            }
+            
+            portalApp.updateCrossfader(portalApp.crossfaderValue); // Update canvas opacity based on UI visibility AND crossfader
+
+            portalApp.updateStateInURL(); 
+        };
+
+        // --- SAMPLER FUNCTIONS ---
+        portalApp.captureSample = async () => {
+            if (!portalApp.audioContext || portalApp.audioContext.state !== 'running') {
+                console.warn("AudioContext not running, cannot capture.");
+                return;
+            }
+            if (portalApp.isSampling) {
+                console.warn("Already sampling.");
+                return;
+            }
+            
+            const captureBtn = document.getElementById('capture-sample-btn');
+            const playBtn = document.getElementById('play-sample-btn');
+            
+            captureBtn.classList.add('active'); // Indicate recording
+            playBtn.disabled = true; // Disable play during capture
+
+            portalApp.recorder = new MediaRecorder(portalApp.captureDestination.stream);
+            portalApp.recordedChunks = [];
+            portalApp.isSampling = true;
+
+            portalApp.recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    portalApp.recordedChunks.push(event.data);
+                }
+            };
+
+            portalApp.recorder.onstop = async () => {
+                captureBtn.classList.remove('active');
+                playBtn.disabled = false; // Enable play button
+                
+                const blob = new Blob(portalApp.recordedChunks, { type: 'audio/webm' });
+                const audioURL = URL.createObjectURL(blob);
+                
+                try {
+                    const response = await fetch(audioURL);
+                    const arrayBuffer = await response.arrayBuffer();
+                    portalApp.samplerBuffer = await portalApp.audioContext.decodeAudioData(arrayBuffer);
+                    console.log("Sampler loop captured and decoded.");
+                    portalApp.playSample(); // Play immediately after capture
+                } catch (error) {
+                    console.error("Error decoding audio data:", error);
+                    alert("Error capturing sample. Try again.");
+                } finally {
+                    URL.revokeObjectURL(audioURL);
+                    portalApp.isSampling = false;
+                    portalApp.updateStateInURL(); 
+                }
+            };
+
+            portalApp.recorder.start();
+            console.log("Sampling started for " + portalApp.captureDuration + " seconds.");
+            setTimeout(() => {
+                if (portalApp.recorder.state === 'recording') {
+                    portalApp.recorder.stop();
+                }
+            }, portalApp.captureDuration * 1000); 
+        };
+
+        portalApp.playSample = () => {
+            if (!portalApp.samplerBuffer) {
+                console.warn("No audio loop captured.");
+                return;
+            }
+
+            const playBtn = document.getElementById('play-sample-btn');
+            if (portalApp.isSamplerPlaying) {
+                // Already playing, stop it
+                if (portalApp.samplerSource) {
+                    portalApp.samplerMasterGain.gain.setTargetAtTime(0, portalApp.audioContext.currentTime, 0.05); // Fade out
+                    portalApp.samplerSource.stop(portalApp.audioContext.currentTime + 0.1); 
+                    portalApp.samplerSource.onended = () => {
+                        portalApp.samplerSource.disconnect();
+                        portalApp.samplerSource = null;
+                    };
+                }
+                portalApp.isSamplerPlaying = false;
+                playBtn.classList.remove('active');
+                console.log("Sampler loop stopped.");
+            } else {
+                // Start playing
+                portalApp.samplerSource = portalApp.audioContext.createBufferSource();
+                portalApp.samplerSource.buffer = portalApp.samplerBuffer;
+                portalApp.samplerSource.loop = true;
+                portalApp.samplerSource.connect(portalApp.samplerMasterGain);
+                portalApp.samplerSource.start(0);
+
+                portalApp.samplerMasterGain.gain.setTargetAtTime(portalApp.samplerMasterGain.gain.value, portalApp.audioContext.currentTime, 0.05); // Fade in to current sample volume
+                portalApp.isSamplerPlaying = true;
+                playBtn.classList.add('active');
+                console.log("Sampler loop playing.");
+            }
+            portalApp.updateStateInURL(); 
+        };
+
+        // --- STATE PERSISTENCE ---
+
+        portalApp.updateStateInURL = () => {
+            const state = {
+                droneModule: portalApp.droneModule ? {
+                    visualIntensity: portalApp.droneModule.visualIntensity,
+                    visualFlow: portalApp.droneModule.visualFlow,
+                    visualBloom: portalApp.droneModule.visualBloom,
+                    droneAudioFrequency: portalApp.droneModule.droneAudioFrequency,
+                    droneAudioResonance: portalApp.droneModule.droneAudioResonance,
+                    outputGainValue: portalApp.droneModule.outputGain.gain.value
+                } : null,
+                sequencerModule: portalApp.sequencerModule ? {
+                    bpm: portalApp.sequencerModule.bpm,
+                    layers: portalApp.sequencerModule.layers,
+                    activeLayerIndex: portalApp.sequencerModule.activeLayerIndex,
+                    influence: portalApp.sequencerModule.influence,
+                    isPlaying: portalApp.sequencerModule.isPlaying,
+                    outputGainValue: portalApp.sequencerModule.outputGain.gain.value
+                } : null,
+                crossfaderValue: portalApp.crossfaderValue,
+                globalFuzzAmount: portalApp.globalFuzzAmount,
+                masterOutputVolume: portalApp.masterOutputVolume,
+                uiVisible: portalApp.uiVisible,
+                samplerVolume: portalApp.samplerMasterGain ? portalApp.samplerMasterGain.gain.value : 0,
+                isSamplerPlaying: portalApp.isSamplerPlaying
+                // NOTE: Sampler buffer itself is NOT stored in URL hash due to size constraints.
+            };
+            try {
+                const encoded = btoa(JSON.stringify(state));
+                window.location.hash = encoded;
+            } catch (error) {
+                console.warn('Failed to update URL state (likely too large or malformed):', error);
+            }
+        };
+        
+        portalApp.loadStateFromURL = () => {
+            try {
+                if (window.location.hash) {
+                    const state = JSON.parse(atob(window.location.hash.slice(1)));
+                    
+                    // Robustly load global numeric values
+                    portalApp.crossfaderValue = (typeof state.crossfaderValue === 'number' && !isNaN(state.crossfaderValue)) ? state.crossfaderValue : 0.5;
+                    portalApp.globalFuzzAmount = (typeof state.globalFuzzAmount === 'number' && !isNaN(state.globalFuzzAmount)) ? state.globalFuzzAmount : 0.0;
+                    portalApp.masterOutputVolume = (typeof state.masterOutputVolume === 'number' && !isNaN(state.masterOutputVolume)) ? state.masterOutputVolume : 0.5;
+                    portalApp.uiVisible = state.uiVisible !== undefined ? state.uiVisible : true;
+                    portalApp.isSamplerPlaying = state.isSamplerPlaying !== undefined ? state.isSamplerPlaying : false;
+                    
+                    portalApp.deferredState = state; // Defer module-specific state loading
+                    
+                }
+            } catch (error) {
+                console.warn('Failed to load state from URL:', error);
+                // Default values are already set initially, so no need to reset here, just warn.
+            }
+        };
+
+        // Apply deferred module state after modules are fully initialized
+        portalApp.applyDeferredState = () => {
+            if (portalApp.deferredState) {
+                if (portalApp.droneModule && portalApp.deferredState.droneModule) {
+                    const droneState = portalApp.deferredState.droneModule;
+                    if (droneState.visualIntensity !== undefined) portalApp.droneModule.visualIntensity = droneState.visualIntensity;
+                    if (droneState.visualFlow !== undefined) portalApp.droneModule.visualFlow = droneState.visualFlow;
+                    if (droneState.visualBloom !== undefined) portalApp.droneModule.visualBloom = droneState.visualBloom;
+                    if (droneState.droneAudioFrequency !== undefined) portalApp.droneModule.droneAudioFrequency = droneState.droneAudioFrequency;
+                    if (droneState.droneAudioResonance !== undefined) portalApp.droneModule.droneAudioResonance = droneState.droneAudioResonance;
+                    if (droneState.outputGainValue !== undefined) portalApp.droneModule.outputGain.gain.value = droneState.outputGainValue;
+                }
+                if (portalApp.sequencerModule && portalApp.deferredState.sequencerModule) {
+                    const seqState = portalApp.deferredState.sequencerModule;
+                    if (seqState.bpm !== undefined) portalApp.sequencerModule.setBPM(seqState.bpm);
+                    if (seqState.layers) {
+                         // Deep copy and validate layers
+                        portalApp.sequencerModule.layers = seqState.layers.map(layer => ({
+                            id: layer.id,
+                            nodeStates: Array.isArray(layer.nodeStates) && layer.nodeStates.length === 8 ? 
+                                layer.nodeStates.map(ns => typeof ns === 'boolean' ? ns : false) : Array(8).fill(false),
+                            colorIndex: typeof layer.colorIndex === 'number' && !isNaN(layer.colorIndex) && layer.colorIndex >= 0 && layer.colorIndex < portalApp.sequencerModule.layerColors.length ? 
+                                layer.colorIndex : 0,
+                            isActive: typeof layer.isActive === 'boolean' ? layer.isActive : false
+                        }));
+                    }
+                    if (seqState.activeLayerIndex !== undefined) portalApp.sequencerModule.activeLayerIndex = seqState.activeLayerIndex;
+                    if (seqState.influence !== undefined) portalApp.sequencerModule.setInfluence(seqState.influence);
+                    if (seqState.isPlaying !== undefined) portalApp.sequencerModule.isPlaying = seqState.isPlaying;
+                    if (seqState.outputGainValue !== undefined) portalApp.sequencerModule.outputGain.gain.value = seqState.outputGainValue;
+
+                    portalApp.sequencerModule.updateSequencerVisualNodes(); // Apply loaded pattern
+                }
+                if (portalApp.samplerMasterGain && portalApp.deferredState.samplerVolume !== undefined) {
+                    portalApp.samplerMasterGain.gain.value = portalApp.deferredState.samplerVolume;
+                }
+
+                portalApp.deferredState = null; // Clear deferred state
+            }
+        };
+
+        // --- GLOBAL APP ENTRY POINT ---
+        window.addEventListener('load', () => {
+            const startButton = document.getElementById('start-button');
+            startButton.addEventListener('click', portalApp.initApplication);
+
+            portalApp.loadStateFromURL(); 
+            portalApp.createLayerControlIcons(); // Icons need to be created before updateControlsUI
+            portalApp.updateControlsUI();    
+            
+            document.getElementById('loading').style.display = 'none'; 
+        });
+
+    </script>
+</body>
+</html>

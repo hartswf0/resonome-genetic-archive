@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Deep Resonance Sculptor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        :root {
+            --bg: #111;
+            --fg: #eee;
+            --accent: #0ff;
+            --accent-dark: #055;
+            --accent-bg: #022;
+        }
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: var(--bg); color: var(--fg); font-family: 'SF Mono', 'Consolas', 'Menlo', monospace; user-select: none; }
+        canvas { display: block; position: fixed; top: 0; left: 0; z-index: -1; }
+        #ui-wrapper { position: fixed; bottom: 0; left: 0; right: 0; color: var(--fg); transition: transform 0.4s ease-in-out; }
+        #ui-wrapper.hidden { transform: translateY(calc(100% - 30px)); }
+        #ui-toggle-bar { background: #000; padding: 5px 0; text-align: center; cursor: pointer; border-top: 1px solid var(--accent-dark); font-size: 14px; }
+        
+        .panel { background: rgba(10,10,10,0.9); border-top: 1px solid var(--accent-dark); backdrop-filter: blur(10px); }
+        .panel-header { background: rgba(0,0,0,0.8); padding: 8px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .panel-header:hover { background: var(--accent-bg); }
+        .panel-content { padding: 15px; max-height: 50vh; overflow: hidden; transition: all 0.3s ease; }
+        .panel.collapsed .panel-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
+        
+        #layers-container { max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .layer { padding: 10px; border: 1px solid #333; background: #1a1a1a; display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center; }
+        .layer.dragging { background: var(--accent-dark); opacity: 0.7; }
+        .drag-handle { cursor: grab; text-align: center; color: var(--accent); font-size: 24px; padding: 15px 5px; user-select: none; }
+        body.dragging-active { cursor: grabbing !important; }
+        .layer.nest-target { outline: 2px dashed var(--accent); background: var(--accent-bg); }
+        .layer.dragging { opacity: 0.5; }
+
+        #resize-handle { width: 100%; height: 10px; cursor: ns-resize; }
+        #ui-wrapper:not(.floating) #layers-panel { position: relative; }
+        #ui-wrapper:not(.floating) #resize-handle { position: absolute; top: -5px; left: 0; z-index: 10; }
+        #ui-wrapper.floating #resize-handle { display: none; }
+
+        /* Help Button & Modal */
+        #ui-toggle-bar { position: relative; }
+        #help-btn {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 18px;
+            padding: 0 10px;
+            background: none;
+            border: none;
+            color: var(--accent);
+            cursor: pointer;
+        }
+        #help-btn:hover { color: var(--fg); background: var(--accent-bg); }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background-color: #1a1a1a;
+            color: var(--fg);
+            margin: 10% auto;
+            padding: 25px;
+            border: 1px solid var(--accent-dark);
+            width: 80%;
+            max-width: 600px;
+            border-radius: 10px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .modal-content h2, .modal-content h3 {
+            color: var(--accent);
+            margin-top: 0;
+            font-weight: normal;
+        }
+        .modal-content h3 { margin-top: 20px; border-bottom: 1px solid var(--accent-dark); padding-bottom: 5px; }
+        .modal-content code {
+            background: #111;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 1.1em;
+        }
+        .modal-content ul { list-style: none; padding-left: 0; }
+        .modal-content li { margin-bottom: 10px; }
+        .modal-close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-close-btn:hover,
+        .modal-close-btn:focus {
+            color: var(--fg);
+        }
+        .layer-content { display: flex; flex-direction: column; gap: 8px; }
+        .layer-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .layer-controls { display: grid; grid-template-columns: 100px 1fr 50px; gap: 8px; align-items: center; transition: all 0.3s ease; }
+        .layer-controls.collapsed { max-height: 0; margin-top: -10px; opacity: 0; overflow: hidden; }
+        .collapse-btn { font-size: 16px; padding: 0 8px; background: none; border: none; }
+        .child-layers-container { margin-left: 30px; border-left: 2px solid var(--accent-dark); padding-left: 15px; min-height: 10px; }
+        
+        .control-group { display: contents; }
+        .control-group label { text-align: right; padding-right: 10px; font-size: 12px; }
+        .slider-display { font-size: 12px; color: #888; letter-spacing: 2px; }
+
+        button { background: #222; color: var(--fg); border: 1px solid #444; padding: 8px 12px; cursor: pointer; transition: all 0.2s; }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button.active { background: var(--accent); color: #000; }
+        #add-layer-btn { width: 100%; padding: 12px; margin-top: 10px; font-weight: bold; }
+        
+        #global-controls-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #ui-wrapper.floating { 
+            bottom: auto; top: 20px; left: 20px; right: auto; 
+            width: 500px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+            border: 1px solid var(--accent-dark); overflow: hidden; cursor: move;
+        }
+        #ui-wrapper.floating #layers-container { max-height: 30vh; }
+        #ui-wrapper.floating.collapsed > .panel { display: none; }
+        .global-panel .panel-content { display: flex; flex-direction: column; gap: 10px; }
+        .global-panel .control-group { display: grid; grid-template-columns: 100px 1fr 50px; gap: 8px; align-items: center; }
+
+        input[type=range] { -webkit-appearance: none; background: transparent; width: 100%; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #444; }
+        input[type=range]::-webkit-slider-thumb { border: 1px solid var(--accent); height: 16px; width: 8px; background: var(--accent); cursor: pointer; -webkit-appearance: none; margin-top: -6px; }
+        input[type=range]::-moz-range-track { width: 100%; height: 4px; cursor: pointer; background: #444; }
+        input[type=range]::-moz-range-thumb { border: 1px solid var(--accent); height: 16px; width: 8px; background: var(--accent); cursor: pointer; }
+
+    </style>
+</head>
+<body>
+    <canvas id="gl-canvas"></canvas>
+    <div id="ui-wrapper">
+        <div id="ui-toggle-bar">▙▙▙ CONTROLS ▟▟▟<button id="help-btn">𓂩</button></div>
+        
+        <div id="global-controls-container" class="panel">
+            <div id="global-modifiers-panel" class="global-panel panel">
+                <div class="panel-header"><span>𓉗 GLOBAL MODIFIERS</span><span class="collapse-icon">▼</span></div>
+                <div class="panel-content">
+                    <div class="control-group">
+                        <label>MASTER OPACITY</label>
+                        <input id="master-opacity" type="range" min="0" max="1" step="0.01" value="1">
+                        <span class="slider-display" id="master-opacity-display">▓▓▓▓▓▓▓▓▓▓</span>
+                    </div>
+                    <div class="control-group">
+                        <label>TIME SPEED</label>
+                        <input id="time-speed" type="range" min="0" max="3" step="0.01" value="1">
+                        <span class="slider-display" id="time-speed-display">▒▒▒▒░░░░░░</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="global-lfo-panel" class="global-panel panel">
+                <div class="panel-header"><span>𓈌 GLOBAL LFO</span><span class="collapse-icon">▼</span></div>
+                <div class="panel-content">
+                     <div class="control-group">
+                        <label>TARGET</label>
+                        <select id="lfo-target"><option>depth</option><option>bloom</option><option>transparency</option></select>
+                    </div>
+                    <div class="control-group">
+                        <label>LFO SPEED</label>
+                        <input id="lfo-speed" type="range" min="0" max="5" step="0.01" value="0.5">
+                        <span class="slider-display" id="lfo-speed-display">▒░░░░░░░░░</span>
+                    </div>
+                    <div class="control-group">
+                        <label>LFO AMOUNT</label>
+                        <input id="lfo-amount" type="range" min="0" max="1" step="0.01" value="0">
+                        <span class="slider-display" id="lfo-amount-display">░░░░░░░░░░</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="layers-panel" class="panel">
+            <div id="layers-container"></div>
+            <button id="add-layer-btn">𓃑 ADD LAYER</button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 5px;">
+                <button id="export-btn">⿴ EXPORT</button>
+                <button id="import-btn">⿴ IMPORT</button>
+                <input type="file" id="import-file" accept=".json" style="display:none">
+                <button id="float-btn">⿻ FLOAT</button>
+            </div>
+            <button id="fullscreen-btn" style="width:100%; margin-top:5px;">FULLSCREEN</button>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close-btn">&times;</span>
+            <h2>𓂩 Deep Resonance Trance Portal</h2>
+            <p>This is an instrument for sculpting immersive, modular audio-visual trance experiences. It is an anti-tool designed to explore generative art as a form of ontological rebellion, using computation to manipulate spacetime and enter resonant flow states.</p>
+            
+            <h3>Symbols &amp; Controls</h3>
+            <p>The interface uses symbols to represent actions (morphisms) and components (entities).</p>
+            <ul>
+                <li><code>𓉗 GLOBAL MODIFIERS</code>: Controls affecting all layers simultaneously.</li>
+                <li><code>𓈌 GLOBAL LFO</code>: A system-wide oscillator to modulate parameters over time.</li>
+                <li><code>𓃑 ADD LAYER</code>: Creates a new, independent resonance field (an Entity).</li>
+                <li><code>⌸ DRAG HANDLE</code>: Grab this to reorder layers or nest one inside another (a Morphism).</li>
+                <li><code>𓉚 / 𓉙 COLLAPSE</code>: Shows or hides a layer's detailed controls.</li>
+                <li><code>BLEND MODES</code>: Defines how a layer's visuals combine with those below it.</li>
+                <li><code>⿴ IMPORT / EXPORT</code>: Save or load the entire session state.</li>
+                <li><code>⿻ FLOAT</code>: Toggles the compact, draggable UI mode.</li>
+                <li><code>▙▙▙ CONTROLS ▟▟▟</code>: The main bar to hide or show the entire control panel.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); vUv = uv; }
+    </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform float u_time;
+        uniform float u_depth;
+        uniform float u_fft;
+        uniform sampler2D u_prev_layer;
+        uniform float u_bloom;
+        uniform float u_transparency;
+        uniform float u_visual_seed;
+        uniform int u_blend_mode;
+        varying vec2 vUv;
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        void main() {
+            vec2 p = vUv * 2.0 - 1.0;
+            float t = u_time * 0.1 + u_visual_seed;
+            float recursion_depth = 2.0 + u_depth * 8.0;
+            float amplitude = 0.5 + u_depth * 1.5 + u_fft * 2.0;
+
+            for(float i = 1.0; i < 9.0; i++) {
+                if (i > recursion_depth) break;
+                p.x += 0.5 / i * sin(i * 2.0 * p.y + t + cos(t * 0.5));
+                p.y += 0.5 / i * cos(i * 3.0 * p.x + t + sin(t * 0.4));
+            }
+
+            float color_val = length(p);
+            float hue = 0.6 + u_depth * 0.3 + t * 0.1;
+            vec3 color = hsv2rgb(vec3(hue, 0.8, 0.9));
+            float final_val = pow(sin(color_val * 3.0) * 0.5 + 0.5, 2.0);
+            float bloom = smoothstep(0.8, 1.0, final_val) * u_bloom;
+            vec4 new_color = vec4(color * final_val + bloom, 1.0);
+
+            vec4 prev_color = texture2D(u_prev_layer, vUv);
+
+            vec4 blended_color;
+            if (u_blend_mode == 0) { // Screen
+                blended_color = 1.0 - (1.0 - prev_color) * (1.0 - new_color);
+            } else if (u_blend_mode == 1) { // Add
+                blended_color = prev_color + new_color;
+            } else if (u_blend_mode == 2) { // Multiply
+                blended_color = prev_color * new_color;
+            } else { // Subtract
+                blended_color = max(vec4(0.0), prev_color - new_color);
+            }
+
+            gl_FragColor = mix(prev_color, blended_color, u_transparency);
+        }
+    </script>
+
+    <script>
+        let audioCtx;
+        const uiWrapper = document.getElementById('ui-wrapper');
+        const layersContainerEl = document.getElementById('layers-container');
+        const layers = [];
+        let layerIdCounter = 0;
+        const globals = {
+            masterOpacity: 1,
+            timeSpeed: 1,
+            lfo: { target: 'depth', speed: 0.5, amount: 0 }
+        };
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl-canvas'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        const clock = new THREE.Clock();
+
+        const baseMaterial = new THREE.ShaderMaterial({
+            vertexShader: document.getElementById('vertexShader').textContent,
+            fragmentShader: document.getElementById('fragmentShader').textContent,
+            uniforms: {
+                u_time: { value: 0.0 }, u_depth: { value: 0.5 }, u_fft: { value: 0.0 },
+                u_prev_layer: { value: null }, u_bloom: { value: 1.0 }, u_transparency: { value: 1.0 },
+                u_visual_seed: { value: 0.0 }, u_blend_mode: { value: 0 }
+            },
+            transparent: true,
+            blending: THREE.CustomBlending
+        });
+
+        const plane = new THREE.PlaneGeometry(2, 2);
+        const quad = new THREE.Mesh(plane, baseMaterial);
+        scene.add(quad);
+
+        let readBuffer = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+        let writeBuffer = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+
+        // --- AUDIO & LAYER CLASS ---
+        class AudioLayer {
+            constructor(id) {
+                this.id = id;
+                this.depth = 0.5; this.muted = false; this.bloom = 1.0;
+                this.transparency = 1.0; this.blendMode = 0;
+                this.visualSeed = Math.random() * 100;
+                this.parentId = null;
+                this.children = [];
+
+                if (!audioCtx) return;
+                this.masterGain = audioCtx.createGain(); this.masterGain.connect(audioCtx.destination);
+                this.analyser = audioCtx.createAnalyser(); this.analyser.fftSize = 128;
+                this.fftData = new Uint8Array(this.analyser.frequencyBinCount);
+                this.masterGain.connect(this.analyser);
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass'; filter.connect(this.masterGain);
+                this.filter = filter;
+
+                const fmOsc = audioCtx.createOscillator(), modulator = audioCtx.createOscillator();
+                const fmGain = audioCtx.createGain();
+                fmOsc.connect(filter); modulator.connect(fmGain); fmGain.connect(fmOsc.frequency);
+                fmOsc.start(); modulator.start();
+                this.fmOsc = fmOsc; this.modulator = modulator; this.fmGain = fmGain;
+                this.update();
+            }
+
+            update() {
+                if (!audioCtx) return;
+                const d2 = this.depth * this.depth;
+                this.fmOsc.frequency.setTargetAtTime(60 + d2 * 120, audioCtx.currentTime, 0.02);
+                this.fmGain.gain.setTargetAtTime(d2 * 100, audioCtx.currentTime, 0.02);
+                this.filter.frequency.setTargetAtTime(200 + (1 - d2) * 4000, audioCtx.currentTime, 0.02);
+                this.filter.Q.setTargetAtTime(1 + d2 * 15, audioCtx.currentTime, 0.02);
+                this.masterGain.gain.setTargetAtTime(this.muted ? 0 : 0.5, audioCtx.currentTime, 0.01);
+            }
+
+            getFFT() {
+                if (!this.analyser) return 0;
+                this.analyser.getByteFrequencyData(this.fftData);
+                return this.fftData.reduce((a, b) => a + b, 0) / this.fftData.length / 255;
+            }
+
+            destroy() {
+                if (!audioCtx) return;
+                this.fmOsc.stop(); this.modulator.stop(); this.masterGain.disconnect();
+            }
+        }
+
+        // --- UI & CONTROLS ---
+        const updateSliderDisplay = (displayId, value, max) => {
+            const display = document.getElementById(displayId);
+            if (display) {
+                const blockCount = Math.round((value / max) * 10);
+                display.textContent = '▰'.repeat(blockCount) + '▱'.repeat(10 - blockCount);
+            }
+        };
+
+        function createLayerElement(layer, container) {
+            const targetContainer = container || (layer.parentId !== null ? document.querySelector(`.child-layers-container[data-parent-id='${layer.parentId}']`) : layersContainerEl);
+            if (!targetContainer) {
+                console.error('Could not find container for layer', layer.id);
+                return;
+            }
+
+            const layerEl = document.createElement('div');
+            layerEl.className = 'layer';
+            layerEl.dataset.id = layer.id;
+            layerEl.innerHTML = `
+                <div class="drag-handle" draggable="true">⌸</div>
+                <div class="layer-content">
+                    <div class="layer-header">
+                        <span>LAYER ${layer.id}</span>
+                        <div>
+                            <button class="collapse-btn">𓉚</button>
+                            <button class="mute-btn">MUTE</button>
+                            <button class="delete-btn">DELETE</button>
+                        </div>
+                    </div>
+                    <div class="layer-controls">
+                        <label>DEPTH</label>
+                        <input class="depth-slider" type="range" min="0" max="1" step="0.001" value="0.5">
+                        <span class="slider-display" id="depth-display-${layer.id}">▒▒▒▒▒░░░░░</span>
+                        
+                        <label>BLOOM</label>
+                        <input class="bloom-slider" type="range" min="0" max="3" step="0.01" value="1.0">
+                        <span class="slider-display" id="bloom-display-${layer.id}">▒▒▒░░░░░░░</span>
+
+                        <label>OPACITY</label>
+                        <input class="transparency-slider" type="range" min="0" max="1" step="0.01" value="1.0">
+                        <span class="slider-display" id="transparency-display-${layer.id}">▓▓▓▓▓▓▓▓▓▓</span>
+                        
+                        <label>BLEND</label>
+                        <div class="blend-btns">
+                            <button class="blend-btn active" data-mode="0">Screen</button> <button class="blend-btn" data-mode="1">Add</button> 
+                            <button class="blend-btn" data-mode="2">Multiply</button> <button class="blend-btn" data-mode="3">Subtract</button>
+                        </div>
+                    </div>
+                    <div class="child-layers-container" data-parent-id="${layer.id}"></div>
+                </div>
+            `;
+            targetContainer.appendChild(layerEl);
+
+            // Update UI from layer data
+            layerEl.querySelector('.depth-slider').value = layer.depth;
+            layerEl.querySelector('.bloom-slider').value = layer.bloom;
+            layerEl.querySelector('.transparency-slider').value = layer.transparency;
+            layerEl.querySelector('.mute-btn').classList.toggle('active', layer.muted);
+            layerEl.querySelector('.mute-btn').textContent = layer.muted ? 'UNMUTE' : 'MUTE';
+            layerEl.querySelectorAll('.blend-btn').forEach(b => b.classList.remove('active'));
+            layerEl.querySelector(`.blend-btn[data-mode='${layer.blendMode}']`).classList.add('active');
+
+            // Trigger display updates
+            updateSliderDisplay(`depth-display-${layer.id}`, layer.depth, 1);
+            updateSliderDisplay(`bloom-display-${layer.id}`, layer.bloom, 3);
+            updateSliderDisplay(`transparency-display-${layer.id}`, layer.transparency, 1);
+
+            // Event Listeners
+            layerEl.querySelector('.depth-slider').addEventListener('input', e => {
+                layer.depth = parseFloat(e.target.value);
+                layer.update();
+                updateSliderDisplay(`depth-display-${layer.id}`, e.target.value, 1);
+            });
+            layerEl.querySelector('.bloom-slider').addEventListener('input', e => {
+                layer.bloom = parseFloat(e.target.value);
+                updateSliderDisplay(`bloom-display-${layer.id}`, e.target.value, 3);
+            });
+            layerEl.querySelector('.transparency-slider').addEventListener('input', e => {
+                layer.transparency = parseFloat(e.target.value);
+                updateSliderDisplay(`transparency-display-${layer.id}`, e.target.value, 1);
+            });
+            layerEl.querySelector('.mute-btn').addEventListener('click', e => {
+                layer.muted = !layer.muted;
+                e.target.textContent = layer.muted ? 'UNMUTE' : 'MUTE';
+                e.target.classList.toggle('active', layer.muted);
+                layer.update();
+            });
+            layerEl.querySelectorAll('.blend-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    layer.blendMode = parseInt(e.target.dataset.mode);
+                    layerEl.querySelectorAll('.blend-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                });
+            });
+            layerEl.querySelector('.delete-btn').addEventListener('click', () => deleteLayer(layer.id));
+            layerEl.querySelector('.collapse-btn').addEventListener('click', e => {
+                const controls = layerEl.querySelector('.layer-controls');
+                controls.classList.toggle('collapsed');
+                e.target.textContent = controls.classList.contains('collapsed') ? '𓉙' : '𓉚';
+            });
+
+            const handle = layerEl.querySelector('.drag-handle');
+            handle.addEventListener('dragstart', e => {
+                e.stopPropagation();
+                layerEl.classList.add('dragging');
+            });
+            handle.addEventListener('dragend', e => layerEl.classList.remove('dragging'));
+        }
+
+        document.getElementById('add-layer-btn').addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                document.getElementById('add-layer-btn').textContent = '𓃑 ADD LAYER';
+            }
+            const id = layerIdCounter++;
+            const layer = new AudioLayer(id);
+            layers.push(layer);
+            createLayerElement(layer, layersContainerEl);
+        });
+
+        // --- RENDER LOOP ---
+        function renderLayerRecursive(layer, parentBuffer) {
+            baseMaterial.uniforms.u_depth.value = layer.depth;
+            baseMaterial.uniforms.u_bloom.value = layer.bloom;
+            baseMaterial.uniforms.u_transparency.value = layer.transparency;
+
+            const time = baseMaterial.uniforms.u_time.value;
+            const lfoValue = (Math.sin(time * globals.lfo.speed * 2) * 0.5 + 0.5) * globals.lfo.amount;
+            if (globals.lfo.amount > 0) {
+                const currentVal = baseMaterial.uniforms[globals.lfo.target].value;
+                baseMaterial.uniforms[globals.lfo.target].value = Math.max(0, currentVal + lfoValue - globals.lfo.amount / 2);
+            }
+            if (layer.muted) { baseMaterial.uniforms.u_transparency.value = 0; }
+
+            baseMaterial.uniforms.u_fft.value = layer.getFFT();
+            baseMaterial.uniforms.u_prev_layer.value = parentBuffer.texture;
+            baseMaterial.uniforms.u_visual_seed.value = layer.visualSeed;
+            baseMaterial.uniforms.u_blend_mode.value = layer.blendMode;
+            
+            renderer.setRenderTarget(writeBuffer);
+            renderer.render(scene, camera);
+
+            let temp = readBuffer;
+            readBuffer = writeBuffer;
+            writeBuffer = temp;
+
+            for (const child of layer.children) {
+                renderLayerRecursive(child, readBuffer);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now() * 0.001 * globals.timeSpeed;
+            baseMaterial.uniforms.u_time.value = time;
+
+            renderer.setRenderTarget(writeBuffer);
+            renderer.clear();
+
+            let rootLayers = layers.filter(l => l.parentId === null);
+            for (const layer of rootLayers) {
+                renderLayerRecursive(layer, readBuffer);
+            }
+
+            renderer.setRenderTarget(null);
+            quad.material = new THREE.MeshBasicMaterial({ map: readBuffer.texture, transparent: true, opacity: globals.masterOpacity });
+            renderer.render(scene, camera);
+            quad.material = baseMaterial;
+        }
+
+        // --- INITIALIZATION ---
+        function deleteLayer(id) {
+            const layer = findLayerRecursive(id, layers);
+            if (!layer) return;
+
+            const parent = layer.parentId === null ? { children: layers } : findLayerRecursive(layer.parentId, layers);
+            if (parent) {
+                const index = parent.children.findIndex(c => c.id === id);
+                if (index > -1) {
+                    const [removed] = parent.children.splice(index, 1);
+                    removed.destroy();
+                    // Recursively destroy children
+                    const destroyChildren = (l) => {
+                        l.children.forEach(c => {
+                            c.destroy();
+                            destroyChildren(c);
+                        });
+                    };
+                    destroyChildren(removed);
+                }
+            }
+
+            // Re-render
+            layersContainerEl.innerHTML = '';
+            const rootLayers = layers.filter(l => l.parentId === null);
+            rootLayers.forEach(rootLayer => {
+                createLayerElement(rootLayer, layersContainerEl);
+                createChildElementsRecursive(rootLayer);
+            });
+        }
+
+        // --- DOCK RESIZE LOGIC ---
+        const resizeHandleEl = document.createElement('div');
+        resizeHandleEl.id = 'resize-handle';
+        const layersPanelEl = document.getElementById('layers-panel');
+        layersPanelEl.prepend(resizeHandleEl);
+
+        const startResize = (e) => {
+            if (uiWrapper.classList.contains('floating')) return;
+            e.preventDefault();
+            let startY = e.clientY;
+            let startHeight = layersPanelEl.offsetHeight;
+
+            const doResize = (moveEvent) => {
+                const newHeight = startHeight - (moveEvent.clientY - startY);
+                if (newHeight > 120 && newHeight < window.innerHeight * 0.9) {
+                    layersPanelEl.style.height = `${newHeight}px`;
+                    layersContainerEl.style.maxHeight = `calc(${newHeight}px - 80px)`;
+                }
+            };
+            const stopResize = () => {
+                document.removeEventListener('mousemove', doResize);
+                document.removeEventListener('mouseup', stopResize);
+            };
+            document.addEventListener('mousemove', doResize);
+            document.addEventListener('mouseup', stopResize);
+        };
+        resizeHandleEl.addEventListener('mousedown', startResize);
+
+        // --- DRAG AND DROP LOGIC ---
+        let draggedId = null;
+
+        function findLayerRecursive(id, searchArray) {
+            for (const layer of searchArray) {
+                if (layer.id === id) return layer;
+                const found = findLayerRecursive(id, layer.children || []);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        document.addEventListener('dragstart', e => {
+            if (e.target.classList.contains('drag-handle')) {
+                const layerEl = e.target.closest('.layer');
+                draggedId = parseInt(layerEl.dataset.id);
+                e.dataTransfer.setData('text/plain', draggedId);
+                e.dataTransfer.effectAllowed = 'move';
+                setTimeout(() => layerEl.classList.add('dragging'), 0);
+                document.body.classList.add('dragging-active');
+            }
+        });
+
+        document.addEventListener('dragend', e => {
+            document.querySelector('.layer.dragging')?.classList.remove('dragging');
+            document.querySelectorAll('.nest-target').forEach(el => el.classList.remove('nest-target'));
+            document.body.classList.remove('dragging-active');
+            draggedId = null;
+        });
+
+        document.addEventListener('dragover', e => {
+            e.preventDefault();
+            document.querySelectorAll('.nest-target').forEach(el => el.classList.remove('nest-target'));
+            const targetLayerEl = e.target.closest('.layer');
+            if (targetLayerEl) {
+                const targetId = parseInt(targetLayerEl.dataset.id);
+                if (targetId !== draggedId && !targetLayerEl.closest('.dragging')) {
+                    targetLayerEl.classList.add('nest-target');
+                }
+            }
+        });
+
+        document.addEventListener('drop', e => {
+            e.preventDefault();
+            if (draggedId === null) return;
+
+            const draggedLayer = findLayerRecursive(draggedId, layers);
+            if (!draggedLayer) return;
+
+            // Remove from old parent
+            const oldParent = draggedLayer.parentId === null ? { children: layers } : findLayerRecursive(draggedLayer.parentId, layers);
+            if (oldParent) {
+                const oldIndex = oldParent.children.findIndex(l => l.id === draggedId);
+                if (oldIndex > -1) {
+                    oldParent.children.splice(oldIndex, 1);
+                }
+            }
+
+            const nestTargetEl = e.target.closest('.nest-target');
+            if (nestTargetEl) {
+                // --- Nesting ---
+                const newParentId = parseInt(nestTargetEl.dataset.id);
+                const newParent = findLayerRecursive(newParentId, layers);
+                if (newParent) {
+                    newParent.children.push(draggedLayer);
+                    draggedLayer.parentId = newParentId;
+                }
+            } else {
+                // --- Reordering ---
+                const dropContainer = e.target.closest('#layers-container, .child-layers-container');
+                if (dropContainer) {
+                    const newParentEl = dropContainer.closest('.layer');
+                    const newParentId = newParentEl ? parseInt(newParentEl.dataset.id) : null;
+                    const newParent = newParentId === null ? { children: layers } : findLayerRecursive(newParentId, layers);
+                    
+                    draggedLayer.parentId = newParentId;
+                    const afterElement = getDragAfterElement(dropContainer, e.clientY);
+                    if (afterElement) {
+                        const afterId = parseInt(afterElement.dataset.id);
+                        const newIndex = newParent.children.findIndex(l => l.id === afterId);
+                        newParent.children.splice(newIndex, 0, draggedLayer);
+                    } else {
+                        newParent.children.push(draggedLayer);
+                    }
+                }
+            }
+            
+            // Re-render the entire UI to ensure consistency
+            layersContainerEl.innerHTML = '';
+            const rootLayers = layers.filter(l => l.parentId === null);
+            rootLayers.forEach(rootLayer => {
+                createLayerElement(rootLayer, layersContainerEl);
+                createChildElementsRecursive(rootLayer);
+            });
+        });
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.layer:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        // Import / Export
+        document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-file').click());
+        document.getElementById('export-btn').addEventListener('click', exportSettings);
+        document.getElementById('import-file').addEventListener('change', importSettings);
+
+        function exportSettings() {
+            const state = {
+                globals: globals,
+                layers: layers.map(l => ({...l, children: l.children.map(c => c.id)})) // serialize children as IDs
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "deep-res-settings.json");
+            document.body.appendChild(downloadAnchorNode); 
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function importSettings(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const state = JSON.parse(e.target.result);
+                
+                layers.forEach(l => l.destroy());
+                layers.length = 0;
+                layersContainerEl.innerHTML = '';
+
+                Object.assign(globals, state.globals);
+                layerIdCounter = state.layers.length ? Math.max(...state.layers.map(l => l.id)) + 1 : 0;
+
+                state.layers.forEach(layerData => {
+                    const layer = new AudioLayer(layerData.id);
+                    Object.assign(layer, {...layerData, children: []});
+                    layers.push(layer);
+                });
+
+                layers.forEach(layer => {
+                    const layerData = state.layers.find(ld => ld.id === layer.id);
+                    if (layerData.children && layerData.children.length > 0) {
+                        layer.children = layerData.children.map(childId => layers.find(l => l.id === childId)).filter(Boolean);
+                    }
+                });
+
+                const rootLayers = layers.filter(l => l.parentId === null);
+                rootLayers.forEach(rootLayer => {
+                    createLayerElement(rootLayer, layersContainerEl);
+                    createChildElementsRecursive(rootLayer);
+                });
+
+                document.getElementById('master-opacity').value = globals.masterOpacity;
+                document.getElementById('time-speed').value = globals.timeSpeed;
+                document.getElementById('lfo-target').value = globals.lfo.target;
+                document.getElementById('lfo-speed').value = globals.lfo.speed;
+                document.getElementById('lfo-amount').value = globals.lfo.amount;
+            };
+            reader.readAsText(file);
+        }
+
+        function createChildElementsRecursive(parentLayer) {
+            parentLayer.children.forEach(childLayer => {
+                createLayerElement(childLayer); // Finds its own parent container
+                createChildElementsRecursive(childLayer);
+            });
+        }
+
+        // Global Controls
+        const setupGlobalSlider = (sliderId, displayId, globalKey, max) => {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(displayId);
+            const updateDisplay = () => {
+                const blocks = Math.round((slider.value / max) * 10);
+                display.textContent = '▓'.repeat(blocks) + '░'.repeat(10 - blocks);
+            };
+            slider.addEventListener('input', () => {
+                if (globalKey.includes('.')) {
+                    const [key1, key2] = globalKey.split('.');
+                    globals[key1][key2] = parseFloat(slider.value);
+                } else {
+                    globals[globalKey] = parseFloat(slider.value);
+                }
+                updateDisplay();
+            });
+            updateDisplay();
+        };
+
+        setupGlobalSlider('master-opacity', 'master-opacity-display', 'masterOpacity', 1);
+        setupGlobalSlider('time-speed', 'time-speed-display', 'timeSpeed', 3);
+        setupGlobalSlider('lfo-speed', 'lfo-speed-display', 'lfo.speed', 5);
+        setupGlobalSlider('lfo-amount', 'lfo-amount-display', 'lfo.amount', 1);
+        document.getElementById('lfo-target').addEventListener('change', e => { globals.lfo.target = e.target.value; });
+
+        // Collapsible Panels
+        document.querySelectorAll('.panel-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const panel = header.parentElement;
+                panel.classList.toggle('collapsed');
+                const icon = header.querySelector('.collapse-icon');
+                icon.textContent = panel.classList.contains('collapsed') ? '►' : '▼';
+            });
+        });
+
+        // Floating UI Logic
+        const floatBtn = document.getElementById('float-btn');
+        let isFloating = false;
+        let dragOffsetX, dragOffsetY;
+
+        floatBtn.addEventListener('click', () => {
+            isFloating = !isFloating;
+            uiWrapper.classList.toggle('floating', isFloating);
+            floatBtn.textContent = isFloating ? '⿻ DOCK' : '⿻ FLOAT';
+        });
+
+        uiWrapper.addEventListener('mousedown', e => {
+            // Allow dragging on background areas, but not on interactive controls.
+            if (isFloating && !e.target.closest('button, input, select, .drag-handle, a, .slider-display')) {
+                dragOffsetX = e.clientX - uiWrapper.offsetLeft;
+                dragOffsetY = e.clientY - uiWrapper.offsetTop;
+                document.addEventListener('mousemove', onDrag);
+                document.addEventListener('mouseup', onStopDrag);
+            }
+        });
+
+        function onDrag(e) {
+            uiWrapper.style.left = (e.clientX - dragOffsetX) + 'px';
+            uiWrapper.style.top = (e.clientY - dragOffsetY) + 'px';
+        }
+
+        function onStopDrag() {
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', onStopDrag);
+        }
+
+        // Fullscreen and UI Toggle
+        document.getElementById('fullscreen-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else if (document.exitFullscreen) document.exitFullscreen();
+        });
+
+        document.getElementById('ui-toggle-bar').addEventListener('click', () => {
+            if (uiWrapper.classList.contains('floating')) {
+                // In floating mode, toggle a 'collapsed' state instead of 'hidden'
+                const isCollapsed = uiWrapper.classList.toggle('collapsed');
+                document.getElementById('ui-toggle-bar').textContent = isCollapsed ? '▙▙▙ EXPAND ▟▟▟' : '▜▜▜ COLLAPSE ▛▛▛';
+            } else {
+                // In docked mode, use the original slide-away 'hidden' state
+                uiWrapper.classList.toggle('hidden');
+                document.getElementById('ui-toggle-bar').textContent = uiWrapper.classList.contains('hidden') ? '▙▙▙ CONTROLS ▟▟▟' : '▜▜▜ HIDE ▛▛▛';
+            }
+        });
+        uiWrapper.classList.add('hidden');
+
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth; const h = window.innerHeight;
+            renderer.setSize(w, h);
+            readBuffer.setSize(w, h);
+            writeBuffer.setSize(w, h);
+        });
+
+        // --- HELP MODAL LOGIC ---
+        const helpBtn = document.getElementById('help-btn');
+        const helpModal = document.getElementById('help-modal');
+        const closeModalBtn = helpModal.querySelector('.modal-close-btn');
+
+        helpBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent the toggle bar's click event from firing
+            helpModal.style.display = 'block';
+        });
+        closeModalBtn.addEventListener('click', () => {
+            helpModal.style.display = 'none';
+        });
+        helpModal.addEventListener('click', (e) => {
+            // Clicks on the overlay (but not the content) should close the modal
+            if (e.target === helpModal) {
+                helpModal.style.display = 'none';
+            }
+        });
+
+        animate();
+    </script>
+</body>
+</html>

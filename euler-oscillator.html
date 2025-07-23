@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Euler's Mathematical Resonance Universe</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Crimson Text', serif;
+            background: linear-gradient(135deg, #f5f1e8 0%, #e8dcc6 100%);
+            color: #2a1810;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            background: rgba(245, 241, 232, 0.95);
+            border: 2px solid #8b4513;
+            border-radius: 8px;
+            padding: 20px;
+            pointer-events: all;
+            box-shadow: 0 4px 12px rgba(139, 69, 19, 0.3);
+        }
+        
+        h1 {
+            font-family: 'Cinzel', serif;
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #8b4513;
+            text-align: center;
+            border-bottom: 1px solid #8b4513;
+            padding-bottom: 10px;
+        }
+        
+        .parameter-group {
+            margin: 15px 0;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #5d4e37;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: #d4c5b9;
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #8b4513;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .value-display {
+            display: inline-block;
+            margin-left: 10px;
+            font-family: 'Courier New', monospace;
+            background: #f9f6f0;
+            padding: 2px 8px;
+            border-radius: 3px;
+            border: 1px solid #d4c5b9;
+        }
+        
+        .equation-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 400px;
+            background: rgba(245, 241, 232, 0.95);
+            border: 2px solid #8b4513;
+            border-radius: 8px;
+            padding: 20px;
+            pointer-events: all;
+        }
+        
+        .mode-buttons {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            pointer-events: all;
+        }
+        
+        button {
+            background: #8b4513;
+            color: #f5f1e8;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: 'Cinzel', serif;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: #a0522d;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(139, 69, 19, 0.4);
+        }
+        
+        button.active {
+            background: #5d4e37;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(245, 241, 232, 0.9);
+            border: 1px solid #8b4513;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+            pointer-events: all;
+        }
+        
+        .view-toggle {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: all;
+        }
+        
+        .manuscript-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(139, 69, 19, 0.1) 28px, rgba(139, 69, 19, 0.1) 29px),
+                repeating-linear-gradient(90deg, transparent, transparent 28px, rgba(139, 69, 19, 0.1) 28px, rgba(139, 69, 19, 0.1) 29px);
+            pointer-events: none;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="manuscript-bg"></div>
+    <div id="canvas-container"></div>
+    
+    <div class="ui-overlay">
+        <div class="control-panel">
+            <h1>Euler's Resonance Parameters</h1>
+            
+            <div class="parameter-group">
+                <label>Natural Frequency (ω₀): <span class="value-display" id="omega0-value">1.0</span></label>
+                <input type="range" id="omega0-slider" min="0.1" max="3" step="0.1" value="1">
+            </div>
+            
+            <div class="parameter-group">
+                <label>Force Amplitude (F): <span class="value-display" id="F-value">0.5</span></label>
+                <input type="range" id="F-slider" min="0" max="2" step="0.1" value="0.5">
+            </div>
+            
+            <div class="parameter-group">
+                <label>Force Frequency (ω): <span class="value-display" id="omega-value">1.5</span></label>
+                <input type="range" id="omega-slider" min="0.1" max="3" step="0.1" value="1.5">
+            </div>
+            
+            <div class="parameter-group">
+                <label>Damping (γ): <span class="value-display" id="gamma-value">0.1</span></label>
+                <input type="range" id="gamma-slider" min="0" max="0.5" step="0.01" value="0.1">
+            </div>
+        </div>
+        
+        <div class="equation-display">
+            <h1>Euler's Equation</h1>
+            <div id="equation">
+                $$ \frac{d^2x}{dt^2} + 2\gamma\frac{dx}{dt} + \omega_0^2 x = F \cos(\omega t) $$
+            </div>
+            <div id="solution" style="margin-top: 15px; font-style: italic;">
+                Solution: <span id="solution-text">Calculating...</span>
+            </div>
+        </div>
+        
+        <div class="mode-buttons">
+            <button id="simple-mode" class="active">Simple Harmonic</button>
+            <button id="forced-mode">Forced Oscillation</button>
+            <button id="resonance-mode">Resonance Peak</button>
+            <button id="history-mode">Historical View</button>
+        </div>
+        
+        <div class="view-toggle">
+            <button id="phase-view" class="active">Phase Space</button>
+            <button id="time-view">Time Domain</button>
+            <button id="freq-view">Frequency Domain</button>
+            <button id="3d-view">3D Surface</button>
+        </div>
+        
+        <div class="legend">
+            <strong>Legend:</strong><br>
+            <span style="color: #8b4513;">●</span> Position vs Velocity<br>
+            <span style="color: #2a1810;">●</span> Force Vector<br>
+            <span style="color: #d4af37;">●</span> Resonance Peak
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let oscillator, forceArrow, trajectory;
+        let params = {
+            omega0: 1.0,
+            F: 0.5,
+            omega: 1.5,
+            gamma: 0.1
+        };
+        
+        let currentMode = 'simple';
+        let currentView = 'phase';
+        let time = 0;
+        let trajectoryPoints = [];
+        const MAX_POINTS = 1000;
+        
+        // Initialize Three.js
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf5f1e8);
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(5, 5, 5);
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            directionalLight.position.set(5, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Grid
+            const gridHelper = new THREE.GridHelper(10, 10, 0x8b4513, 0xd4c5b9);
+            scene.add(gridHelper);
+            
+            // Axes
+            const axesHelper = new THREE.AxesHelper(3);
+            scene.add(axesHelper);
+            
+            // Create oscillator visualization
+            createOscillator();
+            
+            // Create trajectory line
+            createTrajectory();
+            
+            // Event listeners
+            setupEventListeners();
+            
+            // Start animation
+            animate();
+        }
+        
+        function createOscillator() {
+            // Oscillator sphere
+            const geometry = new THREE.SphereGeometry(0.2, 32, 32);
+            const material = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
+            oscillator = new THREE.Mesh(geometry, material);
+            oscillator.position.set(1, 0, 0);
+            scene.add(oscillator);
+            
+            // Force arrow
+            const arrowGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8);
+            const arrowMaterial = new THREE.MeshPhongMaterial({ color: 0x2a1810 });
+            forceArrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+            forceArrow.position.set(0, 0, 0);
+            forceArrow.rotation.z = Math.PI / 2;
+            scene.add(forceArrow);
+        }
+        
+        function createTrajectory() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(MAX_POINTS * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const material = new THREE.LineBasicMaterial({
+                color: 0x8b4513,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            trajectory = new THREE.Line(geometry, material);
+            scene.add(trajectory);
+        }
+        
+        function updateTrajectory(x, v) {
+            trajectoryPoints.push(new THREE.Vector3(x, v, 0));
+            
+            if (trajectoryPoints.length > MAX_POINTS) {
+                trajectoryPoints.shift();
+            }
+            
+            const positions = trajectory.geometry.attributes.position.array;
+            
+            for (let i = 0; i < trajectoryPoints.length; i++) {
+                positions[i * 3] = trajectoryPoints[i].x;
+                positions[i * 3 + 1] = trajectoryPoints[i].y;
+                positions[i * 3 + 2] = trajectoryPoints[i].z;
+            }
+            
+            trajectory.geometry.setDrawRange(0, trajectoryPoints.length);
+            trajectory.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        function eulerSolution(t) {
+            const { omega0, F, omega, gamma } = params;
+            
+            if (currentMode === 'simple') {
+                // Simple harmonic motion
+                return Math.cos(omega0 * t);
+            } else {
+                // Forced oscillation
+                const denominator = Math.sqrt(Math.pow(omega0 * omega0 - omega * omega, 2) + 4 * gamma * gamma * omega * omega);
+                const phase = Math.atan2(2 * gamma * omega, omega0 * omega0 - omega * omega);
+                return (F / denominator) * Math.cos(omega * t - phase);
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            time += 0.02;
+            
+            // Update oscillator position
+            const x = eulerSolution(time);
+            const v = -params.omega0 * Math.sin(params.omega0 * time);
+            
+            oscillator.position.x = x * 2;
+            oscillator.position.y = v * 0.5;
+            
+            // Update force arrow
+            const force = params.F * Math.cos(params.omega * time);
+            forceArrow.scale.x = Math.abs(force) * 2;
+            forceArrow.material.color.setHSL(0.1, 1, 0.5 + 0.5 * Math.abs(force));
+            
+            // Update trajectory
+            updateTrajectory(x * 2, v * 0.5);
+            
+            // Update equation display
+            updateEquation();
+            
+            renderer.render(scene, camera);
+        }
+        
+        function setupEventListeners() {
+            // Parameter sliders
+            document.getElementById('omega0-slider').addEventListener('input', (e) => {
+                params.omega0 = parseFloat(e.target.value);
+                document.getElementById('omega0-value').textContent = params.omega0.toFixed(1);
+                trajectoryPoints = [];
+            });
+            
+            document.getElementById('F-slider').addEventListener('input', (e) => {
+                params.F = parseFloat(e.target.value);
+                document.getElementById('F-value').textContent = params.F.toFixed(1);
+                trajectoryPoints = [];
+            });
+            
+            document.getElementById('omega-slider').addEventListener('input', (e) => {
+                params.omega = parseFloat(e.target.value);
+                document.getElementById('omega-value').textContent = params.omega.toFixed(1);
+                trajectoryPoints = [];
+            });
+            
+            document.getElementById('gamma-slider').addEventListener('input', (e) => {
+                params.gamma = parseFloat(e.target.value);
+                document.getElementById('gamma-value').textContent = params.gamma.toFixed(2);
+                trajectoryPoints = [];
+            });
+            
+            // Mode buttons
+            document.getElementById('simple-mode').addEventListener('click', () => setMode('simple'));
+            document.getElementById('forced-mode').addEventListener('click', () => setMode('forced'));
+            document.getElementById('resonance-mode').addEventListener('click', () => setMode('resonance'));
+            document.getElementById('history-mode').addEventListener('click', () => setMode('history'));
+            
+            // View buttons
+            document.getElementById('phase-view').addEventListener('click', () => setView('phase'));
+            document.getElementById('time-view').addEventListener('click', () => setView('time'));
+            document.getElementById('freq-view').addEventListener('click', () => setView('freq'));
+            document.getElementById('3d-view').addEventListener('click', () => setView('3d'));
+            
+            // Window resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+        
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-buttons button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`${mode}-mode`).classList.add('active');
+            
+            trajectoryPoints = [];
+            time = 0;
+        }
+        
+        function setView(view) {
+            currentView = view;
+            document.querySelectorAll('.view-toggle button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`${view}-view`).classList.add('active');
+            
+            // Adjust camera based on view
+            switch(view) {
+                case 'phase':
+                    camera.position.set(5, 5, 5);
+                    break;
+                case 'time':
+                    camera.position.set(0, 0, 8);
+                    break;
+                case 'freq':
+                    camera.position.set(8, 0, 0);
+                    break;
+                case '3d':
+                    camera.position.set(7, 7, 7);
+                    break;
+            }
+            camera.lookAt(0, 0, 0);
+        }
+        
+        function updateEquation() {
+            const { omega0, F, omega, gamma } = params;
+            const x = eulerSolution(time);
+            const v = -params.omega0 * Math.sin(params.omega0 * time);
+            
+            let solutionText = '';
+            if (currentMode === 'simple') {
+                solutionText = `x(t) = cos(${omega0.toFixed(1)}t)`;
+            } else {
+                const denominator = Math.sqrt(Math.pow(omega0 * omega0 - omega * omega, 2) + 4 * gamma * gamma * omega * omega);
+                const phase = Math.atan2(2 * gamma * omega, omega0 * omega0 - omega * omega);
+                solutionText = `x(t) = ${(F / denominator).toFixed(2)} cos(${omega.toFixed(1)}t - ${phase.toFixed(2)})`;
+            }
+            
+            document.getElementById('solution-text').textContent = solutionText;
+        }
+        
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

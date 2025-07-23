@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Field Sculptor (Desktop)</title>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --panel-bg: #1a1a1a;
+            --text-color: #e0e0e0;
+            --primary-color: #00aaff;
+            --primary-glow: #00aaff80;
+            --handle-color: #444;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg-color);
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-color);
+        }
+        #canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        /* --- Control Panel --- */
+        #control-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: var(--panel-bg);
+            border: 1px solid var(--handle-color);
+            border-radius: 8px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 40px);
+        }
+        .panel-header {
+            padding: 8px 12px;
+            background: #222;
+            cursor: move;
+            border-bottom: 1px solid var(--handle-color);
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-header h2 { font-size: 16px; }
+        .panel-toggle { cursor: pointer; font-weight: bold; }
+        .panel-content { padding: 12px; overflow-y: auto; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .control-group h3 { font-size: 14px; margin-bottom: 8px; color: var(--primary-color); }
+        label { display: block; margin-bottom: 8px; font-size: 12px; }
+        input[type="range"] { width: 100%; }
+        select, button {
+            width: 100%;
+            padding: 5px;
+            background: #333;
+            border: 1px solid #555;
+            color: var(--text-color);
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+
+        /* --- Layers --- */
+        #layer-list { list-style: none; margin-bottom: 10px; }
+        .layer-item {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            margin-bottom: 5px;
+            background: #282828;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .layer-item.active { border-color: var(--primary-color); }
+        .layer-color { width: 15px; height: 15px; border-radius: 50%; margin-right: 10px; }
+        .layer-name { flex-grow: 1; }
+        .layer-mute { margin-left: 10px; }
+
+        /* --- Sequencer --- */
+        #sequencer {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            padding: 10px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(16, 35px);
+            gap: 5px;
+            z-index: 5;
+        }
+        .seq-step {
+            width: 35px; height: 35px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+        }
+        .seq-step.active { background: var(--primary-color); }
+        .seq-step.playing { box-shadow: 0 0 15px var(--primary-glow); transform: scale(1.1); }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="control-panel">
+        <div class="panel-header"><h2>Morphic Sculptor</h2><span class="panel-toggle">-</span></div>
+        <div class="panel-content">
+            <div class="control-group">
+                <h3>Layers</h3>
+                <ul id="layer-list"></ul>
+                <button id="add-layer">Add Layer</button>
+                <button id="remove-layer">Remove Layer</button>
+            </div>
+
+            <div id="layer-controls" style="display: none;">
+                <div class="control-group">
+                    <h3>Visuals</h3>
+                    <label>Color: <input type="color" id="layer-color"></label>
+                    <label>Intensity: <input type="range" id="layer-intensity" min="0" max="1" step="0.01"></label>
+                    <label>Flow: <input type="range" id="layer-flow" min="0" max="2" step="0.01"></label>
+                    <label>Bloom: <input type="range" id="layer-bloom" min="0" max="2" step="0.01"></label>
+                </div>
+
+                <div class="control-group">
+                    <h3>Audio</h3>
+                    <label>Oscillator: <select id="osc-type"><option>sine</option><option>square</option><option>sawtooth</option><option>triangle</option></select></label>
+                    <label>Base Frequency: <input type="range" id="osc-freq" min="55" max="1760" step="1"></label>
+                    <label>Filter Freq: <input type="range" id="filter-freq" min="100" max="10000" step="10"></label>
+                    <label>Filter Q: <input type="range" id="filter-q" min="0.1" max="20" step="0.1"></label>
+                </div>
+            </div>
+
+             <div class="control-group">
+                <h3>Sequencer</h3>
+                <label>BPM: <input type="range" id="bpm-slider" min="30" max="240" step="1" value="120"></label>
+                <label>Assign Row to Layer: <select id="seq-row-assign"></select></label>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="sequencer"></div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+        "addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+      }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'addons/controls/OrbitControls.js';
+
+        class Layer {
+    constructor(audioContext, scene) {
+        this.id = 'layer_' + Date.now() + Math.random();
+        this.audioContext = audioContext;
+        this.scene = scene;
+        this.name = `Layer ${MorphicSculptor.layerCounter++}`;
+        this.isMuted = false;
+
+        this.visuals = {
+            color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+            intensity: 0.5,
+            flow: 0.5,
+            bloom: 0.5,
+        };
+
+        this.audio = {
+            oscType: 'sine',
+            baseFreq: 220,
+            filterFreq: 4000,
+            filterQ: 1,
+        };
+
+        this.setupVisuals();
+        this.setupAudio();
+    }
+
+    setupVisuals() {
+        const geometry = new THREE.PlaneGeometry(20, 20, 128, 128);
+        const material = new THREE.ShaderMaterial({
+            vertexShader: `
+                uniform float time;
+                uniform float intensity;
+                uniform float flow;
+                varying vec2 vUv;
+                varying float vDistortion;
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    float wave = sin(length(pos.xy) * 8.0 - time * 2.0 * flow) * 0.1 * intensity;
+                    float morphic = sin(pos.x * 4.0 + time * flow) * cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.4;
+                    pos.z += wave + morphic;
+                    vDistortion = abs(wave + morphic);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float bloom;
+                uniform vec3 color;
+                varying vec2 vUv;
+                varying float vDistortion;
+                void main() {
+                    vec2 center = vUv - 0.5;
+                    float dist = length(center);
+                    float brightness = bloom * (0.2 + vDistortion * 2.0);
+                    vec3 finalColor = color * brightness;
+                    float alpha = (0.8 - dist * 0.5 + vDistortion) * smoothstep(1.5, 0.0, dist);
+                    gl_FragColor = vec4(finalColor, alpha);
+                }
+            `,
+            uniforms: {
+                time: { value: 0 },
+                intensity: { value: this.visuals.intensity },
+                flow: { value: this.visuals.flow },
+                bloom: { value: this.visuals.bloom },
+                color: { value: this.visuals.color },
+            },
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        });
+
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.scene.add(this.mesh);
+    }
+
+    setupAudio() {
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = 0;
+        this.filterNode = this.audioContext.createBiquadFilter();
+        this.filterNode.connect(this.gainNode);
+        this.gainNode.connect(this.audioContext.destination);
+    }
+
+    trigger(time) {
+        if (this.isMuted) return;
+        const osc = this.audioContext.createOscillator();
+        osc.type = this.audio.oscType;
+        osc.frequency.setValueAtTime(this.audio.baseFreq, time);
+        osc.connect(this.filterNode);
+        osc.start(time);
+        osc.stop(time + 0.2);
+
+        this.gainNode.gain.cancelScheduledValues(time);
+        this.gainNode.gain.setValueAtTime(0.3, time);
+        this.gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+    }
+
+    update() {
+        this.mesh.material.uniforms.intensity.value = this.visuals.intensity;
+        this.mesh.material.uniforms.flow.value = this.visuals.flow;
+        this.mesh.material.uniforms.bloom.value = this.visuals.bloom;
+        this.mesh.material.uniforms.color.value = this.visuals.color;
+        this.mesh.material.uniforms.time.value = performance.now() / 1000;
+
+        this.filterNode.frequency.value = this.audio.filterFreq;
+        this.filterNode.Q.value = this.audio.filterQ;
+    }
+
+    dispose() {
+        this.scene.remove(this.mesh);
+        this.mesh.geometry.dispose();
+        this.mesh.material.dispose();
+    }
+}
+
+class MorphicSculptor {
+    static layerCounter = 1;
+
+    constructor() {
+        this.layers = [];
+        this.activeLayer = null;
+        this.setupThreeJS();
+        this.setupAudio();
+        this.setupUI();
+        this.setupSequencer();
+        this.animate();
+
+        const startAudio = () => {
+            this.audioContext.resume();
+            document.body.removeEventListener('click', startAudio);
+        };
+        document.body.addEventListener('click', startAudio);
+    }
+
+    setupThreeJS() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.z = 10;
+        this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    setupAudio() {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    setupUI() {
+        this.ui = {
+            panel: document.getElementById('control-panel'),
+            content: document.querySelector('.panel-content'),
+            toggle: document.querySelector('.panel-toggle'),
+            layerList: document.getElementById('layer-list'),
+            addLayerBtn: document.getElementById('add-layer'),
+            removeLayerBtn: document.getElementById('remove-layer'),
+            layerControls: document.getElementById('layer-controls'),
+            // ... add all other controls here
+            color: document.getElementById('layer-color'),
+            intensity: document.getElementById('layer-intensity'),
+            flow: document.getElementById('layer-flow'),
+            bloom: document.getElementById('layer-bloom'),
+            oscType: document.getElementById('osc-type'),
+            oscFreq: document.getElementById('osc-freq'),
+            filterFreq: document.getElementById('filter-freq'),
+            filterQ: document.getElementById('filter-q'),
+        };
+
+        this.makePanelDraggable();
+        this.ui.toggle.addEventListener('click', () => this.ui.content.style.display = this.ui.content.style.display === 'none' ? '' : 'none');
+        this.ui.addLayerBtn.addEventListener('click', () => this.addLayer());
+        this.ui.removeLayerBtn.addEventListener('click', () => this.removeLayer());
+        
+        // Add listeners for layer property controls
+        Object.keys(this.ui).forEach(key => {
+            const el = this.ui[key];
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+                el.addEventListener('input', () => this.updateActiveLayerFromUI());
+            }
+        });
+    }
+    
+    updateActiveLayerFromUI() {
+        if (!this.activeLayer) return;
+        const viz = this.activeLayer.visuals;
+        const aud = this.activeLayer.audio;
+
+        viz.color.set(this.ui.color.value);
+        viz.intensity = +this.ui.intensity.value;
+        viz.flow = +this.ui.flow.value;
+        viz.bloom = +this.ui.bloom.value;
+
+        aud.oscType = this.ui.oscType.value;
+        aud.baseFreq = +this.ui.oscFreq.value;
+        aud.filterFreq = +this.ui.filterFreq.value;
+        aud.filterQ = +this.ui.filterQ.value;
+        
+        this.updateLayerList(); // to update color swatch
+    }
+
+    makePanelDraggable() {
+        const header = document.querySelector('.panel-header');
+        let isDragging = false, offsetX, offsetY;
+        header.addEventListener('mousedown', e => {
+            isDragging = true;
+            offsetX = e.clientX - this.ui.panel.offsetLeft;
+            offsetY = e.clientY - this.ui.panel.offsetTop;
+        });
+        document.addEventListener('mousemove', e => {
+            if (isDragging) {
+                this.ui.panel.style.left = `${e.clientX - offsetX}px`;
+                this.ui.panel.style.top = `${e.clientY - offsetY}px`;
+            }
+        });
+        document.addEventListener('mouseup', () => isDragging = false);
+    }
+
+    addLayer() {
+        const layer = new Layer(this.audioContext, this.scene);
+        this.layers.push(layer);
+        this.selectLayer(layer);
+        this.updateLayerList();
+        this.updateSeqRowAssignment();
+    }
+
+    removeLayer() {
+        if (!this.activeLayer) return;
+        this.activeLayer.dispose();
+        this.layers = this.layers.filter(l => l.id !== this.activeLayer.id);
+        this.selectLayer(this.layers[0] || null);
+        this.updateLayerList();
+        this.updateSeqRowAssignment();
+    }
+
+    selectLayer(layer) {
+        this.activeLayer = layer;
+        this.ui.layerControls.style.display = layer ? '' : 'none';
+        if (layer) {
+            // Update UI from layer state
+            this.ui.color.value = '#' + layer.visuals.color.getHexString();
+            this.ui.intensity.value = layer.visuals.intensity;
+            this.ui.flow.value = layer.visuals.flow;
+            this.ui.bloom.value = layer.visuals.bloom;
+            this.ui.oscType.value = layer.audio.oscType;
+            this.ui.oscFreq.value = layer.audio.baseFreq;
+            this.ui.filterFreq.value = layer.audio.filterFreq;
+            this.ui.filterQ.value = layer.audio.filterQ;
+        }
+        this.updateLayerList();
+    }
+
+    updateLayerList() {
+        this.ui.layerList.innerHTML = '';
+        this.layers.forEach(layer => {
+            const item = document.createElement('li');
+            item.className = 'layer-item';
+            if (this.activeLayer && layer.id === this.activeLayer.id) item.classList.add('active');
+            item.innerHTML = `
+                <div class="layer-color" style="background-color: #${layer.visuals.color.getHexString()}"></div>
+                <span class="layer-name">${layer.name}</span>
+                <button class="layer-mute">${layer.isMuted ? 'U' : 'M'}</button>
+            `;
+            item.addEventListener('click', () => this.selectLayer(layer));
+            item.querySelector('.layer-mute').addEventListener('click', (e) => {
+                e.stopPropagation();
+                layer.isMuted = !layer.isMuted;
+                this.updateLayerList();
+            });
+            this.ui.layerList.appendChild(item);
+        });
+    }
+    
+    setupSequencer() {
+        this.sequencer = {
+            bpm: 120,
+            currentStep: 0,
+            nextStepTime: 0.0,
+            grid: Array(4).fill(0).map(() => Array(16).fill(false)),
+            rowToLayer: {},
+            uiContainer: document.getElementById('sequencer'),
+            bpmSlider: document.getElementById('bpm-slider'),
+            rowAssignSelect: document.getElementById('seq-row-assign')
+        };
+        
+        this.sequencer.bpmSlider.addEventListener('input', e => this.sequencer.bpm = +e.target.value);
+
+        // Create sequencer grid UI
+        for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 16; col++) {
+                const step = document.createElement('div');
+                step.className = 'seq-step';
+                step.dataset.row = row;
+                step.dataset.col = col;
+                step.addEventListener('click', () => {
+                    this.sequencer.grid[row][col] = !this.sequencer.grid[row][col];
+                    step.classList.toggle('active');
+                });
+                this.sequencer.uiContainer.appendChild(step);
+            }
+        }
+
+        this.sequencer.rowAssignSelect.addEventListener('change', e => {
+            const [row, layerId] = e.target.value.split(':');
+            this.sequencer.rowToLayer[row] = layerId;
+        });
+        
+        this.tick();
+    }
+
+    updateSeqRowAssignment() {
+        const select = this.sequencer.rowAssignSelect;
+        select.innerHTML = '';
+        for (let i=0; i<4; i++) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = `Row ${i + 1}`;
+            this.layers.forEach(layer => {
+                const option = document.createElement('option');
+                option.value = `${i}:${layer.id}`;
+                option.textContent = layer.name;
+                if(this.sequencer.rowToLayer[i] === layer.id) option.selected = true;
+                optgroup.appendChild(option);
+            });
+            const noneOption = document.createElement('option');
+            noneOption.value = `${i}:none`;
+            noneOption.textContent = 'None';
+            if(!this.sequencer.rowToLayer[i] || this.sequencer.rowToLayer[i] === 'none') noneOption.selected = true;
+            optgroup.appendChild(noneOption);
+            select.appendChild(optgroup);
+        }
+    }
+
+    tick() {
+        const currentTime = this.audioContext.currentTime;
+        const secondsPerStep = 60.0 / this.sequencer.bpm / 4; // 16th notes
+
+        while (this.sequencer.nextStepTime < currentTime + 0.1) {
+            // Trigger layers assigned to this step
+            for(let row=0; row<4; row++) {
+                if(this.sequencer.grid[row][this.sequencer.currentStep]) {
+                    const layerId = this.sequencer.rowToLayer[row];
+                    const layer = this.layers.find(l => l.id === layerId);
+                    if(layer) {
+                        layer.trigger(this.sequencer.nextStepTime);
+                    }
+                }
+            }
+            this.sequencer.currentStep = (this.sequencer.currentStep + 1) % 16;
+            this.sequencer.nextStepTime += secondsPerStep;
+        }
+        
+        setTimeout(() => this.tick(), 25);
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.layers.forEach(layer => layer.update());
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        
+        // Update sequencer playing step UI
+        const playingStep = Math.floor(((this.audioContext.currentTime * (this.sequencer.bpm / 60) * 4)) % 16);
+        document.querySelectorAll('.seq-step.playing').forEach(el => el.classList.remove('playing'));
+        document.querySelectorAll(`.seq-step[data-col="${playingStep}"]`).forEach(el => el.classList.add('playing'));
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const sculptor = new MorphicSculptor();
+    // Add a default layer to start with
+    sculptor.addLayer();
+});
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Rosa’s Resonance Commons – Fortified</title>
+<style>
+    :root{
+        --bg:#111;
+        --text:#eee;
+        --accent:#0f6;
+        --alert:#f33;
+        --mediator:#5af;
+    }
+    body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text);overflow:hidden}
+    #canvas{position:absolute;top:0;left:0;width:100vw;height:100vh}
+    #ui{position:absolute;top:10px;right:10px;width:300px;background:rgba(0,0,0,.7);padding:10px;border-radius:6px;font-size:13px;max-height:95vh;overflow-y:auto}
+    #ui h3{margin:6px 0;font-weight:400;color:var(--accent)}
+    #ui button{width:100%;margin:2px 0;padding:4px;background:#222;border:1px solid #444;color:var(--text);border-radius:3px;cursor:pointer}
+    #ui button:hover{background:#333}
+    #journal{max-height:260px;overflow-y:auto;font-size:11px;line-height:1.3;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+    <h3>Controls</h3>
+    <button id="addAgent">Add Agent</button>
+    <button id="addMed">Add Mediator</button>
+    <button id="addAlien">Add Alienation Source</button>
+    <button id="step">Step (Paused)</button>
+    <label><input type="checkbox" id="pause">Pause</label>
+
+    <h3>Insights</h3>
+    <div id="journal"></div>
+</div>
+
+<script>
+/* ---------- UTIL ---------- */
+const rand=(a,b)=>Math.random()*(b-a)+a;
+const clamp=(v,mn,mx)=>Math.max(mn,Math.min(mx,v));
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+
+/* ---------- CONSTANTS ---------- */
+const TICK=16, PROX=120, AUTH=0.7, EFF=0.5, BREAK=10;
+
+/* ---------- ENTITY ---------- */
+class Entity {
+    constructor(type='agent'){
+        this.type=type;
+        this.x=rand(50,innerWidth-50);
+        this.y=rand(50,innerHeight-50);
+        this.vx=rand(-0.5,0.5);
+        this.vy=rand(-0.5,0.5);
+        this.r=12;
+
+        /* Internal States */
+        this.resonance=rand(-0.3,0.3);        // A
+        this.recognition=rand(0.3,0.7);       // R
+        this.efficacy=rand(0.3,0.7);          // E
+        this.identity=rand(0.4,0.9);          // I
+        this.alienationResistance=rand(0.4,0.8); // AR
+
+        /* Traits */
+        this.traits=new Set(['openness']);
+        if(type==='agent' && Math.random()<.4) this.traits.add('transformative');
+
+        /* Memory */
+        this.memory={}; // {id:{last,ctr}}
+        this.forced=0;  // frames of forced resonance
+    }
+
+    record(other,evt,val){
+        const m=this.memory[other.id]||{last:0,ctr:0};
+        m.last=val;m.ctr++;
+        this.memory[other.id]=m;
+    }
+
+    step(agents,meta){
+        /* Wander */
+        this.vx*=0.95;this.vy*=0.95;
+        this.vx+=rand(-0.05,0.05);
+        this.vy+=rand(-0.05,0.05);
+        this.x=clamp(this.x+this.vx,0,innerWidth);
+        this.y=clamp(this.y+this.vy,0,innerHeight);
+
+        /* Autonomous oscillation */
+        if(this.traits.has('transformative'))
+            this.resonance=clamp(this.resonance+rand(-0.005,0.005),-1,1);
+
+        /* Structural coupling micro-boost */
+        if(this.resonance<-0.9) this.resonance=clamp(this.resonance+0.01,-1,1);
+        if(this.resonance>0.9) this.resonance=clamp(this.resonance-0.01,-1,1);
+
+        const near=agents.filter(a=>a!==this && dist(this,a)<PROX);
+
+        /* Resonance probe logic (seeks_resonance_with) */
+        near.forEach(a=>{
+            if(this.type==='agent' && a.type==='agent'){
+                const C=(this.resonance+a.resonance+this.recognition+a.recognition)/4;
+                if(C>AUTH && !this.forced && !a.forced){
+                    this.resonance=clamp(this.resonance+0.02,-1,1);
+                    this.recognition=clamp(this.recognition+0.015,0,1);
+                    this.record(a,'resonance',0.02);
+                    meta.log(`Resonance breakthrough between ${this.id.slice(-3)} & ${a.id.slice(-3)}`);
+                }
+                if(C<0.3){
+                    this.recognition=clamp(this.recognition-0.01,0,1);
+                    this.identity=clamp(this.identity-0.02,0,1);
+                }
+            }
+        });
+
+        /* Alienation force */
+        near.filter(a=>a.type==='alienation').forEach(a=>{
+            const f=-0.01*(1-dist(this,a)/PROX)*this.alienationResistance;
+            this.resonance=clamp(this.resonance+f,-1,1);
+            this.forced=60;
+            this.record(a,'alienation',f);
+        });
+
+        /* Forced decay */
+        if(this.forced>0){this.resonance*=0.95;this.forced--;}
+
+        /* Identity growth */
+        this.identity=clamp(this.identity+0.01*(this.recognition-0.5),0,1);
+
+        /* Trait evolution */
+        if(Math.random()<0.002 && this.recognition>0.8)
+            this.traits.add('courage');
+    }
+}
+
+/* ---------- SIMULATION ---------- */
+class Sim {
+    constructor(){
+        this.agents=[];
+        this.paused=false;
+        this.running=true;
+        this.complexity=0;
+        this.insightLog=[];
+
+        /* Structural coupling agent (invisible) */
+        this.agents.push(new Entity('structural_coupling'));
+
+        /* Starter agents */
+        for(let i=0;i<5;i++) this.agents.push(new Entity('agent'));
+    }
+    add(type){
+        this.agents.push(new Entity(type));
+    }
+    step(){
+        if(this.paused) return;
+        this.agents.forEach(a=>a.step(this.agents,this));
+        this.metacognition();
+    }
+    metacognition(){
+        /* Compute complexity score (relational density + cycles) */
+        let density=0,cycles=0;
+        this.agents.filter(a=>a.type==='agent').forEach((a,i)=>{
+            this.agents.filter(b=>b.type==='agent' && b!==a).forEach(b=>{
+                const C=(a.resonance+b.resonance+a.recognition+b.recognition)/4;
+                if(C>0.7) density++;
+            });
+        });
+        this.complexity=density;
+        if(this.complexity>BREAK && !this.insightLog.includes('breakthrough')){
+            this.log("Philosophical breakthrough: emergent dialectical synthesis.");
+            this.insightLog.push('breakthrough');
+        }
+    }
+    log(msg){
+        const j=document.getElementById('journal');
+        j.textContent+=`[${Date.now()%10000}] ${msg}\n`;
+        j.scrollTop=j.scrollHeight;
+    }
+}
+
+/* ---------- RENDER ---------- */
+class Render {
+    constructor(sim){
+        this.sim=sim;
+        this.c=document.getElementById('canvas');
+        this.ctx=this.c.getContext('2d');
+        this.resize();
+        window.addEventListener('resize',()=>this.resize());
+    }
+    resize(){
+        this.c.width=innerWidth;
+        this.c.height=innerHeight;
+    }
+    draw(){
+        const ctx=this.ctx;
+        ctx.clearRect(0,0,innerWidth,innerHeight);
+
+        /* Resonance field glow */
+        ctx.globalCompositeOperation='screen';
+        this.sim.agents.forEach(a=>{
+            if(a.type==='structural_coupling') return;
+            const g=ctx.createRadialGradient(a.x,a.y,0,a.x,a.y,a.r*4);
+            const hue=a.resonance>0?120:0;
+            g.addColorStop(0,`hsla(${hue},100%,50%,${Math.abs(a.resonance)*0.4})`);
+            g.addColorStop(1,'hsla(0,0%,0%,0)');
+            ctx.fillStyle=g;
+            ctx.beginPath();ctx.arc(a.x,a.y,a.r*4,0,Math.PI*2);ctx.fill();
+        });
+        ctx.globalCompositeOperation='source-over';
+
+        /* Agents */
+        this.sim.agents.forEach(a=>{
+            if(a.type==='structural_coupling') return;
+            ctx.beginPath();
+            ctx.arc(a.x,a.y,a.r,0,Math.PI*2);
+            const hue=a.resonance>0?120:0;
+            ctx.fillStyle=`hsl(${hue},100%,${50+a.resonance*20}%)`;
+            ctx.fill();
+            ctx.strokeStyle=a.forced?'#f33':'#fff';
+            ctx.lineWidth=1;ctx.stroke();
+
+            /* Trait label */
+            ctx.fillStyle='#fff';
+            ctx.font='9px monospace';
+            ctx.fillText([...a.traits].slice(-1),a.x+a.r+2,a.y);
+        });
+    }
+}
+
+/* ---------- BOOTSTRAP ---------- */
+const sim=new Sim();
+const render=new Render(sim);
+function loop(){
+    sim.step();
+    render.draw();
+    if(sim.running) requestAnimationFrame(loop);
+}
+loop();
+
+/* UI wiring */
+document.getElementById('addAgent').onclick=()=>sim.add('agent');
+document.getElementById('addMed').onclick=()=>sim.add('mediator');
+document.getElementById('addAlien').onclick=()=>sim.add('alienation');
+document.getElementById('pause').onchange=e=>sim.paused=e.target.checked;
+document.getElementById('step').onclick=()=>{sim.paused=true;sim.step();render.draw();};
+</script>
+</body>
+</html>

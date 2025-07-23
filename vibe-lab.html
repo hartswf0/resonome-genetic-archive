@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conceptual Waveform Framework - Philosophical Commons</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .header {
+            text-align: center;
+            padding: 2rem;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+            border-bottom: 1px solid #333;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #00ff88, #00aaff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .panel h3 {
+            color: #00ff88;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .entity-selector {
+            margin-bottom: 1rem;
+        }
+
+        select, button {
+            width: 100%;
+            padding: 0.5rem;
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+
+        button {
+            background: #00ff88;
+            color: #0a0a0a;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 0.5rem;
+        }
+
+        button:hover {
+            background: #00cc6a;
+            transform: translateY(-1px);
+        }
+
+        .traits-list {
+            display: grid;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .trait-item {
+            padding: 0.5rem;
+            background: #2a2a2a;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .trait-item:hover {
+            background: #3a3a3a;
+            transform: translateX(5px);
+        }
+
+        .trait-item.active {
+            background: #00aaff;
+            color: #0a0a0a;
+        }
+
+        .canvas-container {
+            position: relative;
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #waveCanvas {
+            width: 100%;
+            height: 400px;
+            display: block;
+        }
+
+        .controls {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .control-btn {
+            padding: 0.5rem 1rem;
+            background: rgba(0, 255, 136, 0.2);
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .control-btn:hover {
+            background: rgba(0, 255, 136, 0.4);
+        }
+
+        .spectral-display {
+            margin-top: 1rem;
+            height: 150px;
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .harmonic-bar {
+            position: absolute;
+            bottom: 0;
+            width: 20px;
+            background: linear-gradient(to top, #00ff88, #00aaff);
+            transition: all 0.3s;
+        }
+
+        .info-panel {
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .info-item {
+            margin-bottom: 0.5rem;
+            padding: 0.5rem;
+            background: #2a2a2a;
+            border-radius: 4px;
+        }
+
+        .info-label {
+            color: #00aaff;
+            font-weight: bold;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Conceptual Waveform Framework</h1>
+        <p>Philosophical Commons - Vibrational Ontology Laboratory</p>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h3>Entity Configuration</h3>
+            <div class="entity-selector">
+                <select id="entityType">
+                    <option value="system">System</option>
+                    <option value="character">Character</option>
+                    <option value="object">Object</option>
+                </select>
+            </div>
+            
+            <h4>Active Traits</h4>
+            <div class="traits-list">
+                <div class="trait-item" data-trait="transformative">Transformative</div>
+                <div class="trait-item" data-trait="uncontrollable">Uncontrollable</div>
+                <div class="trait-item" data-trait="affective">Affective</div>
+                <div class="trait-item" data-trait="dialogical">Dialogical</div>
+                <div class="trait-item" data-trait="autopoietic">Autopoietic</div>
+                <div class="trait-item" data-trait="self-determining">Self-determining</div>
+                <div class="trait-item" data-trait="disconnecting">Disconnecting</div>
+            </div>
+
+            <button onclick="resetEntity()">Reset Entity</button>
+        </div>
+
+        <div class="panel">
+            <h3>Waveform Visualization</h3>
+            <div class="canvas-container">
+                <canvas id="waveCanvas"></canvas>
+                <div class="controls">
+                    <button class="control-btn" onclick="togglePlayback()">⏯️</button>
+                    <button class="control-btn" onclick="clearCanvas()">🗑️</button>
+                </div>
+            </div>
+            
+            <h4>Spectral Analysis</h4>
+            <div class="spectral-display" id="spectralDisplay"></div>
+        </div>
+
+        <div class="panel">
+            <h3>Current State</h3>
+            <div class="info-panel">
+                <div class="info-item">
+                    <span class="info-label">Frequency:</span>
+                    <span id="frequency">440.00 Hz</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Amplitude:</span>
+                    <span id="amplitude">0.50</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Phase:</span>
+                    <span id="phase">0.00 rad</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Timbre Profile:</span>
+                    <span id="timbre">Base waveform</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Harmonics:</span>
+                    <span id="harmonics">None active</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('waveCanvas');
+        const ctx = canvas.getContext('2d');
+        const spectralDisplay = document.getElementById('spectralDisplay');
+        
+        let isPlaying = false;
+        let animationId;
+        let time = 0;
+        let entities = [];
+        let currentEntity = null;
+
+        // Trait definitions
+        const traits = {
+            transformative: {
+                name: 'Transformative',
+                harmonic: (t) => Math.sin(t * 2) * 0.1 * t,
+                effect: 'frequency'
+            },
+            uncontrollable: {
+                name: 'Uncontrollable',
+                harmonic: (t) => (Math.random() - 0.5) * 0.3,
+                effect: 'phase'
+            },
+            affective: {
+                name: 'Affective',
+                harmonic: (t) => Math.sin(t * 0.5) * 0.2,
+                effect: 'amplitude'
+            },
+            dialogical: {
+                name: 'Dialogical',
+                harmonic: (t) => Math.sin(t * 1.5) * 0.15 * Math.sin(t * 0.1),
+                effect: 'timbre'
+            },
+            autopoietic: {
+                name: 'Autopoietic',
+                harmonic: (t) => Math.sin(t) * 0.1 * Math.sin(t * 0.05),
+                effect: 'feedback'
+            },
+            'self-determining': {
+                name: 'Self-determining',
+                harmonic: (t) => Math.cos(t * 3) * 0.08,
+                effect: 'phase-lock'
+            },
+            disconnecting: {
+                name: 'Disconnecting',
+                harmonic: (t) => Math.max(0, Math.sin(t * 4)) * 0.1,
+                effect: 'damping'
+            }
+        };
+
+        // Entity types
+        const entityTypes = {
+            system: {
+                baseFreq: 220,
+                baseAmp: 0.8,
+                basePhase: 0,
+                timbre: 'sawtooth',
+                color: '#00ff88'
+            },
+            character: {
+                baseFreq: 440,
+                baseAmp: 0.5,
+                basePhase: Math.PI / 4,
+                timbre: 'sine',
+                color: '#00aaff'
+            },
+            object: {
+                baseFreq: 880,
+                baseAmp: 0.3,
+                basePhase: Math.PI / 2,
+                timbre: 'sine',
+                color: '#ff00aa'
+            }
+        };
+
+        class Entity {
+            constructor(type, activeTraits = []) {
+                this.type = type;
+                this.activeTraits = activeTraits;
+                this.config = entityTypes[type];
+                this.frequency = this.config.baseFreq;
+                this.amplitude = this.config.baseAmp;
+                this.phase = this.config.basePhase;
+                this.time = 0;
+            }
+
+            update(dt) {
+                this.time += dt;
+                
+                // Apply trait effects
+                this.activeTraits.forEach(traitKey => {
+                    const trait = traits[traitKey];
+                    if (trait) {
+                        switch (trait.effect) {
+                            case 'frequency':
+                                this.frequency += trait.harmonic(this.time) * 10;
+                                break;
+                            case 'phase':
+                                this.phase += trait.harmonic(this.time) * 0.1;
+                                break;
+                            case 'amplitude':
+                                this.amplitude = Math.max(0.1, Math.min(1, 
+                                    this.amplitude + trait.harmonic(this.time) * 0.05));
+                                break;
+                            case 'feedback':
+                                this.amplitude *= (1 + trait.harmonic(this.time) * 0.02);
+                                break;
+                        }
+                    }
+                });
+
+                // Self-regulation for self-determining
+                if (this.activeTraits.includes('self-determining')) {
+                    if (Math.abs(this.phase) > Math.PI) {
+                        this.phase *= 0.95;
+                    }
+                }
+            }
+
+            getWaveform(t) {
+                let wave = 0;
+                
+                // Base waveform
+                switch (this.config.timbre) {
+                    case 'sawtooth':
+                        wave = 2 * (t * this.frequency / 44100 - Math.floor(t * this.frequency / 44100 + 0.5));
+                        break;
+                    case 'sine':
+                    default:
+                        wave = Math.sin(2 * Math.PI * this.frequency * t / 44100 + this.phase);
+                        break;
+                }
+
+                // Add harmonics
+                this.activeTraits.forEach(traitKey => {
+                    const trait = traits[traitKey];
+                    if (trait) {
+                        wave += trait.harmonic(t / 44100);
+                    }
+                });
+
+                return wave * this.amplitude;
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+        }
+
+        function drawEntity() {
+            if (!currentEntity) return;
+
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = currentEntity.config.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const samples = 1000;
+            const step = canvas.width / samples;
+            
+            for (let i = 0; i < samples; i++) {
+                const t = time + i * 0.1;
+                const x = i * step;
+                const y = canvas.height / 2 + currentEntity.getWaveform(t) * 100;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            
+            ctx.stroke();
+        }
+
+        function updateSpectralDisplay() {
+            if (!currentEntity) return;
+
+            spectralDisplay.innerHTML = '';
+            const activeTraits = currentEntity.activeTraits;
+            
+            activeTraits.forEach((trait, index) => {
+                const bar = document.createElement('div');
+                bar.className = 'harmonic-bar';
+                bar.style.left = `${index * 30 + 10}px`;
+                bar.style.height = `${Math.random() * 100 + 50}px`;
+                bar.style.opacity = 0.5 + Math.random() * 0.5;
+                spectralDisplay.appendChild(bar);
+            });
+        }
+
+        function updateInfo() {
+            if (!currentEntity) return;
+
+            document.getElementById('frequency').textContent = 
+                currentEntity.frequency.toFixed(2) + ' Hz';
+            document.getElementById('amplitude').textContent = 
+                currentEntity.amplitude.toFixed(2);
+            document.getElementById('phase').textContent = 
+                currentEntity.phase.toFixed(2) + ' rad';
+            document.getElementById('timbre').textContent = 
+                currentEntity.config.timbre;
+            document.getElementById('harmonics').textContent = 
+                currentEntity.activeTraits.join(', ') || 'None active';
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            currentEntity.update(0.016);
+            drawEntity();
+            updateSpectralDisplay();
+            updateInfo();
+            
+            time += 0.1;
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function togglePlayback() {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                animate();
+            } else {
+                cancelAnimationFrame(animationId);
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function resetEntity() {
+            const type = document.getElementById('entityType').value;
+            const activeTraits = Array.from(document.querySelectorAll('.trait-item.active'))
+                .map(el => el.dataset.trait);
+            
+            currentEntity = new Entity(type, activeTraits);
+            time = 0;
+            updateInfo();
+            updateSpectralDisplay();
+        }
+
+        // Event listeners
+        document.querySelectorAll('.trait-item').forEach(item => {
+            item.addEventListener('click', () => {
+                item.classList.toggle('active');
+                resetEntity();
+            });
+        });
+
+        document.getElementById('entityType').addEventListener('change', resetEntity);
+
+        // Initialize
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        resetEntity();
+        isPlaying = true;
+        animate();
+    </script>
+</body>
+</html>

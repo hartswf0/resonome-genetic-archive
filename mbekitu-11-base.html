@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living Morphic Field Resonance Portal</title>
+    <style>
+        /* General Resets */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none; /* Hide default cursor */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh */
+            font-family: 'Courier New', monospace;
+            color: rgba(0, 255, 255, 0.8); /* Default text color */
+        }
+        
+        /* Canvas */
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        /* Start Button */
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 18px 40px;
+            font-family: 'Courier New', monospace;
+            font-size: 20px;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #0ff;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 100;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            text-shadow: 0 0 5px #0ff;
+            text-transform: uppercase;
+        }
+
+        #start-button:hover {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 30px #0ff;
+        }
+
+        #start-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.8); /* Shrink on hide */
+        }
+        
+        /* General UI Control Styling (for fade-in/out) */
+        .ui-control {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none; /* Initially non-interactive */
+            backdrop-filter: blur(5px);
+            border-radius: 10px;
+        }
+        
+        .ui-control.visible {
+            opacity: 1;
+            pointer-events: auto; /* Interactive when visible */
+        }
+
+        /* BPM Control */
+        #bpm-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            padding: 8px 15px;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,255,255,0.3);
+            border-radius: 5px;
+            z-index: 5;
+            user-select: none;
+            box-shadow: 0 0 10px rgba(0,255,255,0.2);
+        }
+        
+        #bpm-control .bpm-btn {
+            background: rgba(0,255,255,0.1);
+            border: 1px solid rgba(0,255,255,0.3);
+            color: #0ff;
+            width: 28px;
+            height: 28px;
+            border-radius: 3px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #bpm-control .bpm-btn:hover {
+            background: rgba(0,255,255,0.2);
+            border-color: #0ff;
+            box-shadow: 0 0 8px #0ff;
+        }
+        #bpm-control #bpm-display {
+            font-size: 20px;
+            font-weight: bold;
+            margin: 0 10px;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        /* Layer Control Panel */
+        #layer-control-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            z-index: 10;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        .layer-icon {
+            width: 50px;
+            height: 50px;
+            background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.7);
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            box-shadow: 0 0 5px rgba(255,255,255,0.1);
+        }
+
+        .layer-icon:hover {
+            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+            border-color: rgba(255,255,255,0.4);
+            color: rgba(255,255,255,0.9);
+            box-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        .layer-icon.playing-active { /* Layer is active for playback */
+            background: radial-gradient(circle, rgba(0,255,255,0.3) 0%, transparent 70%);
+            border-color: #0ff;
+            box-shadow: 0 0 15px #0ff;
+            color: #0ff;
+        }
+
+        .layer-icon.currently-selected { /* Layer is selected for editing */
+            border-color: #fff;
+            box-shadow: 0 0 20px #fff;
+            transform: scale(1.1);
+        }
+        
+        /* Node visualization helpers (for canvas nodes) */
+        .node-indicator {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            pointer-events: none; /* Allows clicks to pass through */
+            transition: all 0.2s ease, transform 0.1s ease-out;
+            z-index: 3;
+            opacity: 0.6;
+        }
+        
+        .node-indicator.active-on-selected-layer { /* Node is enabled in currently selected layer */
+            background: radial-gradient(circle, #0ff 0%, transparent 70%);
+            box-shadow: 0 0 18px #0ff;
+            transform: scale(1.6);
+            opacity: 1;
+        }
+        
+        .node-indicator.inactive-on-selected-layer {
+            background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.25);
+            opacity: 0.5;
+        }
+        
+        .node-indicator.playing { /* Node is playing on current step (global) */
+            animation: pulse 0.2s ease-out;
+            background: radial-gradient(circle, #fff 0%, transparent 70%);
+            box-shadow: 0 0 25px #fff;
+        }
+
+        /* Mode Toggle Button */
+        #mode-toggle-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 12px 18px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            color: rgba(0, 255, 255, 0.8);
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+            transition: all 0.2s ease;
+            user-select: none;
+            box-shadow: 0 0 10px rgba(0,255,255,0.2);
+            text-transform: uppercase;
+        }
+
+        #mode-toggle-button:hover {
+            background: rgba(0, 255, 255, 0.1);
+            border-color: rgba(0, 255, 255, 0.8);
+            box-shadow: 0 0 15px rgba(0,255,255,0.4);
+        }
+
+        #mode-toggle-button.composition-mode {
+            color: #0ff;
+            border-color: #0ff;
+            box-shadow: 0 0 10px rgba(0,255,255,0.5);
+        }
+        #mode-toggle-button.reactive-mode {
+            color: #ff0; /* Yellow for reactive */
+            border-color: #ff0;
+            box-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
+        }
+
+        /* Sequencer Grid (the "strip in the middle" now at bottom) */
+        #sequencer-grid {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(8, 45px); /* 8 steps */
+            grid-template-rows: repeat(4, 45px); /* 4 tracks */
+            gap: 4px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            padding: 10px;
+            z-index: 5;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        .seq-cell {
+            width: 45px;
+            height: 45px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: rgba(255, 255, 255, 0.3);
+            user-select: none;
+        }
+
+        .seq-cell:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Active cell styling based on row (track) */
+        .seq-cell.active[data-track="0"] { /* Voice/Node Track */
+            background: rgba(0, 255, 255, 0.6);
+            border-color: #0ff;
+            color: #000;
+            box-shadow: 0 0 8px rgba(0,255,255,0.5);
+        }
+        .seq-cell.active[data-track="1"] { /* Intensity Pulse Track */
+            background: rgba(255, 0, 150, 0.6);
+            border-color: #f09;
+            color: #fff;
+            box-shadow: 0 0 8px rgba(255,0,150,0.5);
+        }
+        .seq-cell.active[data-track="2"] { /* Resonance Sweep Track */
+            background: rgba(255, 255, 0, 0.6);
+            border-color: #ff0;
+            color: #000;
+            box-shadow: 0 0 8px rgba(255,255,0,0.5);
+        }
+        .seq-cell.active[data-track="3"] { /* Glitch Track */
+            background: rgba(150, 0, 255, 0.6);
+            border-color: #90f;
+            color: #fff;
+            box-shadow: 0 0 8px rgba(150,0,255,0.5);
+        }
+
+        /* Playing column highlight */
+        .seq-cell.playing {
+            box-shadow: 0 0 15px rgba(255,255,255,0.8);
+            transform: scale(1.05);
+            animation: pulse-seq 0.2s ease-out;
+        }
+
+        @keyframes pulse-seq {
+            0% { transform: scale(1); box-shadow: 0 0 5px rgba(255,255,255,0.8); }
+            50% { transform: scale(1.08); box-shadow: 0 0 20px rgba(255,255,255,1); }
+            100% { transform: scale(1.05); box-shadow: 0 0 15px rgba(255,255,255,0.8); }
+        }
+
+        /* Info Panel */
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 280px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 255, 0.4);
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+            color: rgba(0, 255, 255, 0.8);
+            z-index: 10;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            opacity: 0; /* Hidden by default */
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+        #instructions.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #instructions .close-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: none;
+            border: none;
+            color: #0ff;
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        #instructions p {
+            margin-bottom: 8px;
+        }
+        #instructions .key-hint {
+            color: #ff0;
+            font-weight: bold;
+        }
+
+        /* Loading Text */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-family: monospace;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* NEW: Current Layer Indicator */
+        #current-layer-indicator {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            padding: 8px 15px;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,255,255,0.3);
+            border-radius: 5px;
+            z-index: 5;
+            user-select: none;
+            box-shadow: 0 0 10px rgba(0,255,255,0.2);
+            font-size: 16px;
+            font-weight: bold;
+            color: rgba(0, 255, 255, 0.8);
+            transition: all 0.2s ease; /* For state changes */
+        }
+        #current-layer-indicator .indicator-icon {
+            font-size: 24px;
+            margin-right: 8px;
+            line-height: 1; /* Align text properly */
+        }
+
+        /* NEW: System Status Panel */
+        #system-status {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,255,255,0.3);
+            border-radius: 5px;
+            z-index: 5;
+            user-select: none;
+            box-shadow: 0 0 10px rgba(0,255,255,0.2);
+            font-size: 12px;
+            color: rgba(0, 255, 255, 0.6);
+        }
+        #system-status span {
+            color: #fff;
+        }
+
+        /* Custom Cursor */
+        #custom-cursor {
+            position: fixed;
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            transition: transform 0.1s ease-out, background-color 0.2s ease, border-color 0.2s ease;
+        }
+        #custom-cursor.interacting {
+            transform: translate(-50%, -50%) scale(1.5);
+            background-color: rgba(255,255,255,0.2);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 5px #fff; }
+            50% { transform: scale(1.8); box-shadow: 0 0 30px #fff; }
+            100% { transform: scale(1.6); box-shadow: 0 0 18px #0ff; }
+        }
+    </style>
+</head>
+<body>
+    <button id="start-button">Enter Morphic Portal</button>
+    <canvas id="canvas"></canvas>
+    
+    <!-- UI Controls -->
+    <div id="mode-toggle-button" class="ui-control">MODE</div>
+    <div id="current-layer-indicator" class="ui-control">
+        <span class="indicator-icon"></span>
+        <span class="indicator-text">Layer 1</span>
+    </div>
+    <div id="bpm-control" class="ui-control">
+        <button class="bpm-btn" id="bpm-down">-</button>
+        <span id="bpm-display">120</span>
+        <button class="bpm-btn" id="bpm-up">+</button>
+    </div>
+    <div id="layer-control-panel" class="ui-control"></div>
+    <div id="sequencer-grid" class="ui-control"></div>
+    <div id="system-status" class="ui-control">STATUS: <span id="status-text">IDLE</span></div>
+    <div id="instructions" class="ui-control">
+        <button class="close-btn">&times;</button>
+        <p><span class="key-hint">[M]</span> Toggle COMPOSITION / REACTIVE mode.</p>
+        <p><span class="key-hint">[L]</span> Show/hide Layer selection.</p>
+        <p><span class="key-hint">[G]</span> Show/hide Sequencer Grid.</p>
+        <p><span class="key-hint">[B]</span> Cycle through BPMs.</p>
+        <p><span class="key-hint">[S]</span> Save state to URL.</p>
+        <p><span class="key-hint">[H]</span> Show/hide this help panel.</p>
+    </div>
+    <div id="custom-cursor"></div>
+
+    <!-- Node Indicators will be added here by JS -->
+    <div id="node-indicator-container"></div>
+
+    <!-- Shader Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script type="x-shader/x-vertex" id="vertexShader">
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    <script type="x-shader/x-fragment" id="fragmentShader">
+        // Basic fragment shader will be added here
+        varying vec2 vUv;
+        uniform float time;
+        uniform vec3 color;
+        uniform float shape;
+        uniform float complexity;
+        uniform float resonance;
+        void main() {
+            float pattern = sin(vUv.y * complexity * 50.0 + time * resonance * 10.0) * cos(vUv.x * complexity * 50.0);
+            vec3 finalColor = color * (0.5 + 0.5 * pattern);
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    </script>
+
+    <script>
+        class MorphicFieldPortal {
+            constructor() {
+                this.layers = [];
+                this.activeLayerIndex = 0;
+                this.isPlaying = false;
+                this.uiVisible = false;
+
+                this.init();
+            }
+
+            init() {
+                this.setupDOMReferences();
+                this.setupScene();
+                this.createLayers(4);
+                this.initUI();
+                this.initAudio();
+
+                this.startButton.addEventListener('click', () => this.start());
+                window.addEventListener('keydown', (e) => this.handleKeydown(e));
+                window.addEventListener('resize', () => this.onWindowResize(), false);
+            }
+
+            setupDOMReferences() {
+                this.canvas = document.getElementById('canvas');
+                this.startButton = document.getElementById('start-button');
+                this.layerControlPanel = document.getElementById('layer-control-panel');
+                this.sequencerGrid = document.getElementById('sequencer-grid');
+                this.bpmDisplay = document.getElementById('bpm-display');
+                this.modeToggleButton = document.getElementById('mode-toggle-button');
+                this.instructionsPanel = document.getElementById('instructions');
+                this.uiControls = document.querySelectorAll('.ui-control');
+            }
+
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+                this.camera.position.z = 1;
+
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+                const geometry = new THREE.PlaneGeometry(2, 2);
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader: document.getElementById('vertexShader').textContent,
+                    fragmentShader: document.getElementById('fragmentShader').textContent,
+                    uniforms: {
+                        time: { value: 0.0 },
+                        color: { value: new THREE.Color(0.0, 1.0, 1.0) },
+                        shape: { value: 0.5 },
+                        complexity: { value: 0.5 },
+                        resonance: { value: 0.5 },
+                    }
+                });
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            createLayers(numLayers) {
+                for (let i = 0; i < numLayers; i++) {
+                    this.layers.push({
+                        color: new THREE.Color(Math.random(), Math.random(), Math.random()),
+                        shape: Math.random(),
+                        complexity: Math.random(),
+                        resonance: Math.random(),
+                        audioFrequency: 220 + (i * 110),
+                        audioGain: 0.0,
+                        isActive: i === 0, // Start with one layer active
+                    });
+                }
+            }
+
+            initUI() {
+                this.layerControlPanel.innerHTML = ''; // Clear previous icons
+                this.layers.forEach((layer, index) => {
+                    const icon = document.createElement('div');
+                    icon.className = 'layer-icon';
+                    icon.textContent = index + 1;
+                    icon.dataset.layerIndex = index;
+                    icon.addEventListener('click', () => this.selectLayer(index));
+                    this.layerControlPanel.appendChild(icon);
+                });
+                this.updateUI();
+            }
+
+            updateUI() {
+                const icons = this.layerControlPanel.querySelectorAll('.layer-icon');
+                icons.forEach((icon, index) => {
+                    icon.classList.toggle('playing-active', this.layers[index].isActive);
+                    icon.classList.toggle('currently-selected', index === this.activeLayerIndex);
+                });
+
+                if (this.isPlaying) {
+                    this.uiControls.forEach(el => el.classList.add('visible'));
+                }
+            }
+
+            selectLayer(index) {
+                this.activeLayerIndex = index;
+                this.layers.forEach((layer, i) => {
+                    layer.isActive = (i === index);
+                });
+                this.updateUI();
+            }
+
+            start() {
+                if (this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume();
+                }
+                this.isPlaying = true;
+                this.startButton.classList.add('hidden');
+                this.uiControls.forEach(el => el.classList.add('visible'));
+                this.animate();
+            }
+
+            handleKeydown(e) {
+                // Placeholder for keyboard controls
+                console.log(`Key pressed: ${e.key}`);
+            }
+
+            initAudio() {
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                this.masterGain = this.audioCtx.createGain();
+                this.masterGain.gain.value = 0.3;
+                this.masterGain.connect(this.audioCtx.destination);
+
+                this.layers.forEach(layer => {
+                    const osc = this.audioCtx.createOscillator();
+                    const gain = this.audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = layer.audioFrequency;
+                    gain.gain.value = layer.audioGain;
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start();
+                    layer.audioNodes = { osc, gain };
+                });
+            }
+
+            onWindowResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+
+                if (!this.isPlaying) return;
+
+                this.time = (this.time || 0) + 0.005;
+
+                const activeLayers = this.layers.filter(l => l.isActive);
+                const numActive = activeLayers.length;
+
+                let blendedColor = new THREE.Color(0,0,0);
+                let blendedShape = 0, blendedComplexity = 0, blendedResonance = 0;
+
+                if (numActive > 0) {
+                    activeLayers.forEach(layer => {
+                        blendedColor.add(layer.color);
+                        blendedShape += layer.shape;
+                        blendedComplexity += layer.complexity;
+                        blendedResonance += layer.resonance;
+                    });
+
+                    blendedColor.multiplyScalar(1 / numActive);
+                    blendedShape /= numActive;
+                    blendedComplexity /= numActive;
+                    blendedResonance /= numActive;
+                }
+
+                this.material.uniforms.time.value = this.time;
+                this.material.uniforms.color.value = blendedColor;
+                this.material.uniforms.shape.value = blendedShape;
+                this.material.uniforms.complexity.value = blendedComplexity;
+                this.material.uniforms.resonance.value = blendedResonance;
+
+                this.layers.forEach(layer => {
+                    if (layer.audioNodes) {
+                        const targetGain = layer.isActive ? 0.2 : 0.0;
+                        layer.audioNodes.gain.gain.linearRampToValueAtTime(targetGain, this.audioCtx.currentTime + 0.05);
+                    }
+                });
+
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        const portal = new MorphicFieldPortal();
+    </script>
+<!-- Code injected by live-server -->
+<script>
+	// <![CDATA[  <-- For SVG support
+	if ('WebSocket' in window) {
+		(function () {
+			function refreshCSS() {
+				var sheets = [].slice.call(document.getElementsByTagName("link"));
+				var head = document.getElementsByTagName("head")[0];
+				for (var i = 0; i < sheets.length; ++i) {
+					var elem = sheets[i];
+					var parent = elem.parentElement || head;
+					parent.removeChild(elem);
+					var rel = elem.rel;
+					if (elem.href && typeof rel != "string" || rel.length == 0 || rel.toLowerCase() == "stylesheet") {
+						var url = elem.href.replace(/(&|\?)_cacheOverride=\d+/, '');
+						elem.href = url + (url.indexOf('?') >= 0 ? '&' : '?') + '_cacheOverride=' + (new Date().valueOf());
+					}
+					parent.appendChild(elem);
+				}
+			}
+			var protocol = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
+			var address = protocol + window.location.host + window.location.pathname + '/ws';
+			var socket = new WebSocket(address);
+			socket.onmessage = function (msg) {
+				if (msg.data == 'reload') window.location.reload();
+				else if (msg.data == 'refreshcss') refreshCSS();
+			};
+			if (sessionStorage && !sessionStorage.getItem('IsThisFirstTime_Log_From_LiveServer')) {
+				console.log('Live reload enabled.');
+				sessionStorage.setItem('IsThisFirstTime_Log_From_LiveServer', true);
+			}
+		})();
+	}
+	else {
+		console.error('Upgrade your browser. This Browser is NOT supported WebSocket for Live-Reloading.');
+	}
+	// ]]>
+</script>
+</body>
+                        
+                        blendedReactive.complexity += layer.reactiveState.complexity * layer.influence;
+                        blendedReactive.resonance += layer.reactiveState.resonance * layer.influence;
+                        
+                        totalInfluence += layer.influence;
+                    }
+                });
+
+                // 3. Normalize
+                if (totalInfluence > 0) {
+                    blendedVisuals.shape /= totalInfluence;
+                    blendedReactive.complexity /= totalInfluence;
+                    blendedReactive.resonance /= totalInfluence;
+                    // Color does not need division if we treat it as additive, but for averaging:
+                    // blendedVisuals.color.multiplyScalar(1.0 / totalInfluence);
+                }
+
+                // 4. Update uniforms
+                this.uniforms.time.value = this.time;
+                this.uniforms.color.value = blendedVisuals.color;
+                this.uniforms.shape.value = blendedVisuals.shape;
+                this.uniforms.complexity.value = blendedReactive.complexity;
+                this.uniforms.resonance.value = blendedReactive.resonance;
+
+                // Connect blended params to audio
+                if (this.voices) {
+                    this.voices.forEach(voice => {
+                        // Resonance affects pitch modulation
+                        voice.osc.detune.setValueAtTime(blendedReactive.resonance * 500 - 250, this.audioContext.currentTime);
+                    });
+                }
+
+                if (this.isPlaying) {
+                    this.scheduleNextStep();
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        const portal = new MorphicFieldPortal();
+    </script>
+<!-- Code inject

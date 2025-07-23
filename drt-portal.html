@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deep Resonance Trance Portal</title>
+<style>
+    html,body{margin:0;height:100%;background:#000;color:#0ff;font-family:monospace;overflow:hidden}
+    #ui{position:absolute;top:10px;left:10px;z-index:9}
+    #resSlider{width:200px;cursor:pointer}
+    #labelRes{display:block;margin-bottom:4px;font-size:12px}
+    #eq{display:block;margin-top:6px;font-size:11px;opacity:.7}
+    #stats{position:absolute;bottom:10px;right:10px;font-size:11px;color:#0ff}
+</style>
+</head>
+<body>
+<div id="ui">
+    <label id="labelRes">Resonance Depth</label>
+    <input type="range" id="resSlider" min="0" max="1" step="0.001" value="0.5">
+    <span id="eq">z(x,t)=A·sin(kx−ωt)</span>
+</div>
+<div id="stats"></div>
+<canvas id="c"></canvas>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+/*  — Heuristic: Abstract & Generalize —  */
+const url=new URL(location);
+const seedVal = parseFloat(url.hash?.split('=')?.[1]) || 0.5;
+document.getElementById('resSlider').value = seedVal;
+
+/*  — Heuristic: Link Perspectives —  */
+let res = seedVal;          // shared global 0→1
+let lfoToggle = false;
+let lfoPhase = 0;
+
+/*  — Heuristic: Surface the Invisible —  */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0,0,2);
+const renderer = new THREE.WebGLRenderer({canvas:document.getElementById('c'), antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+
+/* Geometry for standing-wave plane */
+const SIZE = 128;
+const geo = new THREE.PlaneGeometry(2,2,SIZE-1,SIZE-1);
+const pos = geo.attributes.position;
+const wave = new Float32Array(pos.count);
+for(let i=0;i<pos.count;i++) wave[i]=0;
+geo.setAttribute('waveAmp', new THREE.BufferAttribute(wave,1));
+
+/* Shader material */
+const vert = `
+varying vec2 vUv;
+attribute float waveAmp;
+uniform float time;
+uniform float depth;
+void main(){
+    vUv=uv;
+    vec3 p=position;
+    p.z += waveAmp * depth * 0.3;
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
+}
+`;
+const frag = `
+precision highp float;
+varying vec2 vUv;
+uniform float time;
+uniform float depth;
+uniform vec3 fftColor;
+uniform float fftEnergy;
+void main(){
+    vec2 uv=vUv;
+    float f=0.;
+    for(int i=1;i<5;i++){
+        f+=sin(uv.x*float(i*3)+time*0.3*depth)*0.25;
+        f+=sin(uv.y*float(i*4)-time*0.2*depth)*0.25;
+    }
+    float c=0.5+0.5*sin(f*6.28318);
+    vec3 col=mix(vec3(0.0,0.1,0.5),fftColor,c);
+    col+=pow(fftEnergy,2.)*0.5;
+    gl_FragColor=vec4(col,1.);
+}
+`;
+const mat = new THREE.ShaderMaterial({
+    vertexShader:vert,
+    fragmentShader:frag,
+    uniforms:{
+        time:{value:0},
+        depth:{value:res},
+        fftColor:{value:new THREE.Color(0x00ffff)},
+        fftEnergy:{value:0}
+    }
+});
+const mesh = new THREE.Mesh(geo,mat);
+scene.add(mesh);
+
+/*  — Heuristic: Overcome Cognitive Limits —  */
+/* Web Audio setup */
+const actx = new (window.AudioContext||webkitAudioContext)();
+const analyser = actx.createAnalyser();
+analyser.fftSize = 2048;
+const fftData = new Uint8Array(analyser.frequencyBinCount);
+let carrier, mod, filt, delay, grainGain;
+
+function initAudio(){
+    if(actx.state==='suspended') actx.resume();
+    /* drone */
+    carrier = actx.createOscillator();
+    mod = actx.createOscillator();
+    const gain = actx.createGain();
+    const fmGain = actx.createGain();
+    filt = actx.createBiquadFilter();
+    delay = actx.createDelay(1);
+    grainGain = actx.createGain();
+
+    carrier.type='sine';
+    mod.type='sine';
+    filt.type='bandpass';
+
+    gain.gain.value = 0.1;
+    fmGain.gain.value = 50*res;
+
+    carrier.frequency.setValueAtTime(110 + 220*res, actx.currentTime);
+    mod.frequency.setValueAtTime(0.5 + 5*res, actx.currentTime);
+    filt.frequency.setValueAtTime(300+1000*res, actx.currentTime);
+    filt.Q.setValueAtTime(5+20*res, actx.currentTime);
+
+    delay.delayTime.setValueAtTime(0.05+0.1*res, actx.currentTime);
+    grainGain.gain.setValueAtTime(0.3*res, actx.currentTime);
+
+    mod.connect(fmGain);
+    fmGain.connect(carrier.frequency);
+    carrier.connect(filt);
+    filt.connect(delay);
+    delay.connect(grainGain);
+    grainGain.connect(gain);
+    gain.connect(analyser);
+    analyser.connect(actx.destination);
+
+    carrier.start();
+    mod.start();
+}
+
+/*  — Heuristic: Multi-Modal Thinking —  */
+/* Slider + LFO */
+const slider = document.getElementById('resSlider');
+slider.addEventListener('input',e=>{
+    res = parseFloat(e.target.value);
+    updateRes();
+});
+let mouseDown=false;
+slider.addEventListener('mousedown',()=>mouseDown=true);
+window.addEventListener('mouseup',()=>mouseDown=false);
+window.addEventListener('click',e=>{
+    if(!mouseDown){
+        lfoToggle=!lfoToggle;
+    }
+});
+
+function updateRes(){
+    if(carrier){
+        const t = actx.currentTime;
+        carrier.frequency.setTargetAtTime(110+220*res,t,0.01);
+        mod.frequency.setTargetAtTime(0.5+5*res,t,0.01);
+        filt.frequency.setTargetAtTime(300+1000*res,t,0.01);
+        filt.Q.setTargetAtTime(5+20*res,t,0.01);
+        delay.delayTime.setTargetAtTime(0.05+0.1*res,t,0.01);
+        grainGain.gain.setTargetAtTime(0.3*res,t,0.01);
+    }
+    mat.uniforms.depth.value = res;
+    document.getElementById('eq').textContent = `z(x,t)=${res.toFixed(2)}·sin(kx−ωt)`;
+    url.hash=`seed=${res.toFixed(4)}`;
+    history.replaceState(null,'',url);
+}
+
+/*  — Heuristic: Rapid What-If —  */
+function animate(t){
+    requestAnimationFrame(animate);
+
+    /* LFO */
+    if(lfoToggle){
+        lfoPhase += 0.005;
+        res = 0.5+0.5*Math.sin(lfoPhase);
+        slider.value = res;
+        updateRes();
+    }
+
+    /* FFT data */
+    analyser.getByteFrequencyData(fftData);
+    let sum=0;
+    for(let v of fftData) sum+=v;
+    const energy=sum/fftData.length/255;
+
+    /* Update shader */
+    mat.uniforms.time.value=t*0.001;
+    mat.uniforms.fftEnergy.value=energy;
+    const hue=energy*0.3+0.5;
+    mat.uniforms.fftColor.value.setHSL(hue,1,0.5);
+
+    /* Standing wave field */
+    const k = 6.28318*2*(1+res*3);
+    const omega = 1+res*5;
+    for(let i=0;i<pos.count;i++){
+        const x = pos.getX(i);
+        const amp = Math.sin(k*x - omega*t*0.001);
+        wave[i]=amp;
+    }
+    geo.attributes.waveAmp.needsUpdate=true;
+
+    /* stats */
+    const freq = carrier?carrier.frequency.value:0;
+    document.getElementById('stats').textContent =
+        `Freq:${freq.toFixed(1)}Hz Amp:${energy.toFixed(2)} Depth:${res.toFixed(3)}`;
+
+    renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+/* first user gesture */
+window.addEventListener('click',initAudio,{once:true});
+</script>
+</body>
+</html>

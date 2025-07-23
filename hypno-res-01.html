@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hypnotic Resonance Portal</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        /* === UI Binding === */
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#000;cursor:none;overflow:hidden;font-family:sans-serif}
+        canvas{display:block}
+        #knob{
+            position:absolute;
+            top:50%;left:50%;
+            width:60vmin;height:60vmin;
+            border-radius:50%;
+            transform:translate(-50%,-50%);
+            background:radial-gradient(circle at center,rgba(255,255,255,.05) 0%,transparent 60%);
+            border:1px solid rgba(255,255,255,.05);
+            touch-action:none;
+        }
+        #knob::before{
+            content:'';
+            position:absolute;
+            top:50%;left:50%;
+            width:4px;height:30%;
+            background:#fff;
+            transform:translate(-50%,-100%) rotate(var(--angle,0deg));
+            transform-origin:bottom;
+            opacity:.8;
+            border-radius:2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="knob"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+    <script>
+/* === Audio Graph === */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let analyser, gain, osc, filter, lfo;
+
+function initAudio() {
+    gain = audioCtx.createGain();
+    gain.gain.value = 0;
+    gain.connect(audioCtx.destination);
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.connect(gain);
+
+    osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 55;
+
+    filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 200;
+
+    lfo = audioCtx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.2;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 0;
+
+    osc.connect(filter);
+    filter.connect(analyser);
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    osc.start();
+    lfo.start();
+
+    return { analyser, gain, osc, filter, lfoGain };
+}
+
+/* === Shader Setup === */
+const vertexShader = `
+varying vec2 vUv;
+void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
+`;
+
+const fragmentShader = `
+uniform float uTime;
+uniform float uDepth;
+uniform sampler2D uAudio;
+varying vec2 vUv;
+
+vec3 palette(float t){
+    vec3 a=vec3(.5,.5,.5);
+    vec3 b=vec3(.5,.5,.5);
+    vec3 c=vec3(1.,1.,1.);
+    vec3 d=vec3(.3,.2,.5);
+    return a+b*cos(6.28318*(c*t+d));
+}
+
+float noise(vec2 p){
+    return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);
+}
+
+float fbm(vec2 p){
+    float v=0.;
+    float a=.5;
+    for(int i=0;i<5;i++){
+        v+=a*noise(p);
+        p*=2.;
+        a*=.5;
+    }
+    return v;
+}
+
+void main(){
+    vec2 uv=(vUv-.5)*2.;
+    float t=uTime*.1;
+    
+    // Audio feedback
+    float audio=texture2D(uAudio,vec2(.1,.5)).r;
+    
+    float d=uDepth+sin(t*.2)*.1;
+    vec2 p=uv*d*2.;
+    p+=vec2(sin(t*.3),cos(t*.2))*d;
+    
+    float n=fbm(p+sin(t)*.1);
+    float m=fbm(p*2.-t*.5);
+    
+    float r=length(uv)-.2*d;
+    float rings=sin(r*20.+t*2.)*.5+.5;
+    
+    float shape=smoothstep(.3,.0,r+n*.5)*rings;
+    shape*=1.+audio*2.;
+    
+    vec3 col=palette(shape+length(uv)*.2+t*.1);
+    col*=shape*(1.+uDepth*2.);
+    
+    // Glow
+    col+=vec3(1.)*pow(max(0.,1.-length(uv)*2.),4.)*uDepth;
+    
+    gl_FragColor=vec4(col,1.);
+}
+`;
+
+/* === Render Loop === */
+let scene, camera, renderer, material, audioData, uniforms;
+let depth = 0;
+let autoOscillate = false;
+let targetDepth = 0;
+
+function initScene() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, .1, 10);
+    camera.position.z = 1;
+
+    const audioTex = new THREE.DataTexture(new Uint8Array(512*2), 512, 1, THREE.LuminanceFormat);
+    audioTex.needsUpdate = true;
+
+    uniforms = {
+        uTime: { value: 0 },
+        uDepth: { value: 0 },
+        uAudio: { value: audioTex }
+    };
+
+    material = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader,
+        fragmentShader,
+        transparent: true
+    });
+
+    const plane = new THREE.PlaneGeometry(2,2);
+    const mesh = new THREE.Mesh(plane, material);
+    scene.add(mesh);
+
+    renderer = new THREE.WebGLRenderer({ alpha: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    audioData = new Uint8Array(analyser ? analyser.frequencyBinCount : 512);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    uniforms.uTime.value += .016;
+    
+    // Smooth interpolation
+    depth += (targetDepth - depth) * .05;
+    uniforms.uDepth.value = depth;
+
+    // Audio update
+    if (analyser) {
+        analyser.getByteFrequencyData(audioData);
+        uniforms.uAudio.value.image.data.set(audioData);
+        uniforms.uAudio.value.needsUpdate = true;
+        
+        // Map depth to audio params
+        const d = depth;
+        osc.frequency.value = 55 + d*220;
+        filter.frequency.value = 200 + d*2000;
+        filter.Q.value = 1 + d*20;
+        gain.gain.value = .2 * d;
+    }
+
+    renderer.render(scene, camera);
+}
+
+/* === UI Binding === */
+const knob = document.getElementById('knob');
+let isDragging = false;
+
+function updateKnob(x, y) {
+    const rect = knob.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    const angle = Math.atan2(y - cy, x - cx);
+    targetDepth = (angle + Math.PI) / (Math.PI*2);
+    knob.style.setProperty('--angle', angle + 'rad');
+}
+
+knob.addEventListener('pointerdown', e=>{
+    isDragging = true;
+    autoOscillate = false;
+    updateKnob(e.clientX, e.clientY);
+});
+
+addEventListener('pointermove', e=>{
+    if (isDragging) updateKnob(e.clientX, e.clientY);
+});
+
+addEventListener('pointerup', ()=>{
+    isDragging = false;
+});
+
+// Auto-oscillation
+knob.addEventListener('dblclick', ()=>{
+    autoOscillate = !autoOscillate;
+});
+
+setInterval(()=>{
+    if (autoOscillate) {
+        targetDepth = (Math.sin(Date.now()*.0005)+1)*.5;
+        const angle = targetDepth * Math.PI*2 - Math.PI;
+        knob.style.setProperty('--angle', angle + 'rad');
+    }
+}, 16);
+
+// Responsive
+addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+// Initialize
+initScene();
+initAudio();
+animate();
+
+// Start audio on first interaction
+document.addEventListener('pointerdown', ()=>{
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}, {once:true});
+    </script>
+</body>
+</html>

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resonance – Media for Thinking the Unthinkable</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;background:#111;color:#eee;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden}
+  #epochPanel{position:absolute;top:0;left:0;z-index:10;padding:.5rem}
+  .epochBtn{display:inline-block;padding:.25rem .5rem;margin:.1rem;background:#222;border:1px solid #444;border-radius:.25rem;cursor:pointer;font-size:.75rem}
+  .epochBtn.active{background:#0af;color:#000}
+  #info{position:absolute;bottom:.5rem;right:.5rem;font-size:.6rem;opacity:.4}
+  #datGui{position:absolute;top:0;right:0}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<div id="epochPanel"></div>
+<div id="info">drag / wheel to navigate | sliders in panel</div>
+<div id="datGui"></div>
+
+<!-- ---------- BUNDLED LIBRARIES ---------- -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.min.js"></script>
+
+<script>
+/*****************************************************************
+ *  UNIVERSAL UTILITIES
+ *****************************************************************/
+const gui = new dat.GUI({autoPlace:false});
+document.getElementById('datGui').appendChild(gui.domElement);
+
+function clearScene(scene) {
+  while(scene.children.length) scene.remove(scene.children[0]);
+}
+
+function addFloor(scene) {
+  const g = new THREE.PlaneGeometry(10,10); g.rotateX(-Math.PI/2);
+  const m = new THREE.MeshBasicMaterial({color:0x222222,wireframe:true});
+  scene.add(new THREE.Mesh(g,m));
+}
+
+/*****************************************************************
+ *  EPOCH DEFINITIONS
+ *  Each function returns {scene, animate, dispose} objects
+ *****************************************************************/
+const EPOCHS = {
+  hooke:     {name:"Robert Hooke (1680)",        fn: requireHooke},
+  chladni:   {name:"Ernst Chladni (1787)",       fn: requireChladni},
+  galileo:   {name:"Galileo Pendulum (1638)",    fn: requireGalileo},
+  euler:     {name:"Leonhard Euler (1739)",      fn: requireEuler},
+  young:     {name:"Thomas Young (1807)",        fn: requireYoung},
+  rosa:      {name:"Hartmut Rosa",               fn: requireRosa},
+  taylor:    {name:"Charles Taylor",             fn: requireTaylor},
+  wikan:     {name:"Unni Wikan",                 fn: requireWikan},
+  matav:     {name:"Maturana & Varela",          fn: requireMatav},
+  vonf:      {name:"Heinz von Foerster",         fn: requireVonf},
+  complex:   {name:"Complex Systems",            fn: requireComplex},
+  dream:     {name:"AI Dream Layer Ontology",    fn: requireDream}
+};
+
+/*****************************************************************
+ *  EPOCH-SPECIFIC MODULES
+ *  (Each is self-contained; they share no global state except scene/gui)
+ *****************************************************************/
+
+/* 1 — HOOKE 1680 ------------------------------------------------*/
+function requireHooke(scene, gui) {
+  const params = {freq: 440, amp: 0.8};
+  const geo = new THREE.PlaneGeometry(4,4,128,128);
+  const mat = new THREE.MeshBasicMaterial({color:0x0af, wireframe:true});
+  const plate = new THREE.Mesh(geo,mat);
+  scene.add(plate);
+
+  const sand = new THREE.Points(
+    new THREE.BufferGeometry().setFromPoints(
+      Array.from({length:5000}, () => new THREE.Vector3(
+        (Math.random()-.5)*4,
+        Math.random()*0.01,
+        (Math.random()-.5)*4
+      ))
+    ),
+    new THREE.PointsMaterial({color:0xffd700,size:.02})
+  );
+  scene.add(sand);
+
+  gui.add(params,'freq',20,2000).name("Frequency (Hz)");
+  gui.add(params,'amp',0,2).name("Amplitude");
+
+  const animate = (t) => {
+    const pos = plate.geometry.attributes.position;
+    const spos = sand.geometry.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i), y=pos.getY(i);
+      const z = params.amp*Math.sin(Math.sqrt(x*x+y*y)*2-params.freq*t*0.001);
+      pos.setZ(i,z);
+    }
+    pos.needsUpdate=true;
+    for(let i=0;i<spos.count;i++){
+      const x=spos.getX(i), y=spos.getY(i);
+      const z = Math.max(0, params.amp*Math.sin(Math.sqrt(x*x+y*y)*2-params.freq*t*0.001));
+      spos.setY(i,z+0.01);
+    }
+    spos.needsUpdate=true;
+  };
+  return {animate, dispose: () => {}};
+}
+
+/* 2 — CHLADNI 1787 --------------------------------------------*/
+function requireChladni(scene,gui){
+  const params={mode:1};
+  const geo=new THREE.PlaneGeometry(4,4,128,128);
+  const mat=new THREE.MeshBasicMaterial({color:0x0af,wireframe:true});
+  const plate=new THREE.Mesh(geo,mat); scene.add(plate);
+  gui.add(params,'mode',1,15,1).name("Chladni Mode");
+  const animate=(t)=>{
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i)/2, y=pos.getY(i)/2;
+      const z=Math.cos(x*Math.PI*params.mode)*Math.cos(y*Math.PI*params.mode)*.3;
+      pos.setZ(i,z);
+    }
+    pos.needsUpdate=true;
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 3 — GALILEO 1638 --------------------------------------------*/
+function requireGalileo(scene,gui){
+  const params={length:1,coupling:.05};
+  const rods=[];
+  for(let i=0;i<3;i++){
+    const geo=new THREE.CylinderGeometry(.02,.02,params.length,8);
+    const mat=new THREE.MeshBasicMaterial({color:0xffa500});
+    const rod=new THREE.Mesh(geo,mat);
+    rod.position.set(i*1.5-1.5,params.length/2,0);
+    rod.rotation.z=i*.1;
+    scene.add(rod); rods.push(rod);
+  }
+  gui.add(params,'length',.5,2).name("Rod Length");
+  gui.add(params,'coupling',0,.2).name("Coupling");
+
+  let phase=[];
+  rods.forEach(()=>phase.push(Math.random()*Math.PI*2));
+
+  const animate=(t)=>{
+    rods.forEach((rod,i)=>{
+      const w0=Math.sqrt(9.8/params.length);
+      const ang=Math.sin(w0*t*0.001+phase[i])*0.5;
+      rod.rotation.z=ang+(i>0?params.coupling*Math.sin(phase[i-1]-phase[i]):0);
+    });
+  };
+  return {animate, dispose:()=>{}};
+}
+
+/* 4 — EULER 1739 ----------------------------------------------*/
+function requireEuler(scene,gui){
+  const params={omega0:1,damping:.1,drive:1,omega:2};
+  const points=[];
+  const max=500;
+  for(let i=0;i<max;i++) points.push(new THREE.Vector3(i/max*4-2,0,0));
+  const geo=new THREE.BufferGeometry().setFromPoints(points);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x0f0}));
+  scene.add(line);
+  gui.add(params,'omega0',.1,5).name("ω₀");
+  gui.add(params,'damping',0,.5).name("β");
+  gui.add(params,'drive',0,2).name("F");
+  gui.add(params,'omega',.1,5).name("ω");
+  let t0=0;
+  const animate=(t)=>{
+    t0+=0.01;
+    const pos=geo.attributes.position;
+    for(let i=0;i<max;i++){
+      const t=i/max*4;
+      const x=Math.sin(params.omega*t)/(Math.pow(params.omega0,2)-Math.pow(params.omega,2));
+      pos.setY(i,x*Math.cos(t0));
+    }
+    pos.needsUpdate=true;
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 5 — YOUNG 1807 ----------------------------------------------*/
+function requireYoung(scene,gui){
+  const params={slit:.5,wave:1};
+  const geo=new THREE.PlaneGeometry(6,4,256,64);
+  const mat=new THREE.MeshBasicMaterial({color:0x0af,wireframe:true});
+  const screen=new THREE.Mesh(geo,mat); screen.position.z=-2; scene.add(screen);
+  gui.add(params,'slit',.1,2).name("Slit Separation");
+  gui.add(params,'wave',.1,2).name("Wavelength");
+
+  const animate=(t)=>{
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i);
+      const intensity=Math.pow(Math.cos(Math.PI*params.slit*x/params.wave),2);
+      pos.setZ(i,intensity*2-1);
+    }
+    pos.needsUpdate=true;
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 6 — ROSA ------------------------------------------------------*/
+function requireRosa(scene,gui){
+  const params={control:.5,openness:.5,reciprocity:.5};
+  gui.add(params,'control',0,1).name("Control");
+  gui.add(params,'openness',0,1).name("Openness");
+  gui.add(params,'reciprocity',0,1).name("Reciprocity");
+  const nodes=[];
+  for(let i=0;i<20;i++){
+    const geo=new THREE.SphereGeometry(.05,8,8);
+    const mat=new THREE.MeshBasicMaterial({color:0xffffff});
+    const node=new THREE.Mesh(geo,mat);
+    node.position.set((Math.random()-.5)*4,(Math.random()-.5)*4,(Math.random()-.5)*4);
+    scene.add(node); nodes.push(node);
+  }
+  const animate=(t)=>{
+    const res=params.openness*params.reciprocity*(1-params.control);
+    nodes.forEach(n=>{
+      n.material.color.setHSL(res,1,.5);
+      n.scale.setScalar(.5+res);
+    });
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 7 — TAYLOR ----------------------------------------------------*/
+function requireTaylor(scene,gui){
+  const params={authenticity:.5,recognition:.5};
+  gui.add(params,'authenticity',0,1).name("Authenticity");
+  gui.add(params,'recognition',0,1).name("Recognition");
+  const geo=new THREE.SphereGeometry(1,32,32);
+  const mat=new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true});
+  const sphere=new THREE.Mesh(geo,mat); scene.add(sphere);
+  const animate=(t)=>{
+    const rad=params.authenticity*params.recognition*2+1;
+    sphere.scale.setScalar(rad);
+    sphere.material.color.setHSL(params.authenticity,1,.5);
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 8 — WIKAN -----------------------------------------------------*/
+function requireWikan(scene,gui){
+  const params={empathy:.5};
+  gui.add(params,'empathy',0,1).name("Empathy");
+  const cultures=["🌍","🌏","🌎"].map((e,i)=>{
+    const geo=new THREE.SphereGeometry(.3,16,16);
+    const mat=new THREE.MeshBasicMaterial({color:0xffffff});
+    const sp=new THREE.Mesh(geo,mat);
+    sp.position.set((i-1)*2,0,0);
+    scene.add(sp);
+    return sp;
+  });
+  const animate=(t)=>{
+    cultures.forEach(sp=>{
+      sp.material.color.setHSL(params.empathy,1,.5);
+    });
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 9 — MATURANA & VARELA ---------------------------------------*/
+function requireMatav(scene,gui){
+  const params={closure:.5,environment:.5};
+  gui.add(params,'closure',0,1).name("System Closure");
+  gui.add(params,'environment',0,1).name("Environment");
+  const system=new THREE.Mesh(
+    new THREE.SphereGeometry(1,32,32),
+    new THREE.MeshBasicMaterial({color:0x0af,wireframe:true})
+  );
+  scene.add(system);
+  const animate=(t)=>{
+    system.scale.setScalar(params.closure*2+1);
+    system.material.color.setHSL(params.environment,1,.5);
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 10 — VON FOERSTER -------------------------------------------*/
+function requireVonf(scene,gui){
+  const params={recursion:1};
+  gui.add(params,'recursion',1,10,1).name("Recursion Depth");
+  const lines=[];
+  for(let i=0;i<params.recursion;i++){
+    const geo=new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-2,0,0), new THREE.Vector3(2,0,0)
+    ]);
+    const mat=new THREE.LineBasicMaterial({color:new THREE.Color().setHSL(i/params.recursion,1,.5)});
+    const line=new THREE.Line(geo,mat);
+    line.rotation.z=i*0.1;
+    scene.add(line); lines.push(line);
+  }
+  const animate=(t)=>{
+    lines.forEach((l,i)=>l.rotation.z=Math.sin(t*0.001+i)*.5+i*0.1);
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 11 — COMPLEX SYSTEMS ----------------------------------------*/
+function requireComplex(scene,gui){
+  const params={agents:30,link:1};
+  gui.add(params,'agents',10,100,1).name("Agents");
+  gui.add(params,'link',0,1).name("Link Strength");
+  const nodes=[],links=[];
+  const rebuild=()=>{
+    nodes.forEach(n=>scene.remove(n));
+    links.forEach(l=>scene.remove(l));
+    nodes.length=links.length=0;
+    for(let i=0;i<params.agents;i++){
+      const geo=new THREE.SphereGeometry(.05,8,8);
+      const mat=new THREE.MeshBasicMaterial({color:0xffffff});
+      const node=new THREE.Mesh(geo,mat);
+      node.position.set((Math.random()-.5)*4,(Math.random()-.5)*4,(Math.random()-.5)*4);
+      scene.add(node); nodes.push(node);
+    }
+  };
+  rebuild(); gui.__controllers.forEach(c=>c.onChange(rebuild));
+  const animate=(t)=>{
+    nodes.forEach(n=>{
+      n.position.x+=.01*(Math.random()-.5);
+      n.position.y+=.01*(Math.random()-.5);
+      n.position.z+=.01*(Math.random()-.5);
+    });
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/* 12 — AI DREAM LAYER -----------------------------------------*/
+function requireDream(scene,gui){
+  const params={layer:0};
+  gui.add(params,'layer',{"Psychoanalytic":0,"Market":1,"AI":2,"Collective":3}).name("Layer");
+  const geo=new THREE.SphereGeometry(1,32,32);
+  const mat=new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true});
+  const sphere=new THREE.Mesh(geo,mat); scene.add(sphere);
+  const animate=(t)=>{
+    const hue=params.layer/3;
+    sphere.material.color.setHSL(hue,1,.5);
+    sphere.rotation.y=t*0.0005;
+  };
+  return {animate,dispose:()=>{}};
+}
+
+/*****************************************************************
+ *  ENGINE INITIALIZATION
+ *****************************************************************/
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,100);
+camera.position.set(0,2,5);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+
+addFloor(scene);
+
+/*****************************************************************
+ *  EPOCH SWITCHER
+ *****************************************************************/
+let current=null, disposeCurrent=null;
+function switchEpoch(key){
+  if(disposeCurrent) disposeCurrent();
+  clearScene(scene); addFloor(scene);
+  gui.__folders={}; while(gui.__controllers.length)gui.__controllers[0].remove();
+  const res=EPOCHS[key].fn(scene,gui);
+  current=res.animate; disposeCurrent=res.dispose;
+  document.querySelectorAll('.epochBtn').forEach(b=>b.classList.toggle('active',b.dataset.key===key));
+}
+
+/* Build epoch buttons */
+Object.entries(EPOCHS).forEach(([key,val])=>{
+  const btn=document.createElement('div');
+  btn.className='epochBtn'; btn.textContent=val.name; btn.dataset.key=key;
+  btn.onclick=()=>switchEpoch(key);
+  document.getElementById('epochPanel').appendChild(btn);
+});
+
+/* Default start */
+switchEpoch('hooke');
+
+/*****************************************************************
+ *  RENDER LOOP
+ *****************************************************************/
+function animate(t){
+  requestAnimationFrame(animate);
+  controls.update();
+  if(current) current(t);
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

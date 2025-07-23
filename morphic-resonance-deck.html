@@ -1,0 +1,2209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            color: #eee;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #portal-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .canvas-container {
+            width: 50%;
+            height: 100%;
+            position: relative;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        #controls-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+
+        #controls-container.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 12px;
+            color: rgba(0, 255, 255, 0.7);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 150px;
+            height: 5px;
+            background: rgba(0, 255, 255, 0.2);
+            border-radius: 5px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #0ff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px #0ff;
+        }
+
+        #play-pause-button {
+            background: none;
+            border: 1px solid #0ff;
+            color: #0ff;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        #play-pause-button:hover {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 10px #0ff;
+        }
+
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #fff;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            z-index: 200;
+        }
+
+        #start-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <div id="table-a-container" class="canvas-container">
+            <canvas id="canvas-a"></canvas>
+        </div>
+        <div id="table-b-container" class="canvas-container">
+            <canvas id="canvas-b"></canvas>
+        </div>
+    </div>
+
+    <div id="controls-container">
+        <div class="control-group">
+            <label for="crossfader-slider">Crossfader</label>
+            <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+        <button id="play-pause-button">Play</button>
+        <div class="control-group">
+            <label for="fuzz-slider">Fuzz</label>
+            <input type="range" id="fuzz-slider" min="0" max="1" step="0.01" value="0">
+        </div>
+        <div class="control-group">
+            <label for="influence-slider">Influence</label>
+            <input type="range" id="influence-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+    </div>
+
+    <button id="start-button">Enter</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- Helper Functions ---
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; ++i) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        // --- Main Class for Decks ---
+        class MorphicField {
+            constructor(canvasId, audioContext, destination, sequencerConfig) {
+                this.canvas = document.getElementById(canvasId);
+                this.audio = {
+                    context: audioContext,
+                    masterGain: audioContext.createGain(),
+                    drone: {},
+                    sequencer: { voices: [] }
+                };
+                this.sequencer = {
+                    config: sequencerConfig,
+                    grid: Array(8).fill(0).map(() => Array(4).fill(false)),
+                    step: 0,
+                    interval: null
+                };
+                this.time = 0;
+                this.influence = 0.5; // 0: drone, 1: sequencer
+
+                this.audio.masterGain.connect(destination);
+
+                this.init();
+            }
+
+            init() {
+                this.createField();
+                this.createDroneVoice();
+                this.createSequencerVoices();
+                this.initSequencer();
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            createField() {
+                this.scene = new THREE.Scene();
+                const container = this.canvas.parentElement;
+                this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+                this.camera.position.z = 5;
+
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+
+                const geometry = new THREE.IcosahedronGeometry(2, 5);
+                const material = new THREE.ShaderMaterial({
+                    vertexShader: this.sequencer.config.vertexShader,
+                    fragmentShader: this.sequencer.config.fragmentShader,
+                    uniforms: {
+                        time: { value: 0.0 },
+                        dronePulse: { value: 0.0 },
+                        seqPulse: { value: 0.0 },
+                        influence: { value: 0.5 }
+                    },
+                    wireframe: true
+                });
+
+                this.field = new THREE.Mesh(geometry, material);
+                this.scene.add(this.field);
+            }
+
+            createDroneVoice() {
+                const drone = this.audio.drone;
+                drone.osc = this.audio.context.createOscillator();
+                drone.lfo = this.audio.context.createOscillator();
+                drone.gain = this.audio.context.createGain();
+                drone.lfoGain = this.audio.context.createGain();
+
+                drone.osc.type = 'sine';
+                drone.osc.frequency.setValueAtTime(110, this.audio.context.currentTime);
+                drone.lfo.type = 'sine';
+                drone.lfo.frequency.setValueAtTime(0.2, this.audio.context.currentTime);
+                drone.lfoGain.gain.setValueAtTime(5, this.audio.context.currentTime);
+
+                drone.lfo.connect(drone.lfoGain);
+                drone.lfoGain.connect(drone.osc.frequency);
+                drone.osc.connect(drone.gain);
+                drone.gain.connect(this.audio.masterGain);
+
+                drone.osc.start();
+                drone.lfo.start();
+            }
+
+            initSequencer() {
+                this.canvas.addEventListener('click', (event) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = (event.clientX - rect.left) / rect.width;
+                    const y = (event.clientY - rect.top) / rect.height;
+                    this.toggleNode(x, y);
+                });
+            }
+
+            createSequencerVoices() {
+                const scales = [[261.63, 293.66, 329.63, 392.00], [277.18, 311.13, 349.23, 415.30]];
+                const scale = scales[Math.floor(Math.random() * scales.length)];
+                for (let i = 0; i < 4; i++) {
+                    const osc = this.audio.context.createOscillator();
+                    const gain = this.audio.context.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(scale[i], this.audio.context.currentTime);
+                    gain.gain.setValueAtTime(0, this.audio.context.currentTime);
+                    osc.connect(gain);
+                    gain.connect(this.audio.masterGain);
+                    osc.start();
+                    this.audio.sequencer.voices.push({ osc, gain });
+                }
+            }
+
+            startSequencer() {
+                if (this.sequencer.interval) return;
+                const bpm = 120;
+                const stepDuration = 60 / bpm / 2; // 8th notes
+                this.sequencer.interval = setInterval(() => this.scheduler(), stepDuration * 1000);
+            }
+
+            scheduler() {
+                for (let i = 0; i < 4; i++) {
+                    if (this.sequencer.grid[this.sequencer.step][i]) {
+                        const voice = this.audio.sequencer.voices[i];
+                        voice.gain.cancelScheduledValues(this.audio.context.currentTime);
+                        voice.gain.setValueAtTime(0.5, this.audio.context.currentTime);
+                        voice.gain.linearRampToValueAtTime(0, this.audio.context.currentTime + 0.1);
+                    }
+                }
+                this.sequencer.step = (this.sequencer.step + 1) % 8;
+            }
+
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8);
+                const layer = Math.floor((1 - y) * 4);
+                if (step >= 0 && step < 8 && layer >= 0 && layer < 4) {
+                    this.sequencer.grid[step][layer] = !this.sequencer.grid[step][layer];
+                }
+            }
+
+            update() {
+                this.time += 0.01;
+                this.field.rotation.x += 0.001;
+                this.field.rotation.y += 0.002;
+
+                const droneLevel = this.audio.drone.gain.gain.value;
+                const seqLevel = this.audio.sequencer.voices.reduce((sum, v) => sum + v.gain.gain.value, 0) / 4;
+
+                this.field.material.uniforms.time.value = this.time;
+                this.field.material.uniforms.dronePulse.value = droneLevel;
+                this.field.material.uniforms.seqPulse.value = seqLevel;
+                this.field.material.uniforms.influence.value = this.influence;
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                const container = this.canvas.parentElement;
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.camera.aspect = container.clientWidth / container.clientHeight;
+                this.camera.updateProjectionMatrix();
+            }
+        }
+
+        let audioContext, leftDeck, rightDeck, crossfaderGainA, crossfaderGainB;
+
+        const startButton = document.getElementById('start-button');
+        const controlsContainer = document.getElementById('controls-container');
+        const playPauseButton = document.getElementById('play-pause-button');
+        const crossfaderSlider = document.getElementById('crossfader-slider');
+        const fuzzSlider = document.getElementById('fuzz-slider');
+        const influenceSlider = document.getElementById('influence-slider');
+
+        startButton.addEventListener('click', () => {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                const masterOut = audioContext.createGain();
+                const fuzz = audioContext.createWaveShaper();
+                fuzz.curve = makeDistortionCurve(0);
+                masterOut.connect(fuzz).connect(audioContext.destination);
+
+                crossfaderGainA = audioContext.createGain();
+                crossfaderGainB = audioContext.createGain();
+                crossfaderGainA.connect(masterOut);
+                crossfaderGainB.connect(masterOut);
+                setCrossfader(0.5);
+
+                const sequencerConfig = {
+                    vertexShader: `
+                        uniform float time, dronePulse, seqPulse, influence;
+                        varying float vPulse;
+                        void main() {
+                            vPulse = mix(dronePulse, seqPulse, influence);
+                            vec3 pos = position;
+                            pos.x += sin(time + position.y * 10.0) * 0.1 * vPulse;
+                            pos.y += cos(time + position.x * 10.0) * 0.1 * vPulse;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float time;
+                        varying float vPulse;
+                        vec3 hsv2rgb(vec3 c) {
+                            vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                        }
+                        void main() {
+                            float hue = mod(time * 0.1, 1.0);
+                            vec3 color = hsv2rgb(vec3(hue, 0.8, 0.9));
+                            gl_FragColor = vec4(color * (0.5 + vPulse * 0.5), 1.0);
+                        }
+                    `
+                };
+
+                leftDeck = new MorphicField('canvas-a', audioContext, crossfaderGainA, sequencerConfig);
+                rightDeck = new MorphicField('canvas-b', audioContext, crossfaderGainB, sequencerConfig);
+
+                animate();
+            }
+            startButton.style.display = 'none';
+            controlsContainer.classList.add('visible');
+        });
+
+        playPauseButton.addEventListener('click', () => {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            if (leftDeck.sequencer.interval) {
+                clearInterval(leftDeck.sequencer.interval);
+                leftDeck.sequencer.interval = null;
+                clearInterval(rightDeck.sequencer.interval);
+                rightDeck.sequencer.interval = null;
+                playPauseButton.textContent = 'Play';
+            } else {
+                leftDeck.startSequencer();
+                rightDeck.startSequencer();
+                playPauseButton.textContent = 'Pause';
+            }
+        });
+            crossfaderGainA.gain.setValueAtTime(gainA, audioContext.currentTime);
+            crossfaderGainB.gain.setValueAtTime(gainB, audioContext.currentTime);
+        }
+
+        function onWindowResize() {
+            if (leftDeck) leftDeck.resize();
+            if (rightDeck) rightDeck.resize();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (leftDeck) leftDeck.update();
+            if (rightDeck) rightDeck.update();
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                const canvasA = document.getElementById('canvas-a');
+                const canvasB = document.getElementById('canvas-b');
+
+                leftDeck = new MorphicField(canvasA, audioContext, false); // Drone
+                rightDeck = new MorphicField(canvasB, audioContext, true); // Sequencer
+
+                // Create crossfader gains
+                crossfaderGainA = audioContext.createGain();
+                crossfaderGainB = audioContext.createGain();
+
+                // Connect deck outputs to their respective crossfader gains
+                leftDeck.outputNode.connect(crossfaderGainA);
+                rightDeck.outputNode.connect(crossfaderGainB);
+
+                // Connect crossfader gains to the destination
+                crossfaderGainA.connect(audioContext.destination);
+                crossfaderGainB.connect(audioContext.destination);
+                
+                // Set initial crossfader value
+                setCrossfader(0.5);
+
+                // Wire up controls
+                playPauseButton.addEventListener('click', () => {
+                    rightDeck.isPlaying = !rightDeck.isPlaying;
+                    playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+                });
+
+                crossfaderSlider.addEventListener('input', (e) => setCrossfader(e.target.value));
+                
+                fuzzSlider.addEventListener('input', (e) => {
+                    rightDeck.fuzzGain.gain.setValueAtTime(parseFloat(e.target.value), audioContext.currentTime);
+                });
+
+                influenceSlider.addEventListener('input', (e) => {
+                    rightDeck.influence = parseFloat(e.target.value);
+                });
+
+                // Add mouse listeners to sequencer canvas
+                canvasB.addEventListener('mousedown', (e) => {
+                    const rect = canvasB.getBoundingClientRect();
+                    const x = (e.clientX - rect.left) / rect.width;
+                    const y = (e.clientY - rect.top) / rect.height;
+                    rightDeck.toggleNode(x, y);
+                });
+
+                // Hide start button, show controls
+                startButton.classList.add('hidden');
+                controlsContainer.classList.remove('hidden');
+
+                window.addEventListener('resize', onWindowResize);
+                
+                animate();
+            }, { once: true });
+        }
+
+        function setCrossfader(value) {
+            const gainA = Math.cos(value * 0.5 * Math.PI);
+            const gainB = Math.cos((1.0 - value) * 0.5 * Math.PI);
+            crossfaderGainA.gain.setValueAtTime(gainA, audioContext.currentTime);
+            crossfaderGainB.gain.setValueAtTime(gainB, audioContext.currentTime);
+        }
+
+        function onWindowResize() {
+            if (leftDeck) leftDeck.resize();
+            if (rightDeck) rightDeck.resize();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (leftDeck) leftDeck.update();
+            if (rightDeck) rightDeck.update();
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                if (!leftDeck) {
+                    const masterGain = audioContext.createGain();
+                    masterGain.connect(audioContext.destination);
+
+                    leftDeck = new MorphicField(document.getElementById('canvas-a'), audioContext, false);
+                    rightDeck = new MorphicField(document.getElementById('canvas-b'), audioContext, true);
+
+                    leftDeck.outputNode.connect(masterGain);
+                    rightDeck.outputNode.connect(masterGain);
+
+                    // Connect drone output to sequencer's fuzz input
+                    leftDeck.outputNode.connect(rightDeck.fuzzGain);
+                }
+
+                startButton.classList.add('hidden');
+                controlsContainer.classList.remove('hidden');
+                playPauseButton.classList.remove('hidden');
+                rightDeck.isPlaying = true; // Start playing by default
+                playPauseButton.textContent = '❚❚';
+
+                function animate() {
+                    requestAnimationFrame(animate);
+                    if (leftDeck) leftDeck.update();
+                    if (rightDeck) rightDeck.update();
+                }
+                animate();
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            playPauseButton.addEventListener('click', () => {
+                if (!rightDeck) return;
+                rightDeck.isPlaying = !rightDeck.isPlaying;
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+            });
+
+            crossfaderSlider.addEventListener('input', (e) => {
+                if (!leftDeck || !rightDeck) return;
+                const value = parseFloat(e.target.value);
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+            });
+
+            fuzzSlider.addEventListener('input', (e) => {
+                if (rightDeck && rightDeck.fuzzGain) {
+                    rightDeck.fuzzGain.gain.linearRampToValueAtTime(parseFloat(e.target.value), audioContext.currentTime + 0.01);
+                }
+            });
+
+            influenceSlider.addEventListener('input', (e) => {
+                if (rightDeck) {
+                    rightDeck.influence = parseFloat(e.target.value);
+                }
+            });
+
+            // Handle canvas clicks for sequencer
+            document.getElementById('canvas-b').addEventListener('click', (event) => {
+                if (rightDeck) {
+                    const rect = event.target.getBoundingClientRect();
+                    const x = (event.clientX - rect.left) / rect.width;
+                    const y = (event.clientY - rect.top) / rect.height;
+                    rightDeck.toggleNode(x, y);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (leftDeck) leftDeck.resize();
+                if (rightDeck) rightDeck.resize();
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0ff;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #portal-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+        .canvas-container {
+            position: relative;
+            width: 50%;
+            height: 100%;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            font-size: 18px;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #0ff;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+        #start-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .ui-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+            z-index: 50;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        label {
+            font-size: 14px;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 150px;
+            height: 5px;
+            background: #0ff;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #fff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .vertical-slider-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+            z-index: 50;
+        }
+        input[type="range"].vertical {
+            writing-mode: bt-lr; 
+            -webkit-appearance: slider-vertical;
+            width: 8px;
+            height: 150px;
+        }
+        #play-pause-button {
+            position: fixed;
+            right: 20px;
+            top: 40%;
+            transform: translateY(-50%);
+            width: 50px;
+            height: 50px;
+            font-size: 24px;
+            color: #0ff;
+            background: rgba(0,0,0,0.5);
+            border: 2px solid #0ff;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <div id="table-a-container" class="canvas-container">
+            <canvas id="canvas-a"></canvas>
+        </div>
+        <div id="table-b-container" class="canvas-container">
+            <canvas id="canvas-b"></canvas>
+        </div>
+    </div>
+
+    <button id="start-button">Enter Morphic Field</button>
+
+    <div id="controls-container" class="hidden">
+        <div class="ui-controls">
+            <div class="control-group">
+                <label for="crossfader-slider">Crossfader</label>
+                <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+            </div>
+            <div class="control-group">
+                <label for="fuzz-slider">Fuzz</label>
+                <input type="range" id="fuzz-slider" min="0" max="1" step="0.01" value="0.1">
+            </div>
+        </div>
+
+        <div class="vertical-slider-container">
+            <label for="influence-slider">Influence</label>
+            <input type="range" id="influence-slider" class="vertical" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <button id="play-pause-button">►</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- Helper Functions ---
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; ++i) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        // --- Main Class for Decks ---
+        class MorphicField {
+            constructor(canvas, audioContext, isSequencer = false) {
+                this.canvas = canvas;
+                this.audioContext = audioContext;
+                this.isSequencer = isSequencer;
+                this.mouse = new THREE.Vector2();
+                this.isPlaying = false;
+                this.influence = 0.5;
+
+                this.init();
+            }
+
+            init() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, this.canvas.clientWidth / this.canvas.clientHeight, 0.1, 1000);
+                this.camera.position.z = 1;
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+                this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
+
+                this.outputNode = this.audioContext.createGain();
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.outputNode.connect(this.analyser);
+                this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+                this.createField();
+
+                if (this.isSequencer) {
+                    this.initSequencer();
+                } else {
+                    this.createDroneVoice();
+                }
+            }
+
+            createField() {
+                const geometry = new THREE.PlaneGeometry(2, 2);
+                const vertexShader = `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = vec4(position, 1.0);
+                    }
+                `;
+                const fragmentShader = `
+                    uniform float time;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    uniform float beatPulse;
+                    varying vec2 vUv;
+
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+
+                    void main() {
+                        float hue = ${this.isSequencer ? '0.55' : '0.1'} + vUv.x + time * 0.05;
+                        float sat = 0.5 + audioLevel * 2.0;
+                        float val = 0.1 + audioLevel * 3.0 + beatPulse * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `;
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        mouse: { value: this.mouse },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: 0 }
+                    },
+                });
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            createDroneVoice() {
+                const osc1 = this.audioContext.createOscillator();
+                const osc2 = this.audioContext.createOscillator();
+                const lfo = this.audioContext.createOscillator();
+                const lfoGain = this.audioContext.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.value = 55;
+                osc2.type = 'sawtooth';
+                osc2.frequency.value = 55.1;
+                lfo.type = 'sine';
+                lfo.frequency.value = 0.2;
+                lfoGain.gain.value = 5;
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc1.frequency);
+                lfoGain.connect(osc2.frequency);
+                osc1.connect(this.outputNode);
+                osc2.connect(this.outputNode);
+                osc1.start();
+                osc2.start();
+                lfo.start();
+            }
+
+            initSequencer() {
+                this.voices = [];
+                this.layers = Array(4).fill().map(() => ({
+                    nodeStates: Array(8).fill(false),
+                    isActive: false
+                }));
+                this.layers[0].isActive = true; // Default to first layer
+                this.fuzzGain = this.audioContext.createGain();
+                this.fuzzGain.gain.value = 0.1;
+                this.createSequencerVoices();
+                this.startSequencer();
+            }
+
+            createSequencerVoices() {
+                const distortion = this.audioContext.createWaveShaper();
+                distortion.curve = makeDistortionCurve(200);
+                this.fuzzGain.connect(distortion);
+                distortion.connect(this.outputNode);
+
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = 110 + i * 55;
+                    gain.gain.value = 0;
+                    osc.connect(gain);
+                    gain.connect(this.fuzzGain);
+                    osc.start();
+                    this.voices.push({ osc, gain });
+                }
+            }
+
+            startSequencer() {
+                this.currentStep = 0;
+                this.lastStepTime = this.audioContext.currentTime;
+                this.scheduler();
+            }
+
+            scheduler() {
+                const currentTime = this.audioContext.currentTime;
+                const nextStepTime = this.lastStepTime + 0.150; // 125ms = 120bpm 8th notes
+
+                if (currentTime + 0.1 > nextStepTime) {
+                    if (this.isPlaying) {
+                        this.scheduleStep(this.currentStep, nextStepTime);
+                        this.currentStep = (this.currentStep + 1) % 8;
+                    }
+                    this.lastStepTime = nextStepTime;
+                }
+                requestAnimationFrame(this.scheduler.bind(this));
+            }
+
+            scheduleStep(step, time) {
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.voices[step];
+                        voice.gain.gain.cancelScheduledValues(time);
+                        voice.gain.gain.setValueAtTime(0, time);
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+                    }
+                });
+                this.material.uniforms.beatPulse.value = 1.0 * this.influence;
+            }
+
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8);
+                const layerIndex = Math.floor(y * 4);
+                if (step >= 0 && step < 8 && layerIndex >= 0 && layerIndex < 4) {
+                    this.layers.forEach((layer, i) => layer.isActive = (i === layerIndex));
+                    const layer = this.layers[layerIndex];
+                    layer.nodeStates[step] = !layer.nodeStates[step];
+                }
+            }
+
+            update() {
+                this.analyser.getByteFrequencyData(this.dataArray);
+                let sum = 0;
+                for (let i = 0; i < this.analyser.frequencyBinCount; i++) {
+                    sum += this.dataArray[i];
+                }
+                const average = sum / this.analyser.frequencyBinCount;
+                this.material.uniforms.audioLevel.value = average / 128.0;
+                this.material.uniforms.time.value += 0.01;
+                if (this.material.uniforms.beatPulse.value > 0) {
+                    this.material.uniforms.beatPulse.value *= 0.95; // Decay
+                }
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                const container = this.canvas.parentElement;
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.camera.aspect = container.clientWidth / container.clientHeight;
+                this.camera.updateProjectionMatrix();
+            }
+        }
+
+        // --- Main Application Setup ---
+        let leftDeck, rightDeck, audioContext;
+
+        function init() {
+            const startButton = document.getElementById('start-button');
+            const controlsContainer = document.getElementById('controls-container');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const crossfaderSlider = document.getElementById('crossfader-slider');
+            const fuzzSlider = document.getElementById('fuzz-slider');
+            const influenceSlider = document.getElementById('influence-slider');
+
+            startButton.addEventListener('click', () => {
+                // This is the critical part: create and resume context in the same synchronous click event
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                if (!leftDeck) {
+                    const masterGain = audioContext.createGain();
+                    masterGain.connect(audioContext.destination);
+
+                    leftDeck = new MorphicField(document.getElementById('canvas-a'), audioContext, false);
+                    rightDeck = new MorphicField(document.getElementById('canvas-b'), audioContext, true);
+
+                    leftDeck.outputNode.connect(masterGain);
+                    rightDeck.outputNode.connect(masterGain);
+
+                    // Connect drone output to sequencer's fuzz input
+                    leftDeck.outputNode.connect(rightDeck.fuzzGain);
+                }
+
+                startButton.classList.add('hidden');
+                controlsContainer.classList.remove('hidden');
+                playPauseButton.classList.remove('hidden');
+                rightDeck.isPlaying = true; // Start playing by default
+                playPauseButton.textContent = '❚❚';
+
+                function animate() {
+                    requestAnimationFrame(animate);
+                    if (leftDeck) leftDeck.update();
+                    if (rightDeck) rightDeck.update();
+                }
+                animate();
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            playPauseButton.addEventListener('click', () => {
+                if (!rightDeck) return;
+                rightDeck.isPlaying = !rightDeck.isPlaying;
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+            });
+
+            crossfaderSlider.addEventListener('input', (e) => {
+                if (!leftDeck || !rightDeck) return;
+                const value = parseFloat(e.target.value);
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+            });
+
+            fuzzSlider.addEventListener('input', (e) => {
+                if (rightDeck && rightDeck.fuzzGain) {
+                    rightDeck.fuzzGain.gain.linearRampToValueAtTime(parseFloat(e.target.value), audioContext.currentTime + 0.01);
+                }
+            });
+
+            influenceSlider.addEventListener('input', (e) => {
+                if (rightDeck) {
+                    rightDeck.influence = parseFloat(e.target.value);
+                }
+            });
+
+            // Handle canvas clicks for sequencer
+            document.getElementById('canvas-b').addEventListener('click', (event) => {
+                if (rightDeck) {
+                    const rect = event.target.getBoundingClientRect();
+                    const x = (event.clientX - rect.left) / rect.width;
+                    const y = (event.clientY - rect.top) / rect.height;
+                    rightDeck.toggleNode(x, y);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (leftDeck) leftDeck.resize();
+                if (rightDeck) rightDeck.resize();
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+
+        #portal-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+        }
+        
+        .canvas-container {
+            width: 50%;
+            height: 100%;
+            position: relative;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            background: rgba(0,0,0,0.5);
+            padding: 15px 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+        }
+
+        .slider-container {
+            width: 100%;
+        }
+
+        input[type=range] {
+            width: 300px;
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 300px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 5px;
+        }
+
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        #fuzz-slider-container {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 101;
+        }
+
+        #fuzz-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 150px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            transform: rotate(-90deg) translateX(-50%);
+            transform-origin: top left;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #fuzz-label {
+            color: white;
+            font-size: 12px;
+            margin-top: 170px;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            opacity: 0.5;
+        }
+
+        #influence-slider-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 101;
+        }
+
+        #influence-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 150px;
+            height: 4px;
+            background: rgba(0, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            transform: rotate(-90deg) translateX(-50%);
+            transform-origin: top left;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #influence-label {
+            color: #0ff;
+            font-size: 12px;
+            margin-top: 170px;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            opacity: 0.5;
+        }
+
+        #play-pause-button {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 101;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+        }
+
+        #start-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <div id="table-a-container" class="canvas-container">
+            <canvas id="canvas-a"></canvas>
+        </div>
+        <div id="table-b-container" class="canvas-container">
+            <canvas id="canvas-b"></canvas>
+        </div>
+    </div>
+
+    <div id="controls" class="hidden">
+        <div class="slider-container">
+            <div class="slider-labels">
+                <span>A: Drone</span>
+                <span>B: Sequencer</span>
+            </div>
+            <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+    </div>
+
+    <div id="fuzz-slider-container" class="hidden">
+        <span id="fuzz-label">FUZZ</span>
+        <input type="range" id="fuzz-slider" min="0" max="1" step="0.01" value="0">
+    </div>
+    <div id="influence-slider-container" class="hidden">
+        <span id="influence-label">INFLUENCE</span>
+        <input type="range" id="influence-slider" min="0" max="1" step="0.01" value="1.0">
+    </div>
+
+    <button id="start-button">Enter Morphic Field</button>
+    <button id="play-pause-button" class="hidden">►</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Helper function for distortion curve
+        function makeDistortionCurve(amount) {
+            let k = typeof amount === 'number' ? amount : 50,
+                n_samples = 44100,
+                curve = new Float32Array(n_samples),
+                deg = Math.PI / 180,
+                i = 0,
+                x;
+            for ( ; i < n_samples; ++i ) {
+                x = i * 2 / n_samples - 1;
+                curve[i] = ( 3 + k ) * x * 20 * deg / ( Math.PI + k * Math.abs(x) );
+            }
+            return curve;
+        };
+
+        class MorphicField {
+            constructor(canvas, isSequencer = false) {
+                this.canvas = canvas;
+                if (!this.canvas) {
+                    console.error("MorphicField: Canvas element not found.");
+                    return;
+                }
+                this.isSequencer = isSequencer;
+
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+
+                this.audioContext = null;
+                this.outputNode = null;
+                this.fuzzGain = null; // For sequencer
+                this.analyser = null;
+                this.frequencyData = null;
+
+                this.material = null;
+                this.time = 0;
+                this.mouse = new THREE.Vector2();
+
+                // Sequencer specific
+                if (this.isSequencer) {
+                    this.layers = [];
+                    this.voices = [];
+                    this.currentStep = 0;
+                    this.bpm = 120;
+                    this.nextStepTime = 0;
+                    this.schedulerInterval = null;
+                    this.isPlaying = false; // Start paused
+                    this.influence = 1.0; // Start at full influence
+                }
+
+                this.init();
+            }
+
+            init() {
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 5;
+
+                this.createField();
+
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mouse.x = (e.clientX - rect.left) / rect.width;
+                    this.mouse.y = 1.0 - (e.clientY - rect.top) / rect.height;
+                });
+
+                if (this.isSequencer) {
+                    this.initSequencerLayers();
+                    this.canvas.addEventListener('click', (e) => {
+                        const rect = this.canvas.getBoundingClientRect();
+                        const x = (e.clientX - rect.left) / rect.width;
+                        const y = 1.0 - (e.clientY - rect.top) / rect.height;
+                        this.toggleNode(x, y);
+                    });
+                }
+            }
+
+            createAudioContext(audioContext, destination) {
+                this.audioContext = audioContext;
+                this.outputNode = this.audioContext.createGain();
+                this.outputNode.connect(destination);
+
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 128;
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                this.outputNode.connect(this.analyser);
+
+                if (this.isSequencer) {
+                    this.fuzzGain = this.audioContext.createGain();
+                    this.fuzzGain.gain.value = 0;
+                    this.createSequencerVoices();
+                    this.startSequencer();
+                } else {
+                    this.createDroneVoice();
+                }
+            }
+
+            createField() {
+                const geometry = new THREE.PlaneGeometry(10, 10, 200, 200);
+                const vertexShader = `
+                    uniform float time;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    varying vec2 vUv;
+                    varying float vDistortion;
+
+                    float perlin(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        float dist = distance(uv, mouse);
+                        float strength = smoothstep(0.5, 0.0, dist);
+                        float distortion = perlin(pos.xy + time * 0.1) * 0.5;
+                        pos.z += (strength * 0.5 + audioLevel * 2.0) * distortion;
+                        vDistortion = distortion;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform float beatPulse;
+                    varying vec2 vUv;
+                    varying float vDistortion;
+
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+
+                    void main() {
+                        float hue = ${this.isSequencer ? '0.55' : '0.1'} + vUv.x + time * 0.05;
+                        float sat = 0.5 + vDistortion * 0.5;
+                        float val = 0.1 + audioLevel * 2.0 + vDistortion * 0.5 + beatPulse * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `;
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        mouse: { value: this.mouse },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: 0 }
+                    },
+                });
+
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            createDroneVoice() {
+                const osc1 = this.audioContext.createOscillator();
+                const osc2 = this.audioContext.createOscillator();
+                const lfo = this.audioContext.createOscillator();
+                const lfoGain = this.audioContext.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.value = 55;
+                osc2.type = 'sawtooth';
+                osc2.frequency.value = 55.1;
+                lfo.type = 'sine';
+                lfo.frequency.value = 0.2;
+                lfoGain.gain.value = 5;
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc1.frequency);
+                lfoGain.connect(osc2.frequency);
+                osc1.connect(this.outputNode);
+                osc2.connect(this.outputNode);
+                osc1.start();
+                osc2.start();
+                lfo.start();
+            }
+
+            initSequencerLayers() {
+                for (let i = 0; i < 4; i++) {
+                    this.layers.push({ isActive: i === 0, nodeStates: Array(8).fill(false) });
+                }
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+
+            createSequencerVoices() {
+                const distortion = this.audioContext.createWaveShaper();
+                distortion.curve = makeDistortionCurve(200);
+                this.fuzzGain.connect(distortion);
+                distortion.connect(this.outputNode);
+
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = 110 + i * 55;
+                    gain.gain.value = 0;
+                    osc.connect(gain);
+                    gain.connect(this.outputNode);
+                    osc.start();
+                    this.voices.push({ osc, gain });
+                }
+            }
+
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                this.isPlaying = false; // Start paused
+                this.schedulerInterval = setInterval(() => this.scheduler(), 50);
+            }
+
+            scheduler() {
+                if (!this.isPlaying) return;
+
+                const lookahead = 0.1;
+                while (this.nextStepTime < this.audioContext.currentTime + lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    const secondsPerStep = 60 / this.bpm / 2; // 8th notes
+                    this.nextStepTime += secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            scheduleStep(step, time) {
+                this.material.uniforms.beatPulse.value = 1.0 * this.influence;
+
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.voices[step];
+                        voice.gain.gain.cancelScheduledValues(time);
+                        voice.gain.gain.setValueAtTime(0, time);
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+                    }
+                });
+            }
+
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8);
+                const layerIndex = Math.floor(y * 4);
+                if (step >= 0 && step < 8 && layerIndex >= 0 && layerIndex < 4) {
+                    this.layers.forEach((layer, i) => layer.isActive = (i === layerIndex));
+                    const state = this.layers[layerIndex].nodeStates[step];
+                    this.layers[layerIndex].nodeStates[step] = !state;
+                }
+            }
+
+            update() {
+                this.time += 0.01;
+                this.material.uniforms.time.value = this.time;
+
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    let sum = this.frequencyData.reduce((a, b) => a + b, 0);
+                    let avg = sum / this.frequencyData.length;
+                    this.material.uniforms.audioLevel.value = avg / 255;
+                }
+
+                if (this.isSequencer && this.material.uniforms.beatPulse.value > 0) {
+                    this.material.uniforms.beatPulse.value *= 0.9;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.camera.aspect = rect.width / rect.height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(rect.width, rect.height);
+            }
+        }
+
+        // --- Main Application Setup ---
+        let leftDeck, rightDeck, audioContext;
+
+        function init() {
+            const startButton = document.getElementById('start-button');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const crossfaderSlider = document.getElementById('crossfader-slider');
+            const fuzzSlider = document.getElementById('fuzz-slider');
+            const influenceSlider = document.getElementById('influence-slider');
+
+            const controls = document.getElementById('controls');
+            const fuzzSliderContainer = document.getElementById('fuzz-slider-container');
+            const influenceSliderContainer = document.getElementById('influence-slider-container');
+
+            startButton.addEventListener('click', async () => {
+                if (audioContext) return;
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume();
+
+                const masterOut = audioContext.createGain();
+                masterOut.connect(audioContext.destination);
+
+                leftDeck = new MorphicField(document.getElementById('canvas-a'));
+                rightDeck = new MorphicField(document.getElementById('canvas-b'), true);
+
+                leftDeck.createAudioContext(audioContext, masterOut);
+                rightDeck.createAudioContext(audioContext, masterOut);
+
+                // Connect drone output to sequencer's fuzz gain input
+                if (leftDeck.outputNode && rightDeck.fuzzGain) {
+                    leftDeck.outputNode.connect(rightDeck.fuzzGain);
+                }
+
+                // Set initial crossfader state
+                const initialCrossfaderValue = parseFloat(crossfaderSlider.value);
+                const gainL = Math.cos(initialCrossfaderValue * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - initialCrossfaderValue) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+
+                // UI visibility
+                startButton.classList.add('hidden');
+                controls.classList.remove('hidden');
+                fuzzSliderContainer.classList.remove('hidden');
+                influenceSliderContainer.classList.remove('hidden');
+                playPauseButton.classList.remove('hidden');
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+
+                function animate() {
+                    requestAnimationFrame(animate);
+                    if (leftDeck) leftDeck.update();
+                    if (rightDeck) rightDeck.update();
+                }
+                animate();
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            playPauseButton.addEventListener('click', () => {
+                if (!rightDeck) return;
+                rightDeck.isPlaying = !rightDeck.isPlaying;
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+            });
+
+            crossfaderSlider.addEventListener('input', (e) => {
+                if (!leftDeck || !rightDeck) return;
+                const value = parseFloat(e.target.value);
+                // Equal-power crossfading
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+            });
+
+            fuzzSlider.addEventListener('input', (e) => {
+                if (rightDeck && rightDeck.fuzzGain) {
+                    rightDeck.fuzzGain.gain.value = parseFloat(e.target.value);
+                }
+            });
+
+            influenceSlider.addEventListener('input', (e) => {
+                if (rightDeck) {
+                    rightDeck.influence = parseFloat(e.target.value);
+                }
+            });
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                if (leftDeck) leftDeck.resize();
+                if (rightDeck) rightDeck.resize();
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+
+                    void main() {
+                        float hue = ${this.isSequencer ? '0.55' : '0.1'} + vUv.x + time * 0.05;
+                        float sat = 0.5 + vDistortion * 0.5;
+                        float val = 0.1 + audioLevel * 2.0 + vDistortion * 0.5 + beatPulse * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `;
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        mouse: { value: this.mouse },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: 0 }
+                    },
+                });
+
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            createDroneVoice() {
+                const osc1 = this.audioContext.createOscillator();
+                const osc2 = this.audioContext.createOscillator();
+                const lfo = this.audioContext.createOscillator();
+                const lfoGain = this.audioContext.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.value = 55;
+                osc2.type = 'sawtooth';
+                osc2.frequency.value = 55.1;
+                lfo.type = 'sine';
+                lfo.frequency.value = 0.2;
+                lfoGain.gain.value = 5;
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc1.frequency);
+                lfoGain.connect(osc2.frequency);
+                osc1.connect(this.outputNode);
+                osc2.connect(this.outputNode);
+                osc1.start();
+                osc2.start();
+                lfo.start();
+            }
+
+            initSequencerLayers() {
+                for (let i = 0; i < 4; i++) {
+                    this.layers.push({ isActive: i === 0, nodeStates: Array(8).fill(false) });
+                }
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+
+            createSequencerVoices() {
+                const distortion = this.audioContext.createWaveShaper();
+                distortion.curve = makeDistortionCurve(200);
+                this.fuzzGain.connect(distortion);
+                distortion.connect(this.outputNode);
+
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = 110 + i * 55;
+                    gain.gain.value = 0;
+                    osc.connect(gain);
+                    gain.connect(this.outputNode);
+                    osc.start();
+                    this.voices.push({ osc, gain });
+                }
+            }
+
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                this.isPlaying = false; // Start paused
+                this.schedulerInterval = setInterval(() => this.scheduler(), 50);
+            }
+
+            scheduler() {
+                if (!this.isPlaying) return; // Honor the pause state
+
+                const lookahead = 0.1;
+                while (this.nextStepTime < this.audioContext.currentTime + lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    const secondsPerStep = 60 / this.bpm / 2; // 8th notes
+                    this.nextStepTime += secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            scheduleStep(step, time) {
+                this.material.uniforms.beatPulse.value = 1.0 * this.influence;
+
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.voices[step];
+                        voice.gain.gain.cancelScheduledValues(time);
+                        voice.gain.gain.setValueAtTime(0, time);
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+                    }
+                });
+            }
+
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8);
+                const layerIndex = Math.floor(y * 4);
+                if (step >= 0 && step < 8 && layerIndex >= 0 && layerIndex < 4) {
+                    this.layers.forEach((layer, i) => layer.isActive = (i === layerIndex));
+                    const state = this.layers[layerIndex].nodeStates[step];
+                    this.layers[layerIndex].nodeStates[step] = !state;
+                }
+            }
+
+            update() {
+                this.time += 0.01;
+                this.material.uniforms.time.value = this.time;
+
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    let sum = this.frequencyData.reduce((a, b) => a + b, 0);
+                    let avg = sum / this.frequencyData.length;
+                    this.material.uniforms.audioLevel.value = avg / 255;
+                }
+
+                if (this.isSequencer && this.material.uniforms.beatPulse.value > 0) {
+                    this.material.uniforms.beatPulse.value *= 0.9;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.camera.aspect = rect.width / rect.height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(rect.width, rect.height);
+            }
+        }
+
+        // --- Main Application Setup ---
+        let leftDeck, rightDeck, audioContext;
+
+        function init() {
+            const startButton = document.getElementById('start-button');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const crossfaderSlider = document.getElementById('crossfader-slider');
+            const fuzzSlider = document.getElementById('fuzz-slider');
+            const influenceSlider = document.getElementById('influence-slider');
+
+            startButton.addEventListener('click', async () => {
+                if (audioContext) return;
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume();
+
+                const masterOut = audioContext.createGain();
+                masterOut.connect(audioContext.destination);
+
+                leftDeck = new MorphicField(document.getElementById('canvas-a'));
+                rightDeck = new MorphicField(document.getElementById('canvas-b'), true);
+
+                leftDeck.createAudioContext(audioContext, masterOut);
+                rightDeck.createAudioContext(audioContext, masterOut);
+
+                // Connect drone output to sequencer's fuzz gain input
+                if (leftDeck.outputNode && rightDeck.fuzzGain) {
+                    leftDeck.outputNode.connect(rightDeck.fuzzGain);
+                }
+
+                // Set initial crossfader state
+                const initialCrossfaderValue = parseFloat(crossfaderSlider.value);
+                const gainL = Math.cos(initialCrossfaderValue * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - initialCrossfaderValue) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+
+                // UI visibility
+                startButton.classList.add('hidden');
+                document.getElementById('controls').classList.remove('hidden');
+                playPauseButton.classList.add('visible');
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+
+                function animate() {
+                    requestAnimationFrame(animate);
+                    leftDeck.update();
+                    rightDeck.update();
+                }
+                animate();
+            });
+
+            playPauseButton.addEventListener('click', () => {
+                if (!rightDeck) return;
+                rightDeck.isPlaying = !rightDeck.isPlaying;
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+            });
+
+            crossfaderSlider.addEventListener('input', (e) => {
+                if (!leftDeck || !rightDeck) return;
+                const value = parseFloat(e.target.value);
+                // Equal-power crossfading
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+            });
+
+            fuzzSlider.addEventListener('input', (e) => {
+                if (rightDeck && rightDeck.fuzzGain) {
+                    rightDeck.fuzzGain.gain.value = parseFloat(e.target.value);
+                }
+            });
+
+            influenceSlider.addEventListener('input', (e) => {
+                if (rightDeck) {
+                    rightDeck.influence = parseFloat(e.target.value);
+                }
+            });
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                if (leftDeck) leftDeck.resize();
+                if (rightDeck) rightDeck.resize();
+                // Initial resize to fit canvas to container
+                if(leftDeck) leftDeck.resize();
+                if(rightDeck) rightDeck.resize();
+            });
+        }
+
+        init();
+    </script>
+                    uniform float audioLevel;
+                    uniform float beatPulse;
+                    varying vec2 vUv;
+                    varying float vDistortion;
+
+                    vec3 hsv2rgb(vec3 c){vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);}
+                    void main() {
+                        float hue = ${this.isSequencer ? '0.55' : '0.1'} + vUv.x + time * 0.05;
+                        float sat = 0.5 + vDistortion * 0.5;
+                        float val = 0.1 + audioLevel * 2.0 + vDistortion * 0.5 + beatPulse * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `;
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        mouse: { value: this.mouse },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: 0 }
+                    },
+                });
+
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            createDroneVoice() {
+                const osc1 = this.audioContext.createOscillator();
+                const osc2 = this.audioContext.createOscillator();
+                const lfo = this.audioContext.createOscillator();
+                const lfoGain = this.audioContext.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.value = 55;
+                osc2.type = 'sawtooth';
+                osc2.frequency.value = 55.1;
+                lfo.type = 'sine';
+                lfo.frequency.value = 0.2;
+                lfoGain.gain.value = 5;
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc1.frequency);
+                lfoGain.connect(osc2.frequency);
+                osc1.connect(this.outputNode);
+                osc2.connect(this.outputNode);
+                osc1.start();
+                osc2.start();
+                lfo.start();
+            }
+
+            initSequencerLayers() {
+                for (let i = 0; i < 4; i++) {
+                    this.layers.push({ isActive: i === 0, nodeStates: Array(8).fill(false) });
+                }
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+
+            createSequencerVoices() {
+                const distortion = this.audioContext.createWaveShaper();
+                distortion.curve = makeDistortionCurve(200);
+                this.fuzzGain.connect(distortion);
+                distortion.connect(this.outputNode);
+
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = 110 + i * 55;
+                    gain.gain.value = 0;
+                    osc.connect(gain);
+                    gain.connect(this.outputNode);
+                    osc.start();
+                    this.voices.push({ osc, gain });
+                }
+            }
+
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                this.isPlaying = true; // Start playing immediately
+                this.schedulerInterval = setInterval(() => this.scheduler(), 50);
+            }
+
+            scheduler() {
+                if (!this.isPlaying) return; // Honor the pause state
+
+                const lookahead = 0.1;
+                while (this.nextStepTime < this.audioContext.currentTime + lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    const secondsPerStep = 60 / this.bpm / 2; // 8th notes
+                    this.nextStepTime += secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            scheduleStep(step, time) {
+                this.material.uniforms.beatPulse.value = 1.0 * this.influence;
+
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.voices[step];
+                        voice.gain.gain.cancelScheduledValues(time);
+                        voice.gain.gain.setValueAtTime(0, time);
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+                    }
+                });
+            }
+
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8);
+                const layerIndex = Math.floor(y * 4);
+                if (step >= 0 && step < 8 && layerIndex >= 0 && layerIndex < 4) {
+                    this.layers.forEach((layer, i) => layer.isActive = (i === layerIndex));
+                    const state = this.layers[layerIndex].nodeStates[step];
+                    this.layers[layerIndex].nodeStates[step] = !state;
+                }
+            }
+
+            update() {
+                this.time += 0.01;
+                this.material.uniforms.time.value = this.time;
+
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    let sum = this.frequencyData.reduce((a, b) => a + b, 0);
+                    let avg = sum / this.frequencyData.length;
+                    this.material.uniforms.audioLevel.value = avg / 255;
+                }
+
+                if (this.isSequencer && this.material.uniforms.beatPulse.value > 0) {
+                    this.material.uniforms.beatPulse.value *= 0.9;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.camera.aspect = rect.width / rect.height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(rect.width, rect.height);
+                if (this.outputNode) this.outputNode.gain.setTargetAtTime(value, this.audioContext.currentTime, 0.01);
+            }
+
+            setOpacity(value) {
+                this.container.style.opacity = value;
+            }
+        }
+
+        const droneConfig = {
+            type: 'drone',
+            vertexShader: `
+                uniform float time, intensity, flow; uniform vec2 mouse; varying vec2 vUv; varying float vDistortion;
+                void main() {
+                    vUv = uv; vec3 pos = position;
+                    float dist = distance(uv, mouse); float wave = sin(dist * 15.0 - time * 2.0) * 0.1 * intensity;
+                    float morphic = sin(pos.x * 4.0 + time * flow) * cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                    pos.z += wave + morphic; vDistortion = abs(wave + morphic);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }`,
+            fragmentShader: `
+                uniform float time, bloom, audioLevel; varying vec2 vUv; varying float vDistortion;
+                vec3 hsv2rgb(vec3 c){vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);}
+                void main() {
+                    vec2 center = vUv - 0.5; float dist = length(center);
+                    float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0;
+                    float sat = 0.7 + sin(time * 0.5) * 0.3; float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4);
+                    vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                    float alpha = 0.8 - dist * 0.5 + vDistortion;
+                    gl_FragColor = vec4(color, alpha);
+                }`,
+            uniforms: { time: { value: 0 }, intensity: { value: 0.5 }, flow: { value: 0.6 }, bloom: { value: 0.8 }, mouse: { value: new THREE.Vector2(0.5, 0.5) }, audioLevel: { value: 0 } }
+        };
+
+        const sequencerConfig = {
+            type: 'sequencer',
+            vertexShader: `
+                uniform float time, intensity, flow; uniform vec2 nodes[8]; uniform bool nodeStates[8]; uniform int currentStep; varying vec2 vUv; varying float vDistortion;
+                void main() {
+                    vUv = uv; vec3 pos = position;
+                    float morphic = sin(pos.x*2.0+time*flow*0.2)*cos(pos.y*2.0-time*flow*0.1)*intensity*0.5;
+                    float nodeInfluence = 0.0;
+                    for(int i=0;i<8;i++){ float dist=distance(uv,nodes[i]); float influence=exp(-dist*10.0)*0.5; if(nodeStates[i]){influence*=1.5;} if(i==currentStep&&nodeStates[i]){influence*=2.0;} nodeInfluence+=influence; }
+                    pos.z += morphic + nodeInfluence; vDistortion = abs(morphic + nodeInfluence);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }`,
+            fragmentShader: `
+                uniform float time, audioLevel, beatPulse; uniform vec2 nodes[8]; uniform bool nodeStates[8]; uniform int currentStep; varying vec2 vUv; varying float vDistortion;
+                vec3 hsv2rgb(vec3 c){vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);}
+                void main() {
+                    vec2 p = vUv - 0.5;
+                    float hue = 0.55 + time * 0.02 + vDistortion * 2.0;
+                    float sat = 0.7 + vDistortion;
+                    float brightness = 0.15 + vDistortion * 1.5 + audioLevel * 0.8 + beatPulse * 0.3;
+
+                    // Pulsating grid
+                    vec2 grid = fract(vUv * 8.0);
+                    float gridLine = (1.0 - step(0.05, grid.x)) + (1.0 - step(0.05, grid.y));
+                    brightness += gridLine * 0.05 * (1.0 + beatPulse);
+
+                    vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+
+                    // Draw nodes and highlights
+                    for(int i = 0; i < 8; i++) {
+                        float dist = distance(vUv, nodes[i]);
+                        if(nodeStates[i]) {
+                            // Active node
+                            float circle = smoothstep(0.04, 0.035, dist);
+                            color = mix(color, hsv2rgb(vec3(0.6, 0.8, 1.0)), circle);
+                        } else {
+                            // Inactive node
+                            float circle = smoothstep(0.02, 0.015, dist);
+                            color = mix(color, vec3(0.2), circle);
+                        }
+
+                        if(i == currentStep) {
+                            // Highlight for the current step
+                            float ring = smoothstep(0.05, 0.045, dist) - smoothstep(0.04, 0.035, dist);
+                            vec3 ringColor = nodeStates[i] ? vec3(1.0, 1.0, 0.0) : vec3(0.7);
+                            color = mix(color, ringColor, ring);
+                        }
+                    }
+
+                    float alpha = 0.9 - length(p) + vDistortion;
+                    gl_FragColor = vec4(color, alpha);
+                }`,
+            uniforms: { time: { value: 0 }, intensity: { value: 0.7 }, flow: { value: 0.8 }, audioLevel: { value: 0 }, nodes: { value: [] }, nodeStates: { value: [] }, currentStep: { value: 0 }, mouse: { value: new THREE.Vector2(0.5, 0.5) }, beatPulse: { value: 0.0 } }
+        };
+
+        function makeDistortionCurve(amount) {
+            let k = typeof amount === 'number' ? amount : 50, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180, i = 0, x;
+            for ( ; i < n_samples; ++i ) { x = i * 2 / n_samples - 1; curve[i] = ( 3 + k ) * x * 20 * deg / ( Math.PI + k * Math.abs(x) ); }
+            return curve;
+        }
+
+        let tableA, tableB;
+
+        document.getElementById('start-button').addEventListener('click', () => {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Create a single master output and analyser
+            const masterGain = audioContext.createGain();
+            masterGain.connect(audioContext.destination);
+
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            masterGain.connect(analyser);
+
+            // Initialize Deck A (Drone)
+            tableA = new MorphicField('table-a-container', 'canvas-a', droneConfig);
+            tableA.init(audioContext, analyser);
+            tableA.outputNode.connect(masterGain);
+
+            // Initialize Deck B (Sequencer)
+            tableB = new MorphicField('table-b-container', 'canvas-b', sequencerConfig);
+            tableB.init(audioContext, analyser);
+            tableB.outputNode.connect(masterGain);
+            tableB.startSequencer();
+
+            // Connect Drone to Sequencer's Fuzz input
+            tableA.outputNode.connect(tableB.fuzzGain);
+
+            leftDeck = new MorphicField(document.getElementById('canvas-a'));
+            rightDeck = new MorphicField(document.getElementById('canvas-b'), true);
+
+            document.getElementById('start-button').classList.add('hidden');
+            document.getElementById('controls').classList.remove('hidden');
+
+            updateMixer(0.5);
+            updateFuzz(0);
+        });
+
+        document.getElementById('crossfader-slider').addEventListener('input', (e) => updateMixer(parseFloat(e.target.value)));
+        document.getElementById('fuzz-slider').addEventListener('input', (e) => updateFuzz(parseFloat(e.target.value)));
+
+        function updateMixer(value) {
+            // Equal-power crossfading for audio
+            const angle = value * Math.PI * 0.5;
+            const gainA = Math.cos(angle);
+            const gainB = Math.sin(angle);
+
+            if (tableA) tableA.setGain(gainA * 0.7);
+            if (tableB) tableB.setGain(gainB * 0.7);
+
+            // Visual crossfading
+            if (tableA) tableA.setOpacity(Math.sqrt(gainA));
+            if (tableB) tableB.setOpacity(Math.sqrt(gainB));
+        }
+
+        function updateFuzz(value) {
+            if (tableB && tableB.fuzzGain) {
+                tableB.fuzzGain.gain.setTargetAtTime(value, tableB.audioContext.currentTime, 0.01);
+            }
+        }
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergent Morphic Sequencer Portal — Field as Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none; /* Hide default cursor */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh */
+            font-family: 'Courier New', monospace;
+        }
+        
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-family: monospace;
+            z-index: 10;
+            pointer-events: none; /* Allows clicks to pass through */
+        }
+        
+        /* Hidden BPM Control */
+        #bpm-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 70%);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(0,255,255,0.8);
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            cursor: pointer;
+            z-index: 5;
+            user-select: none;
+            backdrop-filter: blur(2px); /* Subtle blur for better contrast */
+        }
+        
+        #bpm-control.visible {
+            opacity: 1;
+        }
+        
+        #bpm-control:hover {
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: rgba(0,255,255,0.6);
+        }
+        
+        /* Node visualization helpers */
+        .node-indicator {
+            position: fixed;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            pointer-events: none; /* Allows clicks to pass through */
+            transition: all 0.2s ease, transform 0.1s ease-out; /* Smooth transitions */
+            z-index: 3;
+            opacity: 0.3; /* Always subtly visible */
+        }
+        
+        .node-indicator.active {
+            background: radial-gradient(circle, #0ff 0%, transparent 70%);
+            box-shadow: 0 0 15px #0ff;
+            transform: scale(1.5);
+            opacity: 0.9;
+        }
+        
+        .node-indicator.inactive {
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0.2;
+        }
+        
+        .node-indicator.playing {
+            animation: pulse 0.2s ease-out;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1.5); }
+            50% { transform: scale(2.2); }
+            100% { transform: scale(1.5); }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="loading" id="loading">Initializing Emergent Field...</div>
+    
+    <div id="bpm-control">
+        <div id="bpm-display">120</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class EmergentMorphicPortal {
+            constructor() {
+                // Three.js Core
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                
+                // Audio System
+                this.audioContext = null;
+                this.masterGain = null;
+                this.reverb = null;
+                this.voices = [];
+                this.analyser = null;
+                this.frequencyData = null;
+                this.audioLevel = 0; // Current overall audio output level
+                
+                // Field & Morphic State
+                this.fieldMesh = null;
+                this.particles = null;
+                this.time = 0;
+                this.morphicSeed = Math.random() * 1000;
+                this.fieldIntensity = 0.7; // Controlled by Y mouse/touch
+                this.fieldFlow = 0.8;      // Controlled by X mouse/touch
+                
+                // Emergent Sequencer System
+                this.nodes = [];           // 8 resonance nodes with UV positions {x, y, baseAngle, baseRadius, phase}
+                this.nodeStates = Array(8).fill(false);  // active/inactive (boolean)
+                this.currentStep = 0;
+                this.bpm = 120;
+                this.secondsPerStep = (60/this.bpm)/2;  // eighth notes
+                this.nextStepTime = 0;
+                this.schedulerInterval = null; // For precise audio scheduling
+                this.lookahead = 0.1; // seconds, how far to schedule audio events in advance
+                this.nodeIndicators = [];
+                
+                // Interaction State
+                this.mouse = { x: 0, y: 0, down: false };
+                this.bpmControlVisible = false;
+                this.longPressTimer = null;
+                this.touchCount = 0;
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupThreeJS();
+                // Audio context needs to be initialized by user gesture,
+                // so we'll call setupAudio on first interaction.
+                this.createMorphicField();
+                this.initializeNodes();
+                this.setupInteraction();
+                this.loadStateFromURL(); // Load state before starting sequence or visuals fully
+                
+                // Initial update for loaded state
+                this.updateShaderNodes();
+                this.updateNodeIndicators();
+                document.getElementById('bpm-display').textContent = this.bpm;
+
+                // Start animation loop immediately
+                this.animate();
+                
+                document.getElementById('loading').style.display = 'none';
+            }
+            
+            // ==================== Field Shader & Nodes ====================
+            
+            setupThreeJS() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ 
+                    canvas: document.getElementById('canvas'),
+                    antialias: true,
+                    alpha: true
+                });
+                
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                this.camera.position.z = 6;
+                
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.updateNodeIndicators(); // Update indicator positions on resize
+                });
+            }
+            
+            createMorphicField() {
+                // Larger plane for more visible distortion, higher resolution for detail
+                const geometry = new THREE.PlaneGeometry(15, 15, 300, 300); 
+                
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform float seed;
+                    uniform vec2 nodes[8];
+                    uniform bool nodeStates[8];
+                    uniform int currentStep;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    varying float vNodeInfluence;
+                    
+                    // A simple pseudo-random hash to make things less repetitive
+                    float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+                    // Perlin-like noise
+                    float perlinNoise(vec2 p) {
+                        vec2 ip = floor(p);
+                        vec2 fp = fract(p);
+                        fp = fp * fp * (3.0 - 2.0 * fp); // Smoother interpolation
+
+                        float a = hash(ip.x + hash(ip.y));
+                        float b = hash(ip.x + 1.0 + hash(ip.y));
+                        float c = hash(ip.x + hash(ip.y + 1.0));
+                        float d = hash(ip.x + 1.0 + hash(ip.y + 1.0));
+
+                        return mix(mix(a, b, fp.x), mix(c, d, fp.x), fp.y);
+                    }
+                    
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        
+                        // Base morphic field with seed variation and layered noise
+                        float morphic = perlinNoise(pos.xy * 0.5 + time * flow * 0.1 + seed * 0.01) * intensity * 0.8;
+                        morphic += perlinNoise(pos.xy * 1.5 - time * flow * 0.05 + seed * 0.02) * intensity * 0.4;
+                        morphic += sin(length(pos.xy) * 8.0 - time * 2.0 + seed * 0.5) * 0.15 * intensity;
+                        
+                        // Node influence calculation
+                        vNodeInfluence = 0.0;
+                        for(int i = 0; i < 8; i++) {
+                            // Convert node UV to position space for distance calculation
+                            vec2 nodePos = (nodes[i] - 0.5) * 15.0; // Scale UV to plane size
+                            float dist = distance(pos.xy, nodePos);
+                            
+                            // Influence drops off rapidly with distance
+                            float influence = exp(-dist * 1.5) * 0.3; 
+                            
+                            if(nodeStates[i]) {
+                                influence *= 2.0; // Active nodes have stronger influence
+                                if(i == currentStep) {
+                                    influence *= 3.0; // Current step surges even more
+                                }
+                            }
+                            
+                            vNodeInfluence += influence;
+                            morphic += influence * sin(time * 4.0 + float(i) * 0.5); // Add rhythmic pulse from nodes
+                        }
+                        
+                        // Rhythmic drift - nodes cause local warping, overall field undulation
+                        float drift = sin(time * 0.1 + pos.x * 0.5) * 0.05;
+                        morphic += drift;
+                        
+                        pos.z += morphic;
+                        vDistortion = abs(morphic); // Magnitude of distortion for coloring
+                        vPosition = pos;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform vec2 nodes[8];
+                    uniform bool nodeStates[8];
+                    uniform int currentStep;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    varying float vNodeInfluence;
+                    
+                    // HSV to RGB conversion
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float distFromCenter = length(center);
+                        
+                        // Base field coloring
+                        float hue = time * 0.02 + distFromCenter * 1.5 + vDistortion * 3.0;
+                        float sat = 0.6 + vNodeInfluence * 0.4 + audioLevel * 0.2;
+                        float brightness = 0.2 + vDistortion * 1.5 + audioLevel * 0.5;
+                        
+                        // Node-specific coloring
+                        for(int i = 0; i < 8; i++) {
+                            float nodeDist = distance(vUv, nodes[i]);
+                            float nodeInfluenceVisual = smoothstep(0.1, 0.0, nodeDist); // Stronger at node center
+                            
+                            if(nodeStates[i]) {
+                                // Active node - bright cyan/blue glow
+                                hue = mix(hue, 0.55, nodeInfluenceVisual); // Shift hue towards cyan
+                                sat = mix(sat, 1.0, nodeInfluenceVisual);
+                                brightness = mix(brightness, 1.5, nodeInfluenceVisual); // Much brighter
+                                
+                                if(i == currentStep) {
+                                    brightness = mix(brightness, 2.5, nodeInfluenceVisual); // Current step extra surge
+                                }
+                            } else {
+                                // Inactive node - subtle white/dim
+                                sat = mix(sat, 0.3, nodeInfluenceVisual * 0.5);
+                                brightness = mix(brightness, 0.4, nodeInfluenceVisual * 0.5);
+                            }
+                        }
+                        
+                        vec3 color = hsv2rgb(vec3(mod(hue, 1.0), clamp(sat, 0.0, 1.0), clamp(brightness, 0.0, 1.5)));
+                        
+                        // Edge fade
+                        float alpha = 0.9 - distFromCenter * 0.6 + vNodeInfluence * 0.3;
+                        alpha *= smoothstep(1.2, 0.0, distFromCenter); // Fade out towards edges of the plane
+                        
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader,
+                    fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: this.fieldIntensity },
+                        flow: { value: this.fieldFlow },
+                        seed: { value: this.morphicSeed },
+                        audioLevel: { value: 0 },
+                        nodes: { value: [] }, // Will be updated with THREE.Vector2[]
+                        nodeStates: { value: [] }, // Will be updated with boolean[]
+                        currentStep: { value: 0 }
+                    },
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    side: THREE.DoubleSide, // Render both sides of the plane
+                    depthWrite: false // Crucial for transparent additive blending to avoid artifacts
+                });
+                
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+                
+                this.createParticleField();
+            }
+            
+            createParticleField() {
+                const particleCount = 1000; // Increased particle count for more density
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                const sizes = new Float32Array(particleCount);
+                
+                for (let i = 0; i < particleCount; i++) {
+                    // Spread particles throughout a larger volume
+                    positions[i * 3] = (Math.random() - 0.5) * 30;
+                    positions[i * 3 + 1] = (Math.random() - 0.5) * 30;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+                    
+                    // Assign colors - blueish/cyan hue
+                    colors[i * 3] = 0.1 + Math.random() * 0.2; // R
+                    colors[i * 3 + 1] = 0.5 + Math.random() * 0.5; // G
+                    colors[i * 3 + 2] = 0.8 + Math.random() * 0.2; // B
+                    
+                    sizes[i] = 0.1 + Math.random() * 0.4; // Varying sizes
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1)); // Custom attribute for size
+                
+                const particleVertexShader = `
+                    attribute float size;
+                    attribute vec3 color; // <--- FIX: Declare 'color' attribute here
+                    varying vec3 vColor;
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (300.0 / -mvPosition.z); // Perspective scaling
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `;
+
+                const particleFragmentShader = `
+                    varying vec3 vColor;
+                    uniform float audioLevel;
+                    void main() {
+                        // Create a soft, circular particle with glow
+                        float r = 0.0, delta = 0.0, alpha = 1.0;
+                        vec2 cxy = 2.0 * gl_PointCoord - 1.0;
+                        r = dot(cxy, cxy);
+                        delta = fwidth(r);
+                        alpha = 1.0 - smoothstep(0.0, 1.0 * delta, r); // Anti-aliased circle
+                        
+                        // Add glow and shimmer based on audio
+                        vec3 finalColor = vColor * (1.0 + audioLevel * 1.5);
+                        gl_FragColor = vec4(finalColor, alpha * (0.3 + audioLevel * 0.7));
+                    }
+                `;
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        audioLevel: { value: 0 }
+                    },
+                    vertexShader: particleVertexShader,
+                    fragmentShader: particleFragmentShader,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false, // Prevents particles from obscuring each other incorrectly
+                    transparent: true
+                });
+                
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+            
+            // ==================== Sequencer Topology ====================
+            
+            initializeNodes() {
+                this.nodes = [];
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    // Slightly varied radius and phase for organic look
+                    const radius = 0.3 + Math.sin(i * 0.7) * 0.05 + Math.random() * 0.05; 
+                    const node = {
+                        baseAngle: angle,
+                        baseRadius: radius,
+                        // Initial UV position (0-1 range)
+                        x: 0.5 + Math.cos(angle) * radius,
+                        y: 0.5 + Math.sin(angle) * radius,
+                        phase: Math.random() * Math.PI * 2 // For individual drift animation
+                    };
+                    this.nodes.push(node);
+                }
+                
+                this.createNodeIndicators();
+                this.updateShaderNodes(); // Initial update for shaders
+            }
+            
+            updateNodePositions() {
+                const driftAmount = 0.01; // How much nodes drift from their base
+                const morphicInfluence = 0.02; // How much field state affects drift
+                
+                this.nodes.forEach((node, i) => {
+                    // Base circular motion with added noise-like drift
+                    const timeFactor = this.time * 0.005 + node.phase;
+                    const morphicDrift = Math.sin(this.time * 0.01 + i * 0.5 + this.morphicSeed * 0.01) * morphicInfluence;
+                    
+                    const currentRadius = node.baseRadius + Math.sin(timeFactor * 1.5) * driftAmount + morphicDrift;
+                    const currentAngle = node.baseAngle + Math.cos(timeFactor * 0.8) * driftAmount;
+                    
+                    // Update node UV positions
+                    node.x = 0.5 + Math.cos(currentAngle) * currentRadius;
+                    node.y = 0.5 + Math.sin(currentAngle) * currentRadius;
+                });
+                
+                // Update shader uniforms with new node positions
+                this.updateShaderNodes();
+                // Update DOM indicators
+                this.updateNodeIndicators();
+            }
+            
+            updateShaderNodes() {
+                if (!this.fieldMesh) return;
+                
+                const nodePositions = this.nodes.map(node => new THREE.Vector2(node.x, node.y));
+                this.fieldMesh.material.uniforms.nodes.value = nodePositions;
+                this.fieldMesh.material.uniforms.nodeStates.value = this.nodeStates;
+                this.fieldMesh.material.uniforms.currentStep.value = this.currentStep;
+            }
+            
+            createNodeIndicators() {
+                // Create DOM indicators for nodes (visual helper)
+                this.nodeIndicators = [];
+                for (let i = 0; i < 8; i++) {
+                    const indicator = document.createElement('div');
+                    indicator.className = 'node-indicator';
+                    document.body.appendChild(indicator);
+                    this.nodeIndicators.push(indicator);
+                }
+            }
+            
+            updateNodeIndicators() {
+                this.nodeIndicators.forEach((indicator, i) => {
+                    const node = this.nodes[i];
+                    // Convert UV (0-1) to screen pixels
+                    // Y axis is inverted for screen coordinates (0 at top) vs UV (0 at bottom)
+                    const screenX = node.x * window.innerWidth;
+                    const screenY = (1 - node.y) * window.innerHeight;
+                    
+                    indicator.style.left = (screenX - 4) + 'px'; // -4px to center 8px div
+                    indicator.style.top = (screenY - 4) + 'px';
+                    
+                    // Update classes for visual state
+                    indicator.className = `node-indicator ${this.nodeStates[i] ? 'active' : 'inactive'}`;
+                    if (i === this.currentStep) {
+                        indicator.classList.add('playing');
+                    }
+                });
+            }
+            
+            findNearestNode(mouseUV) {
+                let nearest = -1;
+                let minDist = Infinity;
+                
+                this.nodes.forEach((node, i) => {
+                    const dist = Math.sqrt(
+                        Math.pow(node.x - mouseUV.x, 2) + 
+                        Math.pow(node.y - mouseUV.y, 2)
+                    );
+                    
+                    if (dist < 0.1) { // Activation radius in UV space
+                        if (dist < minDist) { 
+                            minDist = dist;
+                            nearest = i;
+                        }
+                    }
+                });
+                
+                return nearest;
+            }
+            
+            // ==================== Audio Synth & Gating ====================
+            
+            async setupAudio() {
+                if (this.audioContext && this.audioContext.state !== 'closed' && this.audioContext.state !== 'suspended') {
+                    // Audio already initialized and running
+                    return;
+                }
+                
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    await this.audioContext.resume(); // Try to resume immediately
+                    
+                    // Master gain
+                    this.masterGain = this.audioContext.createGain();
+                    this.masterGain.gain.value = 0.25; // Overall volume
+                    this.masterGain.connect(this.audioContext.destination);
+                    
+                    // Analyser for visual feedback
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256; // Good balance for performance and detail
+                    this.analyser.connect(this.masterGain); // Analyser listens before master gain
+                    this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                    
+                    // Create reverb
+                    await this.createReverb();
+                    
+                    // Create voice bank - 8 voices for 8 nodes
+                    this.createVoices();
+                    
+                    // Start the audio scheduler only after everything is set up
+                    this.startSequencer();
+                    
+                } catch (error) {
+                    console.warn('Audio context initialization or resume failed:', error);
+                    alert('Audio cannot be started. Please ensure your browser allows autoplay or try refreshing.');
+                }
+            }
+            
+            async createReverb() {
+                // Generate a simple impulse response for a short, metallic reverb
+                const duration = 2; // seconds
+                const sampleRate = this.audioContext.sampleRate;
+                const reverbBuffer = this.audioContext.createBuffer(2, sampleRate * duration, sampleRate);
+                
+                for (let channel = 0; channel < reverbBuffer.numberOfChannels; channel++) {
+                    const channelData = reverbBuffer.getChannelData(channel);
+                    for (let i = 0; i < channelData.length; i++) {
+                        // Exponential decay for impulse response
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / channelData.length, 2); 
+                    }
+                }
+                
+                this.reverb = this.audioContext.createConvolver();
+                this.reverb.buffer = reverbBuffer;
+                
+                const reverbGain = this.audioContext.createGain();
+                reverbGain.gain.value = 0.3; // Reverb amount
+                this.reverb.connect(reverbGain);
+                reverbGain.connect(this.analyser); // Reverb output also feeds analyser
+            }
+            
+            createVoices() {
+                // Base frequencies for a mystic, slightly dissonant drone scale
+                const baseFreqs = [
+                    55, // A1
+                    73.42, // D#2
+                    98, // F#2
+                    130.81, // C3
+                    174.61, // F3
+                    233.08, // A#3
+                    311.13, // D#4
+                    415.30  // G#4
+                ];
+                
+                this.voices = baseFreqs.map((freq, i) => {
+                    const voice = {
+                        osc: this.audioContext.createOscillator(),
+                        gain: this.audioContext.createGain(),
+                        filter: this.audioContext.createBiquadFilter(),
+                        modOsc: this.audioContext.createOscillator(), // FM modulation
+                        modGain: this.audioContext.createGain(),
+                        lfo: this.audioContext.createOscillator(), // For subtle vibrato/tremolo
+                        lfoGain: this.audioContext.createGain()
+                    };
+                    
+                    // Main oscillator
+                    voice.osc.type = ['sine', 'triangle', 'sawtooth', 'square'][i % 4];
+                    voice.osc.frequency.value = freq;
+                    
+                    // FM modulation (subtle, adds texture)
+                    voice.modOsc.type = 'sine';
+                    voice.modOsc.frequency.value = freq * 0.7 + i * 0.5;
+                    voice.modGain.gain.value = 5 + i * 2; // Mod amount
+                    voice.modOsc.connect(voice.modGain);
+                    voice.modGain.connect(voice.osc.frequency);
+                    
+                    // Filter
+                    voice.filter.type = 'lowpass';
+                    voice.filter.frequency.value = freq * 3 + i * 100; // Vary cutoff
+                    voice.filter.Q.value = 1 + i * 0.3; // Vary resonance
+                    
+                    // LFO for vibrato
+                    voice.lfo.type = 'sine';
+                    voice.lfo.frequency.value = 0.5 + i * 0.1; // Slow LFO speed
+                    voice.lfoGain.gain.value = 0.5 + i * 0.2; // LFO depth
+                    voice.lfo.connect(voice.lfoGain);
+                    voice.lfoGain.connect(voice.osc.detune); // Connect to detune for pitch modulation
+
+                    // Gain (starts silent)
+                    voice.gain.gain.value = 0;
+                    
+                    // Connect chain: Osc -> Filter -> Gain -> Reverb & Analyser
+                    voice.osc.connect(voice.filter);
+                    voice.filter.connect(voice.gain);
+                    voice.gain.connect(this.reverb); // Dry signal to reverb
+                    voice.gain.connect(this.analyser); // Dry signal also to analyser
+                    
+                    // Start oscillators
+                    voice.osc.start();
+                    voice.modOsc.start();
+                    voice.lfo.start();
+                    
+                    return voice;
+                });
+            }
+            
+            startSequencer() {
+                if (!this.audioContext) {
+                    console.warn("AudioContext not available, cannot start sequencer.");
+                    return;
+                }
+                if (this.schedulerInterval) {
+                    clearInterval(this.schedulerInterval);
+                }
+
+                this.nextStepTime = this.audioContext.currentTime;
+                // Schedule steps frequently with a small lookahead
+                this.schedulerInterval = setInterval(() => this.scheduler(), this.lookahead * 1000 * 0.5); // Check twice per lookahead
+                console.log('Sequencer started/restarted with BPM:', this.bpm);
+            }
+
+            scheduler() {
+                if (!this.audioContext || this.audioContext.state !== 'running') {
+                    // Stop scheduling if audio context is not running
+                    clearInterval(this.schedulerInterval);
+                    this.schedulerInterval = null;
+                    return;
+                }
+
+                while (this.nextStepTime < this.audioContext.currentTime + this.lookahead) {
+                    this.playStep(this.currentStep, this.nextStepTime);
+                    this.nextStepTime += this.secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+            
+            playStep(step, time) {
+                if (this.voices[step] && this.nodeStates[step]) {
+                    const voice = this.voices[step];
+                    
+                    // Quick Attack-Decay envelope
+                    voice.gain.gain.cancelScheduledValues(time);
+                    voice.gain.gain.setValueAtTime(0, time);
+                    voice.gain.gain.linearRampToValueAtTime(0.3, time + 0.01); // Attack
+                    voice.gain.gain.exponentialRampToValueAtTime(0.001, time + this.secondsPerStep * 0.8); // Decay
+                    
+                    // Modulate filter based on node position and global intensity
+                    const node = this.nodes[step];
+                    // Map node UV (0-1) to frequency range for filter cutoff
+                    const cutoff = 500 + node.y * 3000 + node.x * 1000 + this.fieldIntensity * 1500;
+                    voice.filter.frequency.setTargetAtTime(cutoff, time, 0.05); // Smooth filter sweep
+                    
+                    // Subtle pitch variation per step
+                    const detuneAmount = (node.x - 0.5) * 50; // -25 to +25 cents
+                    voice.osc.detune.setTargetAtTime(detuneAmount, time, 0.01);
+
+                    // console.log(`Playing step ${step} at time ${time.toFixed(3)}`); // Debugging
+                    
+                    // Trigger visual effects
+                    this.triggerNodeEffect(step);
+                }
+                
+                // Update visual indicators for current step, even if silent
+                this.updateNodeIndicators();
+                this.fieldMesh.material.uniforms.currentStep.value = this.currentStep; // Update shader's currentStep
+            }
+            
+            triggerNodeEffect(nodeIndex) {
+                // Short field intensity surge
+                this.fieldIntensity = Math.min(1.0, this.fieldIntensity + 0.2); // Increase intensity
+                setTimeout(() => {
+                    // Slowly revert to user-set intensity, or slightly above minimum
+                    this.fieldIntensity = Math.max(0.3, this.fieldIntensity * 0.9); 
+                }, 100);
+                
+                // Subtle morphic seed shift for visual novelty
+                this.morphicSeed += 0.05 + Math.random() * 0.05;
+            }
+
+            // ==================== Audio Analysis for Visuals ====================
+            updateAudioLevel() {
+                if (!this.analyser) return 0;
+                this.analyser.getByteFrequencyData(this.frequencyData);
+                let sum = 0;
+                for (let i = 0; i < this.frequencyData.length; i++) {
+                    sum += this.frequencyData[i];
+                }
+                // Normalize to 0-1 range
+                this.audioLevel = (sum / this.frequencyData.length) / 255; 
+                return this.audioLevel;
+            }
+
+            // ==================== Interaction Binding ====================
+            
+            setupInteraction() {
+                const canvas = document.getElementById('canvas');
+                const bpmControl = document.getElementById('bpm-control');
+                
+                const getMouseUV = (e) => ({
+                    x: e.clientX / window.innerWidth,
+                    y: 1 - e.clientY / window.innerHeight // Invert Y for UV coordinates
+                });
+                
+                const handleStart = (e) => {
+                    // Initialize audio on first user interaction
+                    this.setupAudio(); // This will resume/start if needed
+                    
+                    const mouseUV = getMouseUV(e);
+                    this.mouse.down = true;
+                    this.mouse.x = mouseUV.x;
+                    this.mouse.y = mouseUV.y;
+                    
+                    // Check for node toggle first
+                    const nearestNode = this.findNearestNode(mouseUV);
+                    if (nearestNode !== -1) {
+                        this.toggleNode(nearestNode);
+                    } else {
+                        // If no node clicked, start morphic field sculpting
+                        this.updateFieldParameters(mouseUV);
+                    }
+                    
+                    // Start long press timer for BPM control
+                    this.longPressTimer = setTimeout(() => {
+                        this.showBPMControl();
+                    }, 800); // 800ms long press
+                };
+                
+                const handleMove = (e) => {
+                    if (!this.mouse.down) return; // Only process if mouse is down
+                    
+                    const mouseUV = getMouseUV(e);
+                    this.mouse.x = mouseUV.x;
+                    this.mouse.y = mouseUV.y;
+                    
+                    // If BPM control is visible, don't sculpt the field
+                    if (!this.bpmControlVisible) {
+                        this.updateFieldParameters(mouseUV);
+                    }
+                };
+                
+                const handleEnd = () => {
+                    this.mouse.down = false;
+                    if (this.longPressTimer) {
+                        clearTimeout(this.longPressTimer);
+                        this.longPressTimer = null;
+                    }
+                };
+                
+                // Mouse events
+                canvas.addEventListener('mousedown', handleStart);
+                canvas.addEventListener('mousemove', handleMove);
+                canvas.addEventListener('mouseup', handleEnd);
+                canvas.addEventListener('mouseleave', handleEnd); // Treat leaving canvas as mouseup
+                
+                // Touch events
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Prevent default touch actions (scrolling, zooming)
+                    this.touchCount = e.touches.length;
+                    
+                    // Two-finger tap reveals BPM control
+                    if (e.touches.length === 2) {
+                        this.showBPMControl();
+                        if (this.longPressTimer) { // Cancel long press if 2-finger tap occurs
+                            clearTimeout(this.longPressTimer);
+                            this.longPressTimer = null;
+                        }
+                        return; // Don't process as field sculpting if 2 fingers
+                    }
+                    
+                    if (e.touches.length === 1) {
+                        handleStart(e.touches[0]);
+                    }
+                }, { passive: false }); // Use passive: false to allow preventDefault
+
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 1) {
+                        handleMove(e.touches[0]);
+                    }
+                }, { passive: false });
+
+                canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    // If all touches are lifted, handle as end
+                    if (e.touches.length === 0) {
+                        handleEnd();
+                    }
+                }, { passive: false });
+                
+                // BPM Control click handler
+                bpmControl.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent interaction with canvas underneath
+                    this.cycleBPM();
+                    this.showBPMControl(); // Keep it visible for a bit after click
+                });
+                
+                // Hide BPM control after a delay or on outside click
+                let bpmHideTimer;
+                const scheduleHideBPMControl = () => {
+                    clearTimeout(bpmHideTimer); // Clear any existing timer
+                    bpmHideTimer = setTimeout(() => {
+                        bpmControl.classList.remove('visible');
+                        this.bpmControlVisible = false;
+                    }, 3000); // Hide after 3 seconds of inactivity
+                };
+                // Store the reference to this function on the instance
+                this.scheduleHideBPMControl = scheduleHideBPMControl; 
+                
+                // Listener for general clicks to hide BPM if clicked outside
+                document.addEventListener('click', (e) => {
+                    if (this.bpmControlVisible && !e.target.closest('#bpm-control')) {
+                        scheduleHideBPMControl(); // Hide immediately if clicked outside
+                    }
+                });
+
+                // Schedule hide whenever BPM control is shown or interacted with
+                bpmControl.addEventListener('mouseenter', () => clearTimeout(bpmHideTimer)); // Don't hide if hovering
+                bpmControl.addEventListener('mouseleave', () => scheduleHideBPMControl()); // Re-schedule hide on leave
+            }
+            
+            toggleNode(nodeIndex) {
+                this.nodeStates[nodeIndex] = !this.nodeStates[nodeIndex];
+                this.updateShaderNodes(); // Inform shader about state change
+                this.updateStateInURL(); // Persist state
+                
+                // Visual feedback (immediate flash/change)
+                if (this.nodeStates[nodeIndex]) {
+                    // Play a quick sound immediately for feedback (not tied to sequencer clock)
+                    if (this.audioContext && this.voices[nodeIndex] && this.audioContext.state === 'running') {
+                        const voice = this.voices[nodeIndex];
+                        const now = this.audioContext.currentTime;
+                        voice.gain.gain.cancelScheduledValues(now);
+                        voice.gain.gain.setValueAtTime(0, now);
+                        voice.gain.gain.linearRampToValueAtTime(0.05, now + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    }
+                    this.triggerNodeEffect(nodeIndex); // Larger visual ripple
+                }
+            }
+            
+            updateFieldParameters(mouseUV) {
+                // Sculpt the morphic field based on interaction
+                // Y controls intensity (height of distortions)
+                this.fieldIntensity = 0.3 + mouseUV.y * 0.7; // From 0.3 to 1.0
+                // X controls flow (speed/direction of animation)
+                this.fieldFlow = 0.2 + mouseUV.x * 1.6; // From 0.2 to 1.8
+                
+                // Subtle morphic seed drift based on interaction
+                this.morphicSeed += (mouseUV.x - 0.5) * 0.005; // Horizontal movement subtly shifts seed
+                this.morphicSeed += (mouseUV.y - 0.5) * 0.005; // Vertical movement subtly shifts seed
+
+                // Update shader uniforms immediately
+                if (this.fieldMesh) {
+                    this.fieldMesh.material.uniforms.intensity.value = this.fieldIntensity;
+                    this.fieldMesh.material.uniforms.flow.value = this.fieldFlow;
+                    this.fieldMesh.material.uniforms.seed.value = this.morphicSeed;
+                }
+                this.updateStateInURL();
+            }
+            
+            showBPMControl() {
+                document.getElementById('bpm-control').classList.add('visible');
+                this.bpmControlVisible = true;
+                // Ensure it stays visible for a period after showing
+                if (this.scheduleHideBPMControl) { // Check if function is defined
+                    this.scheduleHideBPMControl(); 
+                }
+            }
+            
+            cycleBPM() {
+                const bpmValues = [90, 120, 140, 160, 180, 200, 60]; // Added 60 BPM for slower option
+                const currentIndex = bpmValues.indexOf(this.bpm);
+                const nextIndex = (currentIndex + 1) % bpmValues.length;
+                this.bpm = bpmValues[nextIndex];
+                this.secondsPerStep = (60/this.bpm)/2; // Eighth notes
+                
+                document.getElementById('bpm-display').textContent = this.bpm;
+                this.updateStateInURL();
+                // If sequencer is running, restart it to apply new tempo
+                if (this.audioContext && this.audioContext.state === 'running') {
+                    this.startSequencer();
+                }
+            }
+            
+            // ==================== State Serialization ====================
+            
+            updateStateInURL() {
+                const state = {
+                    nodeStates: this.nodeStates,
+                    morphicSeed: this.morphicSeed,
+                    fieldIntensity: this.fieldIntensity,
+                    fieldFlow: this.fieldFlow,
+                    bpm: this.bpm
+                };
+                
+                try {
+                    const encoded = btoa(JSON.stringify(state));
+                    window.location.hash = encoded;
+                } catch (error) {
+                    console.warn('Failed to update URL state:', error);
+                }
+            }
+            
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        
+                        // Apply loaded state, providing defaults if values are missing or invalid
+                        if (state.nodeStates && Array.isArray(state.nodeStates) && state.nodeStates.length === 8) {
+                            this.nodeStates = state.nodeStates;
+                        } else {
+                            this.nodeStates = Array(8).fill(false); // Default if corrupted
+                            console.warn("Invalid nodeStates in URL hash, reverting to default.");
+                        }
+
+                        if (typeof state.morphicSeed === 'number') this.morphicSeed = state.morphicSeed;
+                        if (typeof state.fieldIntensity === 'number') this.fieldIntensity = state.fieldIntensity;
+                        if (typeof state.fieldFlow === 'number') this.fieldFlow = state.fieldFlow;
+                        if (typeof state.bpm === 'number') {
+                            const bpmValues = [90, 120, 140, 160, 180, 200, 60];
+                            if (bpmValues.includes(state.bpm)) { // Only load valid BPMs
+                                this.bpm = state.bpm;
+                                this.secondsPerStep = (60/this.bpm)/2;
+                            } else {
+                                console.warn("Invalid BPM in URL hash, reverting to default.");
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to load state from URL:', error);
+                    // Reset to default state if decoding/parsing fails
+                    this.nodeStates = Array(8).fill(false);
+                    this.morphicSeed = Math.random() * 1000;
+                    this.fieldIntensity = 0.7;
+                    this.fieldFlow = 0.8;
+                    this.bpm = 120;
+                    this.secondsPerStep = (60/this.bpm)/2;
+                }
+                // Ensure shader and indicators reflect loaded state immediately
+                this.updateShaderNodes(); 
+                this.updateNodeIndicators();
+            }
+
+            // ==================== Animation Loop ====================
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.time += 0.01; // Increment time for animations
+                
+                // Update Three.js uniform values
+                if (this.fieldMesh) {
+                    this.fieldMesh.material.uniforms.time.value = this.time;
+                    this.fieldMesh.material.uniforms.audioLevel.value = this.updateAudioLevel();
+                    // Intensity, flow, seed are updated by interaction (updateFieldParameters)
+                    // Nodes, nodeStates, currentStep are updated by sequencer/interaction functions
+                }
+
+                // Update particle animation (e.g., subtle rotation)
+                if (this.particles) {
+                    this.particles.rotation.z += 0.0005;
+                    this.particles.rotation.x += 0.0001;
+                    this.particles.material.uniforms.audioLevel.value = this.audioLevel; // Pass audio level to particles
+                }
+                
+                // Make nodes drift and update their visuals
+                this.updateNodePositions();
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        
+        // Initialize the portal when the DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new EmergentMorphicPortal();
+        });
+    </script>
+</body>
+</html>

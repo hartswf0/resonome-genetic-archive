@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Single-Focus Resonance Plate</title>
+<style>
+/* === MINIMAL UI & STYLING === */
+html,body{margin:0;height:100%;background:#000;color:#fff;overflow:hidden;font-family:sans-serif}
+canvas{display:block}
+#slider{
+  position:absolute;bottom:20px;left:50%;transform:translateX(-50%);
+  width:300px;height:2px;background:#333;appearance:none;cursor:pointer
+}
+#slider::-webkit-slider-thumb{
+  appearance:none;width:16px;height:16px;border-radius:50%;background:#fff
+}
+#slider::-moz-range-thumb{
+  width:16px;height:16px;border:none;border-radius:50%;background:#fff
+}
+</style>
+</head>
+<body>
+<input id="slider" type="range" min="20" max="5000" step="1" value="440">
+
+<!-- === IMPORT THREE & TONE === -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+/* === INITIALIZATION === */
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import * as Tone from 'https://unpkg.com/tone@14.8.49/build/Tone.js';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10);
+camera.position.set(0,0,2);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Post-processing bloom for glow
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene,camera);
+composer.addPass(renderPass);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),1.2,0.3,0.7);
+composer.addPass(bloomPass);
+
+// Plate mesh
+const plateSize = 2;
+const plateGeo = new THREE.PlaneGeometry(plateSize,plateSize,1,1);
+const plateMat = new THREE.MeshBasicMaterial({color:0x111111});
+const plate = new THREE.Mesh(plateGeo,plateMat);
+scene.add(plate);
+
+// Particle system
+const N = 20000;
+const positions = new Float32Array(N*3);
+const colors = new Float32Array(N*3);
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+
+const mat = new THREE.PointsMaterial({
+  size:0.008,
+  vertexColors:true,
+  blending:THREE.AdditiveBlending,
+  transparent:true,
+  opacity:0.9
+});
+const particles = new THREE.Points(geo,mat);
+scene.add(particles);
+
+// Distribute particles on plate
+for(let i=0;i<N;i++){
+  positions[i*3]   = (Math.random()-0.5)*plateSize;
+  positions[i*3+1] = (Math.random()-0.5)*plateSize;
+  positions[i*3+2] = 0;
+}
+
+/* === AUDIO SETUP === */
+const osc = new Tone.Oscillator(440,'sine').toDestination();
+osc.volume.value = -12;
+osc.start();
+
+/* === CHLADNI PATTERN FUNCTION === */
+function chladni(x,y,freq){
+  const k = freq/1000; // scale for visual
+  const n = 2, m = 3; // fixed modes for hypnotic simplicity
+  return Math.cos(n*Math.PI*(x+plateSize/2)/plateSize)*
+         Math.cos(m*Math.PI*(y+plateSize/2)/plateSize)*
+         Math.sin(k*Math.PI*(x+plateSize/2)/plateSize)*
+         Math.sin(k*Math.PI*(y+plateSize/2)/plateSize);
+}
+
+/* === RENDER LOOP === */
+let currentFreq = 440;
+const slider = document.getElementById('slider');
+
+slider.addEventListener('input',e=>{
+  const f = +e.target.value;
+  // Smooth ramp to avoid clicks
+  osc.frequency.rampTo(f,0.05);
+  currentFreq = f;
+});
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  const pos = geo.attributes.position.array;
+  const col = geo.attributes.color.array;
+  for(let i=0;i<N;i++){
+    const x = pos[i*3], y = pos[i*3+1];
+    const amp = chladni(x,y,currentFreq);
+    // Fade particles near nodes
+    const intensity = Math.abs(amp);
+    col[i*3] = col[i*3+1] = col[i*3+2] = THREE.MathUtils.clamp(intensity,0,1);
+    // Slight z displacement for depth illusion
+    pos[i*3+2] = intensity*0.05;
+  }
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.color.needsUpdate = true;
+
+  composer.render();
+}
+animate();
+
+/* === RESPONSIVE === */
+addEventListener('resize',()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

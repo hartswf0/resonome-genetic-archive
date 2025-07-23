@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RESONOME :: Genetic Archive</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg-color: #0a0a0a;
+            --text-color: #e0e0e0;
+            --accent-color: #00ffff;
+            --border-color: #333;
+            --header-color: #fafafa;
+            --stable-color: #00ff88;
+            --proto-color: #ffff00;
+            --dead-color: #ff0055;
+            --theoretical-color: #aaa;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Roboto Mono', monospace;
+            margin: 0;
+            padding: 2em;
+            font-size: 16px;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1em;
+            margin-bottom: 2em;
+            text-align: center;
+        }
+
+        header h1 {
+            color: var(--header-color);
+            font-size: 1.5em;
+            margin: 0;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        header .key {
+            font-size: 0.8em;
+            margin-top: 1em;
+            color: #aaa;
+        }
+
+        .key span { margin: 0 0.5em; }
+        .key .stable { color: var(--stable-color); }
+        .key .proto { color: var(--proto-color); }
+        .key .dead { color: var(--dead-color); }
+        .key .theoretical { color: var(--theoretical-color); }
+
+        #genome-library {
+            list-style: none;
+            padding: 0;
+        }
+
+        .genome-entry {
+            background: #111;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1em;
+            padding: 1em 1.5em;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 1em;
+        }
+
+        .genome-entry:hover {
+            background: #1a1a1a;
+            border-color: var(--accent-color);
+        }
+
+        .genome-entry .status, .genome-entry .icon, .genome-entry .interaction, .genome-entry .lineage-glyph {
+            font-size: 1.2em;
+        }
+        .genome-entry .icon, .genome-entry .lineage-glyph { color: var(--accent-color); }
+        .genome-entry .interaction { color: #888; }
+        .genome-entry .name { flex-grow: 1; font-weight: bold; }
+
+        .isolate-entry {
+            background: #111;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1em;
+            padding: 1em 1.5em;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 1em;
+        }
+
+        .isolate-entry:hover {
+            background: #1a1a1a;
+            border-color: var(--accent-color);
+        }
+
+        .isolate-entry .status, .isolate-entry-link { text-decoration: none; }
+
+        .genome-link { text-decoration: none; }
+
+        .isolate-entry .name {
+            font-size: 1.2em;
+        }
+
+        .phylogenetic-explorer {
+            display: none;
+            padding-left: 3em;
+            margin: 0.5em 0 1.5em 0;
+            border-left: 1px dashed var(--border-color);
+        }
+
+        .phylogenetic-explorer ul {
+            list-style: none;
+            padding-left: 1.5em;
+            margin: 0;
+        }
+
+        .phylogenetic-explorer li {
+            padding: 0.5em 0;
+            position: relative;
+        }
+
+        .phylogenetic-explorer li::before {
+            content: '├──';
+            position: absolute;
+            left: -1.5em;
+            top: 0.5em;
+            color: var(--border-color);
+        }
+        
+        .phylogenetic-explorer li:last-child::before {
+            content: '└──';
+        }
+
+        .phylogenetic-explorer a {
+            color: var(--text-color);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75em;
+        }
+
+        .phylogenetic-explorer a:hover { color: var(--accent-color); }
+        .phylogenetic-explorer .notes { font-size: 0.9em; color: #888; margin-left: 0.5em; }
+
+        .stable { color: var(--stable-color); }
+        .proto { color: var(--proto-color); }
+        .dead { color: var(--dead-color); }
+        .theoretical { color: var(--theoretical-color); }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>RESONOME :: GENETIC ARCHIVE</h1>
+        <div class="key">[ KEY: ☑ Stable │ ❒ Prototype │ ⧱ Pathological │ ◌ Theoretical │ ⧇ Lineage │ ⬨ Isolate ]</div>
+    </header>
+
+    <main>
+        <div id="genetic-archive">
+            <!-- Genomes will be dynamically inserted here -->
+        </div>
+        <h2 class="isolate-bay-header">ISOLATE BAY (UNSEQUENCED GENOMES)</h2>
+        <div id="isolate-bay">
+            <!-- Isolates will be dynamically inserted here -->
+        </div>
+    </main>
+
+    <script>
+        function getStatusClass(status) {
+            switch (status) {
+                case '☑': return 'stable';
+                case '❒': return 'proto';
+                case '⧱': return 'dead';
+                case '◌': return 'theoretical';
+                default: return '';
+            }
+        }
+
+                function toggleLineage(event, genomeName) {
+            event.preventDefault(); // Prevent the link from navigating
+            event.stopPropagation(); // Stop the click from bubbling to the parent link
+            const explorer = document.querySelector(`.phylogenetic-explorer[data-genome="${genomeName}"]`);
+            if (explorer) {
+                explorer.style.display = explorer.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('archive.json')
+                .then(response => response.json())
+                .then(data => {
+                    const geneticArchive = document.getElementById('genetic-archive');
+                    const isolateBay = document.getElementById('isolate-bay');
+
+                    data.forEach(item => {
+                        // Handle ISOLATES
+                        if (item.category === 'ISOLATES') {
+                            const link = document.createElement('a');
+                            let isolateHref = item.name;
+                            // If the name doesn't already end with .html, add it.
+                            // This handles names that are already full filenames.
+                            if (!isolateHref.endsWith('.html')) {
+                                isolateHref += '.html';
+                            }
+                            link.href = isolateHref;
+                            link.className = 'isolate-entry-link';
+
+                            const isolateEntry = document.createElement('div');
+                            isolateEntry.className = 'isolate-entry';
+                            isolateEntry.innerHTML = `<span class="status">${item.status}</span> <span class="name">&lt;${item.name}&gt;</span>`;
+                            
+                            link.appendChild(isolateEntry);
+                            isolateBay.appendChild(link);
+                            return; // Continue to next item
+                        }
+
+                        // Main genome rendering logic
+                        if (!item.files || item.files.length === 0) return; // Skip if no files
+
+                        const li = document.createElement('li');
+                        const hasLineage = item.files.length > 1;
+                        const primaryFile = item.files[0]; // The first file is the primary one
+
+                        let entryHTML = `
+                            <a href="${primaryFile.fileName}" class="genome-link">
+                                <div class="genome-entry">
+                                    <span class="status ${getStatusClass(item.status)}">${item.status}</span>
+                                    <span class="icon">${item.icon}</span>
+                                    <span class="interaction">${item.interactionMode}</span>
+                                    <span class="name">${item.name}</span>
+                                    ${hasLineage ? `<span class="lineage-glyph">⧇</span>` : ''}
+                                </div>
+                            </a>
+                        `;
+
+                        if (hasLineage) {
+                            entryHTML += `<div class="phylogenetic-explorer" data-genome="${item.name}" style="display: none;"><ul>`;
+                            item.files.forEach(file => {
+                                const fileStatus = file.status || '';
+                                const fileDelta = file.delta || '';
+                                const fileNotes = file.notes || '';
+
+                                entryHTML += `
+                                    <li>
+                                        <a href="${file.fileName}">
+                                            <span class="status ${getStatusClass(fileStatus)}">${fileStatus}</span>
+                                            <span>&lt;${file.fileName}&gt;</span>
+                                            <span class="notes">(${fileDelta} ${fileNotes})</span>
+                                        </a>
+                                    </li>
+                                `;
+                            });
+                            entryHTML += `</ul></div>`;
+                        }
+
+                        li.innerHTML = entryHTML;
+                        geneticArchive.appendChild(li);
+
+                        // Add click listener to the lineage glyph to toggle visibility
+                        const lineageGlyph = li.querySelector('.lineage-glyph');
+                        if (lineageGlyph) {
+                            lineageGlyph.addEventListener('click', (event) => {
+                                event.preventDefault(); // Prevent the parent link from being followed
+                                event.stopPropagation(); // Stop the event from bubbling up to the parent link
+                                const explorer = li.querySelector('.phylogenetic-explorer');
+                                if (explorer) {
+                                    explorer.style.display = explorer.style.display === 'none' ? 'block' : 'none';
+                                }
+                            });
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('Could not load or parse archive.json:', error);
+                    const library = document.getElementById('genome-library');
+                    library.innerHTML = '<li style="color: #ff0055; text-align: center;">FATAL ERROR: Could not load archive.json. Please ensure the file exists and is valid.</li>';
+                });
+
+            function getStatusClass(status) {
+                if (status === '☑') return 'stable';
+                if (status === '❒') return 'proto';
+                if (status === '⧱') return 'dead';
+                if (status === '◌') return 'theoretical';
+                return '';
+            }
+        });
+    </script>
+
+</body>
+</html>

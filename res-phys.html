@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Interactive Resonance Laboratory</title>
+<style>
+  body{margin:0;font-family:system-ui;background:#111;color:#eee;overflow:hidden}
+  #info{
+    position:absolute;top:0;left:0;right:0;
+    background:#0008;padding:8px 14px;font-size:13px;
+    display:flex;gap:24px;align-items:center;flex-wrap:wrap;
+  }
+  #info label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  #info input[type=range]{width:100px}
+  #info span{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+  #plots{
+    position:absolute;bottom:0;left:0;right:0;height:35%;
+    background:#0008;display:flex;border-top:1px solid #222
+  }
+  canvas.plot{flex:1;height:100%;outline:1px solid #222}
+</style>
+</head>
+<body>
+
+<div id="info">
+  <label>ω drive<input id="wSlider" type="range" min="0.1" max="3" step="0.01" value="1"><span id="wVal">1.00</span> rad/s</label>
+  <label>ζ damping<input id="zSlider" type="range" min="0.01" max="1" step="0.01" value="0.1"><span id="zVal">0.10</span></label>
+  <label>m mass<input id="mSlider" type="range" min="0.2" max="2" step="0.1" value="1"><span id="mVal">1.0</span> kg</label>
+  <label>k spring<input id="kSlider" type="range" min="0.2" max="5" step="0.1" value="1"><span id="kVal">1.0</span> N/m</label>
+  <label>F₀ force<input id="fSlider" type="range" min="0.1" max="5" step="0.1" value="1"><span id="fVal">1.0</span> N</label>
+  <span style="margin-left:auto">Amplitude: <b id="amp">0.00</b> m | Phase shift: <b id="phase">0°</b></span>
+</div>
+
+<div id="plots">
+  <canvas id="ampPlot" class="plot"></canvas>
+  <canvas id="phasePlot" class="plot"></canvas>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r154/three.min.js"></script>
+<script>
+/* ---------- Parameters ---------- */
+let m = 1, k = 1, c, F0 = 1;
+let omega = 1;          // driving angular frequency
+let zeta = 0.1;         // damping ratio
+const g = 9.81;         // gravity, cosmetic
+
+updateCoeffs();
+function updateCoeffs(){
+  omega0 = Math.sqrt(k/m);
+  c = 2*zeta*Math.sqrt(k*m);   // derived from zeta
+}
+
+/* ---------- 3D Scene ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,100);
+camera.position.set(0,2,7);
+camera.lookAt(0,0,0);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x404040));
+const dir = new THREE.DirectionalLight(0xffffff,1);
+dir.position.set(5,5,5); dir.castShadow = true;
+scene.add(dir);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(20,20),
+  new THREE.MeshStandardMaterial({color:0x222222})
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Wall (fixed end of spring)
+const wall = new THREE.Mesh(
+  new THREE.BoxGeometry(0.2,4,3),
+  new THREE.MeshStandardMaterial({color:0x555555})
+);
+wall.position.set(-3,1.5,0);
+wall.castShadow = true;
+scene.add(wall);
+
+// Spring (helix)
+const springRadius = 0.15, springCoils = 12, springSegments = 120;
+const springCurve = new THREE.CatmullRomCurve3(
+  Array.from({length:springSegments+1},(_,i)=>{
+    const t = i/springSegments;
+    const angle = t * springCoils * Math.PI * 2;
+    return new THREE.Vector3(
+      -3 + t*4,                    // x along length
+      1.5 + springRadius*Math.sin(angle),
+      springRadius*Math.cos(angle)
+    );
+  })
+);
+const springGeo = new THREE.TubeGeometry(springCurve, springSegments, 0.04, 8, false);
+const springMat = new THREE.MeshStandardMaterial({color:0x00ffff});
+const springMesh = new THREE.Mesh(springGeo, springMat);
+springMesh.castShadow = true;
+scene.add(springMesh);
+
+// Mass (sphere)
+const massRadius = 0.3;
+const massMat = new THREE.MeshStandardMaterial({color:0xff4080});
+const mass = new THREE.Mesh(new THREE.SphereGeometry(massRadius,32,16), massMat);
+mass.castShadow = true;
+scene.add(mass);
+
+// Anchor point
+const anchor = new THREE.Vector3(-3,1.5,0);
+
+/* ---------- Physics Integration ---------- */
+let t = 0, dt = 1/60;
+let x = 0, v = 0;     // displacement and velocity
+
+function rk4Step(){
+  const f1x = v;
+  const f1v = (F0*Math.cos(omega*t) - c*v - k*x)/m;
+  const k1x = dt*f1x, k1v = dt*f1v;
+
+  const f2x = v + k1v/2;
+  const f2v = (F0*Math.cos(omega*(t+dt/2)) - c*(v+k1v/2) - k*(x+k1x/2))/m;
+  const k2x = dt*f2x, k2v = dt*f2v;
+
+  const f3x = v + k2v/2;
+  const f3v = (F0*Math.cos(omega*(t+dt/2)) - c*(v+k2v/2) - k*(x+k2x/2))/m;
+  const k3x = dt*f3x, k3v = dt*f2v;
+
+  const f4x = v + k3v;
+  const f4v = (F0*Math.cos(omega*(t+dt)) - c*(v+k3v) - k*(x+k3x))/m;
+  const k4x = dt*f4x, k4v = dt*f4v;
+
+  x += (k1x + 2*k2x + 2*k3x + k4x)/6;
+  v += (k1v + 2*k2v + 2*k3v + k4v)/6;
+}
+
+/* ---------- Resonance Curves ---------- */
+const N = 200;
+const wRange = Array.from({length:N},(_,i)=> 0.1 + 2.9*i/(N-1));
+let ampData = [], phaseData = [];
+
+function computeCurves(){
+  ampData.length = phaseData.length = 0;
+  wRange.forEach(w=>{
+    const denom = Math.sqrt(Math.pow(k-m*w*w,2) + Math.pow(c*w,2));
+    const A = F0/denom;
+    const phi = Math.atan2(c*w, k-m*w*w);
+    ampData.push(A);
+    phaseData.push(phi*180/Math.PI);
+  });
+  drawPlot('ampPlot', wRange, ampData, '|H(ω)| [m]', '#0ff');
+  drawPlot('phasePlot', wRange, phaseData, 'phase [°]', '#0f0');
+}
+computeCurves();
+
+function drawPlot(canvasId, xs, ys, label, color){
+  const cvs = document.getElementById(canvasId);
+  const ctx = cvs.getContext('2d');
+  cvs.width = cvs.clientWidth; cvs.height = cvs.clientHeight;
+  const W=cvs.width, H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle=color;
+  ctx.lineWidth=2;
+  const xMin=Math.min(...xs), xMax=Math.max(...xs);
+  const yMin=Math.min(...ys), yMax=Math.max(...ys);
+  const dx = xMax-xMin || 1, dy = (yMax-yMin)||1;
+  ctx.beginPath();
+  xs.forEach((x,i)=>{
+    const px = (x-xMin)/dx*W;
+    const py = H - (ys[i]-yMin)/dy*H;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
+  ctx.stroke();
+  // vertical cursor
+  const px = (omega-xMin)/dx*W;
+  ctx.strokeStyle='#fff';
+  ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
+  ctx.fillStyle='#fff';
+  ctx.font='12px system-ui';
+  ctx.fillText(label, 8, 16);
+}
+
+/* ---------- Animation Loop ---------- */
+function animate(){
+  requestAnimationFrame(animate);
+  rk4Step();
+  t += dt;
+
+  // Update mass position
+  mass.position.set(anchor.x + x + 1, anchor.y, 0);
+
+  // Update spring geometry
+  const length = 1 + x;
+  const pts = [];
+  for(let i=0;i<=springSegments;i++){
+    const t=i/springSegments;
+    const angle = t * springCoils * Math.PI * 2;
+    pts.push(new THREE.Vector3(
+      anchor.x + t*length,
+      anchor.y + springRadius*Math.sin(angle),
+      springRadius*Math.cos(angle)
+    ));
+  }
+  springMesh.geometry.dispose();
+  springMesh.geometry = new THREE.TubeGeometry(
+    new THREE.CatmullRomCurve3(pts), springSegments, 0.04, 8, false
+  );
+
+  // Update info
+  const amp = Math.abs(x); // instantaneous
+  const phaseDeg = Math.atan2(v, omega*(x))/Math.PI*180;
+  document.getElementById('amp').textContent = amp.toFixed(2);
+  document.getElementById('phase').textContent = phaseDeg.toFixed(0)+'°';
+
+  renderer.render(scene,camera);
+}
+animate();
+
+/* ---------- UI Listeners ---------- */
+['wSlider','zSlider','mSlider','kSlider','fSlider'].forEach(id=>{
+  const el = document.getElementById(id);
+  el.addEventListener('input',e=>{
+    const val = parseFloat(e.target.value);
+    switch(id){
+      case 'wSlider': omega = val; break;
+      case 'zSlider': zeta = val; break;
+      case 'mSlider': m = val; break;
+      case 'kSlider': k = val; break;
+      case 'fSlider': F0 = val; break;
+    }
+    document.getElementById(id.replace('Slider','Val')).textContent = val.toFixed(2);
+    updateCoeffs();
+    computeCurves();
+    // reset time to avoid transients
+    t = 0; x = 0; v = 0;
+  });
+});
+
+/* ---------- Resize ---------- */
+window.addEventListener('resize',()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  computeCurves();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Oscillator Playground – Media for Thinking the Unthinkable</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<link  href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" rel="stylesheet">
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .panel { flex: 1 1 400px; border: 1px solid #ccc; border-radius: 4px; padding: .5rem; }
+  #phasorSVG { width: 100%; height: 140px; }
+  #bodeSVG  { width: 100%; height: 300px; }
+  #waveSVG  { width: 100%; height: 140px; }
+  #formula  { font-size: 1.1rem; padding: .3rem; }
+</style>
+</head>
+<body>
+<h1>Damped-Driven-Oscillator Playground</h1>
+
+<div class="row">
+  <div class="panel">
+    <label>m: <input id="m"  type="range" min="0.1"  max="5"   step="0.1"  value="1"></label>
+    <label>c: <input id="c"  type="range" min="0.01" max="2"   step="0.01" value="0.1"></label>
+    <label>k: <input id="k"  type="range" min="0.5"  max="20"  step="0.1"  value="10"></label>
+    <label>F₀: <input id="F0" type="range" min="0.1"  max="10"  step="0.1"  value="1"></label>
+    <label>ω: <input id="w"  type="range" min="0.1"  max="10"  step="0.1"  value="3"></label>
+    <br>
+    <button id="recordBtn">Record</button>
+    <button id="playBtn" disabled>Play</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div class="panel">
+    <h3>Phasor (Complex Plane)</h3>
+    <svg id="phasorSVG"></svg>
+  </div>
+</div>
+
+<div class="row">
+  <div class="panel">
+    <h3>Bode Plot</h3>
+    <svg id="bodeSVG"></svg>
+  </div>
+</div>
+
+<div class="row">
+  <div class="panel">
+    <h3>Instantaneous Displacement & Power Flow</h3>
+    <svg id="waveSVG"></svg>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Closed-form Transfer Function</h3>
+  <div id="formula"></div>
+</div>
+
+<script>
+/* ---------- parameters & state ---------- */
+const params = ['m','c','k','F0','w'];
+let state = {};
+params.forEach(p => state[p] = +document.getElementById(p).value);
+
+const history = [];
+let historyIndex = -1;
+
+/* ---------- util ---------- */
+const tau = 2*Math.PI;
+const wRange = d3.range(0.1, 10.1, 0.1);
+
+function H(m,c,k,F0,omega) {
+  const denom = Math.sqrt(Math.pow(k - m*omega*omega, 2) + Math.pow(c*omega, 2));
+  const A = F0 / denom;
+  const phi = Math.atan2(c*omega, k - m*omega*omega);
+  return {A, phi};
+}
+
+/* ---------- URL sync ---------- */
+function updateURL() {
+  const url = new URL(location);
+  params.forEach(p => url.searchParams.set(p, state[p]));
+  history.replaceState({}, '', url);
+}
+function loadFromURL() {
+  const url = new URL(location);
+  params.forEach(p => {
+    const v = url.searchParams.get(p);
+    if (v !== null) {
+      state[p] = +v;
+      document.getElementById(p).value = +v;
+    }
+  });
+}
+loadFromURL();
+
+/* ---------- sliders ---------- */
+params.forEach(p => {
+  const el = document.getElementById(p);
+  el.addEventListener('input', e => {
+    state[p] = +e.target.value;
+    render();
+    updateURL();
+  });
+});
+
+/* ---------- SVG setups ---------- */
+const phasorSvg = d3.select('#phasorSVG');
+const phasorG   = phasorSvg.append('g').attr('transform','translate(200,70)');
+phasorSvg.append('defs').append('marker')
+  .attr('id','arrow').attr('viewBox','0 -5 10 10')
+  .attr('refX','10').attr('markerWidth','5').attr('markerHeight','5')
+  .attr('orient','auto').append('path').attr('d','M0,-5L10,0L0,5').attr('fill','#e41a1c');
+
+const bodeSvg = d3.select('#bodeSVG');
+const bodeW   = +bodeSvg.node().clientWidth;
+const bodeH   = +bodeSvg.node().clientHeight;
+const bodeX   = d3.scaleLinear().range([50, bodeW-20]);
+const bodeMagY = d3.scaleLog().range([bodeH-30, 30]);
+const bodePhaseY = d3.scaleLinear().range([bodeH-30, 30]);
+
+bodeSvg.append('g').attr('transform',`translate(0,${bodeH-30})`).attr('class','x-axis');
+bodeSvg.append('g').attr('transform','translate(50,0)').attr('class','mag-axis');
+bodeSvg.append('g').attr('transform',`translate(${bodeW-20},0)`).attr('class','phase-axis');
+
+const waveSvg = d3.select('#waveSVG');
+const waveW = +waveSvg.node().clientWidth;
+const waveH = +waveSvg.node().clientHeight;
+const waveX = d3.scaleLinear().range([0, waveW]);
+const waveY = d3.scaleLinear().range([waveH-20, 20]);
+
+/* ---------- render ---------- */
+function render() {
+  /* 0. Compute current transfer function */
+  const {A, phi} = H(state.m, state.c, state.k, state.F0, state.w);
+
+  /* 1. Symbolic formula */
+  const denom = `\\sqrt{(k - m\\omega^2)^2 + (c\\omega)^2}`;
+  katex.render(`
+    |H(\\omega)| = \\frac{${state.F0.toFixed(1)}}{${denom}} \\approx ${A.toFixed(3)}\\\\
+    \\varphi = \\tan^{-1}\\left(\\frac{c\\omega}{k - m\\omega^2}\\right) \\approx ${(phi*180/Math.PI).toFixed(1)}^\\circ
+  `, document.getElementById('formula'));
+
+  /* 2. Phasor */
+  phasorG.selectAll('*').remove();
+  const scale = 100;
+  phasorG.append('circle').attr('r', 3).attr('fill','#333');
+  phasorG.append('line')
+    .attr('x2', A*scale*Math.cos(phi))
+    .attr('y2', A*scale*Math.sin(phi))
+    .attr('marker-end','url(#arrow)')
+    .attr('stroke','#e41a1c').attr('stroke-width',2);
+
+  /* 3. Bode plot */
+  const data = wRange.map(w => {
+    const {A, phi} = H(state.m, state.c, state.k, state.F0, w);
+    return {w, mag: A, phase: phi};
+  });
+
+  bodeX.domain([0, d3.max(wRange)]);
+  bodeMagY.domain([0.01, d3.max(data, d => d.mag)]);
+  bodePhaseY.domain([-Math.PI, Math.PI]);
+
+  bodeSvg.select('.x-axis').call(d3.axisBottom(bodeX));
+  bodeSvg.select('.mag-axis').call(d3.axisLeft(bodeMagY).ticks(4, '~g'));
+  bodeSvg.select('.phase-axis').call(d3.axisRight(bodePhaseY)
+    .tickFormat(d => `${(d*180/Math.PI).toFixed(0)}°`));
+
+  const magLine = d3.line()
+    .x(d => bodeX(d.w))
+    .y(d => bodeMagY(d.mag))
+    .curve(d3.curveMonotoneX);
+  const phaseLine = d3.line()
+    .x(d => bodeX(d.w))
+    .y(d => bodePhaseY(d.phase))
+    .curve(d3.curveMonotoneX);
+
+  bodeSvg.selectAll('.mag-path').data([data]).join('path')
+    .attr('class','mag-path').attr('fill','none').attr('stroke','#377eb8')
+    .attr('d', magLine);
+
+  bodeSvg.selectAll('.phase-path').data([data]).join('path')
+    .attr('class','phase-path').attr('fill','none').attr('stroke','#4daf4a')
+    .attr('d', phaseLine);
+
+  /* 4. Waveform & power ribbon */
+  const t = d3.range(0, 10, 0.05);
+  const omega = state.w;
+  const {A: amp, phi: phase} = H(state.m, state.c, state.k, state.F0, omega);
+  const x = t.map(ti => amp * Math.cos(omega*ti - phase));
+  const v = t.map(ti => -amp*omega * Math.sin(omega*ti - phase));
+  const power = t.map((ti, i) => state.F0 * Math.cos(omega*ti) * v[i]);
+
+  waveX.domain([0, d3.max(t)]);
+  waveY.domain([d3.min(x), d3.max(x)]);
+
+  const waveArea = d3.area()
+    .x((d,i) => waveX(t[i]))
+    .y0(i => waveY(power[i] > 0 ? x[i] : x[i] + power[i]*0.01))
+    .y1(i => waveY(power[i] > 0 ? x[i] + power[i]*0.01 : x[i]))
+    .curve(d3.curveBasis);
+
+  waveSvg.selectAll('.area').data([power]).join('path')
+    .attr('class','area')
+    .attr('fill', d => d3.interpolateRdBu(d3.scaleLinear().domain([-1,1])(d3.mean(d))))
+    .attr('d', waveArea);
+
+  const waveLine = d3.line()
+    .x((d,i) => waveX(t[i]))
+    .y(d => waveY(d))
+    .curve(d3.curveBasis);
+
+  waveSvg.selectAll('.line').data([x]).join('path')
+    .attr('class','line').attr('fill','none').attr('stroke','#333').attr('d', waveLine);
+}
+
+/* ---------- record / play ---------- */
+document.getElementById('recordBtn').addEventListener('click', () => {
+  history.push({...state});
+  document.getElementById('playBtn').disabled = false;
+});
+document.getElementById('playBtn').addEventListener('click', () => {
+  historyIndex = 0;
+  const id = setInterval(() => {
+    if (historyIndex >= history.length) { clearInterval(id); return; }
+    Object.assign(state, history[historyIndex]);
+    params.forEach(p => document.getElementById(p).value = state[p]);
+    render(); updateURL();
+    historyIndex++;
+  }, 1000);
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  history.length = 0;
+  document.getElementById('playBtn').disabled = true;
+});
+
+/* ---------- initial render ---------- */
+render();
+</script>
+</body>
+</html>

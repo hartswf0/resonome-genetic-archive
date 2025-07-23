@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lattice-of-Meaning – Bret-Victor Medium</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#111;color:#eee}
+  #ui{position:absolute;top:0;left:0;right:0;padding:8px 12px;background:#0006;backdrop-filter:blur(4px);z-index:10;display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:14px}
+  label{display:flex;align-items:center;gap:6px;font-size:13px}
+  input[type=range]{width:90px}
+  #info{position:absolute;bottom:8px;left:8px;font-size:12px;color:#ccc}
+  #snapshots{display:flex;gap:4px;margin-left:auto}
+  .snapshot{width:40px;height:40px;border:1px solid #555;border-radius:4px;background-size:cover;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="ui">
+  <!-- Sliders -->
+  <label>Reciprocity<input id="recip" type="range" min="0" max="1" step="0.01"></label>
+  <label>Friction<input id="friction" type="range" min="0" max="1" step="0.01"></label>
+  <label>Horizon<input id="horizon" type="range" min="0" max="1" step="0.01"></label>
+  <label>Breath<input id="breath" type="range" min="0.4" max="2" step="0.05"></label>
+  <button id="record">📸</button>
+  <div id="snapshots"></div>
+</div>
+<canvas id="c"></canvas>
+<div id="info">Shift-drag to rotate, scroll to zoom, ⌥-click node for causal chain</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+    "addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'addons/controls/OrbitControls.js';
+
+document.addEventListener('DOMContentLoaded', () => {
+  const c = document.getElementById('c');
+  const recipSlider = document.getElementById('recip');
+  const frictionSlider = document.getElementById('friction');
+  const horizonSlider = document.getElementById('horizon');
+  const breathSlider = document.getElementById('breath');
+  const snapshotsDiv = document.getElementById('snapshots');
+  const recordBtn = document.getElementById('record');
+
+  // ---------- Scene ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(4,3,4);
+  const renderer = new THREE.WebGLRenderer({canvas:c, antialias:true});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  const controls = new OrbitControls(camera,renderer.domElement);
+
+  // ---------- Lattice data ----------
+  const data = { recip:0.5, friction:0.5, horizon:0.5, breath:1.0 };
+  const nodes = [];
+  const edges = [];
+  const N = 7; // NxN grid
+
+  // Set initial slider values
+  recipSlider.value = data.recip;
+  frictionSlider.value = data.friction;
+  horizonSlider.value = data.horizon;
+  breathSlider.value = data.breath;
+
+  // ---------- Lattice creation ----------
+  function updateLattice(){
+    nodes.forEach(n=>scene.remove(n));
+    edges.forEach(e=>scene.remove(e));
+    nodes.length=0;
+    edges.length=0;
+
+    for(let i=0; i<N; i++){
+      for(let j=0; j<N; j++){
+        const node = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1,16,16),
+          new THREE.MeshBasicMaterial({color:0xffffff})
+        );
+        const x = (i - (N-1)/2) * data.breath;
+        const z = (j - (N-1)/2) * data.breath;
+        const y = Math.sin(x*data.recip) * Math.cos(z*data.friction) * data.horizon;
+        node.position.set(x,y,z);
+        node.userData = {axis: i%2==0?'A':'B', index:j};
+        nodes.push(node);
+        scene.add(node);
+      }
+    }
+
+    for(let i=0; i<N; i++){
+      for(let j=0; j<N; j++){
+        if(i<N-1) addEdge(i*N+j, (i+1)*N+j);
+        if(j<N-1) addEdge(i*N+j, i*N+(j+1));
+      }
+    }
+  }
+
+  function addEdge(i1,i2){
+    const p1 = nodes[i1].position;
+    const p2 = nodes[i2].position;
+    const geo = new THREE.BufferGeometry().setFromPoints([p1,p2]);
+    const mat = new THREE.LineBasicMaterial({color:0x555555, transparent:true, opacity:0.5});
+    const line = new THREE.Line(geo,mat);
+    edges.push(line);
+    scene.add(line);
+  }
+
+  // ---------- UI ----------
+  recipSlider.addEventListener('input',e=>{data.recip=+e.target.value;updateLattice()});
+  frictionSlider.addEventListener('input',e=>{data.friction=+e.target.value;updateLattice()});
+  horizonSlider.addEventListener('input',e=>{data.horizon=+e.target.value;updateLattice()});
+  breathSlider.addEventListener('input',e=>{data.breath=+e.target.value;updateLattice()});
+
+  recordBtn.addEventListener('click',()=>{
+    const canvas = renderer.domElement;
+    const img = canvas.toDataURL('image/png');
+    const div = document.createElement('div');
+    div.className='snapshot';
+    div.style.backgroundImage=`url(${img})`;
+    div.addEventListener('click',()=>loadSnapshot(img));
+    snapshotsDiv.appendChild(div);
+  });
+
+  function loadSnapshot(img){
+    const tex = new THREE.TextureLoader().load(img);
+    scene.background = tex;
+    setTimeout(()=>scene.background=new THREE.Color(0x111111),2000);
+  }
+
+  window.addEventListener('click',e=>{
+    if(e.altKey){
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera({x:(e.clientX/window.innerWidth)*2-1, y:-(e.clientY/window.innerHeight)*2+1}, camera);
+      const inter = raycaster.intersectObjects(nodes);
+      if(inter.length){
+        const n=inter[0].object;
+        alert(`Causal chain for ${n.userData.axis} node ${n.userData.index}:\n`+
+              `Parameter ${Object.entries(data).map(([k,v])=>`${k}=${v.toFixed(2)}`).join(', ')}`);
+      }
+    }
+  });
+
+  window.addEventListener('resize',()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+
+  updateLattice();
+  renderer.setAnimationLoop(()=>{
+    controls.update();
+    renderer.render(scene,camera);
+  });
+});
+</script>
+</body>
+</html>

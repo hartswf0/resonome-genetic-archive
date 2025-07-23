@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>◻ UNIVERSE — Spatiotemporal Oscillator Metagame</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui}
+  #canvas{width:100%;height:100%;display:block}
+  #hud{position:absolute;top:10px;left:10px;background:#0008;padding:6px;border-radius:4px;font-size:12px;line-height:1.3}
+  label{display:block}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hud">
+  <label>mass <input id="m"  type="range" min=".1" max="5"  step=".1" value="1"></label>
+  <label>damp  <input id="c"  type="range" min=".01" max="2" step=".01" value=".1"></label>
+  <label>spring<input id="k"  type="range" min=".5" max="20" step=".1" value="10"></label>
+  <label>force <input id="F0" type="range" min=".1" max="10" step=".1" value="1"></label>
+  <label>drive ω<input id="w"  type="range" min=".1" max="10" step=".1" value="3"></label>
+  <span id="info"></span>
+</div>
+
+<script>
+/*********************************************************************
+ * 1. ONTOLOGICAL CONSTANTS
+ *********************************************************************/
+const FIELD    = { dims: 2, domain: [ [-1,1], [-1,1] ], time: 0 };  // ℝ²×ℝ
+const WINDOW   = { scale: 200, boundary: 1.5, lattice: 64 };        // observation lattice
+const ENGINE   = { dt: 1/60, contraction: .99 };                    // recursion params
+const TRANSFORMS = {
+  observe   : (f,x,t) => f(x,t),             // sampling patch
+  encode    : (v)    => [v, Math.atan2(v[1],v[0])], // symbolic
+  convolve  : (k,p)  => [k[0]*p[0]-k[1]*p[1],k[0]*p[1]+k[1]*p[0]],
+  entangle  : (f1,f2)=> f1[0]*f2[0]+f1[1]*f2[1],
+  forget    : (m)    => m*ENGINE.contraction
+};
+
+/*********************************************************************
+ * 2. MODEL = DAMPED-DRIVEN OSCILLATOR
+ *********************************************************************/
+function model(x, v, t, {m,c,k,F0,w}) {
+  const acc = (F0*Math.cos(w*t) - c*v - k*x)/m;
+  return [v, acc];
+}
+
+/*********************************************************************
+ * 3. REPRESENTATION ENGINE
+ *********************************************************************/
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
+const info     = document.getElementById('info');
+resize(); window.addEventListener('resize', resize);
+
+let state = {m:1,c:.1,k:10,F0:1,w:3};
+let patch = {x:0, v:0, t:0};
+let path  = [];           // fixed-point recursion memory
+
+document.querySelectorAll('input').forEach(inp=>{
+  inp.addEventListener('input', e=>{ state[inp.id]=+e.target.value; reset(); });
+});
+
+function reset(){ patch={x:0,v:0,t:0}; path.length=0; }
+
+function integrate(p, dt, s){
+  const k1=model(p.x,p.v,p.t,s);
+  const k2=model(p.x+dt*k1[0]/2, p.v+dt*k1[1]/2, p.t+dt/2, s);
+  const k3=model(p.x+dt*k2[0]/2, p.v+dt*k2[1]/2, p.t+dt/2, s);
+  const k4=model(p.x+dt*k3[0],   p.v+dt*k3[1],   p.t+dt,   s);
+  return {
+    x: p.x + dt*(k1[0]+2*k2[0]+2*k3[0]+k4[0])/6,
+    v: p.v + dt*(k1[1]+2*k2[1]+2*k3[1]+k4[1])/6,
+    t: p.t + dt
+  };
+}
+
+/*********************************************************************
+ * 4. RENDER LOOP
+ *********************************************************************/
+let lastT = 0;
+requestAnimationFrame(loop);
+function loop(now){
+  const dt  = (now-lastT)/1000 || .016;
+  lastT = now;
+  FIELD.time += dt;
+
+  /* ◻ ENGINE recursion */
+  patch = integrate(patch, ENGINE.dt, state);
+  path.push([patch.x,patch.v]);
+  if (path.length>200) path.shift();
+
+  /* ◻ OBSERVE patch */
+  const encoded = TRANSFORMS.encode([patch.x,patch.v]);
+  const amp    = Math.hypot(...encoded);
+  const phase  = encoded[1];
+
+  /* ◻ REPRESENTATION */
+  ctx.fillStyle='#00000019';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  /* phasor arrow */
+  const cx=canvas.width/2, cy=canvas.height/2;
+  const px=cx+amp*WINDOW.scale*Math.cos(phase);
+  const py=cy-amp*WINDOW.scale*Math.sin(phase);
+  ctx.strokeStyle='#fff';
+  ctx.beginPath();
+  ctx.moveTo(cx,cy); ctx.lineTo(px,py);
+  ctx.stroke();
+
+  /* trace path */
+  ctx.strokeStyle='#00ffff80';
+  ctx.beginPath();
+  path.forEach(([x,y],i)=>{
+    const px=cx+x*WINDOW.scale;
+    const py=cy-y*WINDOW.scale;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
+  ctx.stroke();
+
+  /* power ribbon */
+  const power = state.F0*Math.cos(state.w*patch.t)*patch.v;
+  const bar   = Math.abs(power)*5;
+  ctx.fillStyle = power>0?'#ff000088':'#00ffff88';
+  ctx.fillRect(cx-2,cy-bar,4,bar);
+
+  /* info overlay */
+  const {A,phi} = H(state.m,state.c,state.k,state.F0,state.w);
+  info.innerHTML =
+    `amp ${A.toFixed(3)} | phase ${(phi*180/Math.PI).toFixed(1)}°`;
+
+  requestAnimationFrame(loop);
+}
+
+/*********************************************************************
+ * 5. UTIL
+ *********************************************************************/
+function resize(){
+  canvas.width  = innerWidth;
+  canvas.height = innerHeight;
+}
+function H(m,c,k,F0,w){
+  const den = Math.hypot(k-m*w*w,c*w);
+  return {A:F0/den, phi:Math.atan2(c*w,k-m*w*w)};
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>RFT – Media for Thinking the Unthinkable</title>
+<style>
+    html,body{margin:0;height:100%;font-family:sans-serif;background:#000;color:#fff;overflow:hidden}
+    canvas{position:absolute;top:0;left:0}
+    #ui{position:absolute;top:8px;left:8px;background:#111a;padding:8px;border-radius:4px;font-size:12px;max-width:260px}
+    label{display:block;margin:4px 0}
+    button{margin:2px;padding:2px 6px;background:#222;border:1px solid #555;color:#fff;border-radius:2px;cursor:pointer}
+    button:hover{background:#444}
+    #ghostCanvas{position:absolute;top:0;left:0;pointer-events:none;opacity:.45}
+    #eq{font-family:monospace;font-size:16px;margin:4px 0}
+    #scaleVal{font-size:10px;color:#0ff}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="ghostCanvas"></canvas>
+
+<div id="ui">
+    <b>Resonance Field Theory Sandbox</b><br/>
+    <label>E (energy) <input type="range" id="E" min="0.1" max="2" step="0.01" value="1"/></label>
+    <label>X (chirality) <input type="range" id="X" min="0.1" max="2" step="0.01" value="1"/></label>
+    <div id="eq">M = E·X² = <span id="M">1.00</span></div>
+
+    <label>Scale <input type="range" id="scale" min="-4" max="4" step="0.1" value="0"/></label>
+    <span id="scaleVal">1×</span>
+
+    <label>Prime gap jump
+        <select id="primeSelect">
+            <option value="0">2</option><option value="1">3</option><option value="2">5</option>
+            <option value="3">7</option><option value="4">11</option>
+        </select>
+    </label>
+
+    <button id="recordBtn">Record</button>
+    <button id="ghostBtn" disabled>Ghost Mode</button>
+    <button id="resetBtn">Reset</button>
+</div>
+
+<script>
+/* ---------------  WebGL boilerplate --------------- */
+const cvs = document.getElementById('c');
+const gl = cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
+if (!gl) alert('WebGL not supported');
+function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+    return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, `
+attribute vec2 a; void main(){gl_Position=vec4(a,0.,1.);}`));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, `
+precision mediump float;
+uniform float time,E,X,scale,prime;
+uniform vec2 resolution;
+float hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+float field(vec2 uv){
+    float t = time*0.5;
+    float chiral = sin(uv.x*10.*X+t) * cos(uv.y*10.*X-t);
+    float mass = E*X*X;
+    float grav = smoothstep(0.2,0.0,length(uv))*mass;
+    return chiral + grav*(sin(length(uv)*20.*prime+time));
+}
+void main(){
+    vec2 uv = (2.*gl_FragCoord.xy-resolution.xy)/resolution.y;
+    uv *= pow(10.,scale/2.);
+    float f = field(uv);
+    vec3 col = 0.5 + 0.5*cos(vec3(2.+f*2.,3.+f*2.,4.+f*2.));
+    gl_FragColor = vec4(col,1);
+}`));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog,'a');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+
+/* ---------------  uniforms --------------- */
+const u = {};
+['time','resolution','E','X','scale','prime'].forEach(n=>u[n]=gl.getUniformLocation(prog,n));
+
+/* ---------------  UI wiring --------------- */
+const els = {
+    E: document.getElementById('E'),
+    X: document.getElementById('X'),
+    scale: document.getElementById('scale'),
+    primeSelect: document.getElementById('primeSelect'),
+    M: document.getElementById('M'),
+    scaleVal: document.getElementById('scaleVal'),
+    recordBtn: document.getElementById('recordBtn'),
+    ghostBtn: document.getElementById('ghostBtn'),
+    resetBtn: document.getElementById('resetBtn')
+};
+const primes = [2,3,5,7,11];
+let state = {E:1,X:1,scale:0,prime:2};
+function sync(){
+    state.E = +els.E.value;
+    state.X = +els.X.value;
+    state.scale = +els.scale.value;
+    state.prime = primes[+els.primeSelect.value];
+    els.M.textContent = (state.E*state.X*state.X).toFixed(2);
+    els.scaleVal.textContent = (Math.pow(10,state.scale/2)).toFixed(2)+'×';
+}
+['E','X','scale','primeSelect'].forEach(id=>els[id].addEventListener('input',sync));
+sync();
+
+/* ---------------  recording / ghost --------------- */
+let ghostState = null;
+els.recordBtn.onclick = ()=>{
+    ghostState = {...state};
+    els.ghostBtn.disabled=false;
+    drawGhost();
+};
+els.ghostBtn.onclick = ()=>{ ghostState = ghostState?null:ghostState; els.ghostBtn.textContent=ghostState?'Hide Ghost':'Ghost Mode'; };
+els.resetBtn.onclick = ()=>{ ghostState=null; els.ghostBtn.disabled=true; };
+
+/* ---------------  render loop --------------- */
+function resize(){
+    cvs.width = innerWidth; cvs.height = innerHeight;
+    gl.viewport(0,0,cvs.width,cvs.height);
+    ghostCanvas.width = cvs.width; ghostCanvas.height = cvs.height;
+}
+window.addEventListener('resize',resize); resize();
+
+const ghostCanvas = document.getElementById('ghostCanvas');
+let ghostTime = 0;
+function drawGhost(){
+    if(!ghostState) return;
+    ghostCanvas.style.display='block';
+    ghostTime = performance.now()*0.001;
+    ghostCanvas.style.opacity = 0.45;
+}
+function render(){
+    gl.uniform1f(u.time, performance.now()*0.001);
+    gl.uniform2f(u.resolution, cvs.width, cvs.height);
+    gl.uniform1f(u.E, state.E);
+    gl.uniform1f(u.X, state.X);
+    gl.uniform1f(u.scale, state.scale);
+    gl.uniform1f(u.prime, state.prime);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    requestAnimationFrame(render);
+}
+render();
+</script>
+</body>
+</html>

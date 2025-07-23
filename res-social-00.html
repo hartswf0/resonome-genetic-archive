@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resonant Philosophy Simulation Engine</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .panel {
+            position: absolute;
+            background: rgba(20, 20, 30, 0.9);
+            border: 1px solid rgba(100, 150, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #agent-panel {
+            top: 20px;
+            left: 20px;
+            width: 300px;
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+
+        #insight-panel {
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        #controls-panel {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .agent-card {
+            background: rgba(40, 40, 50, 0.5);
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .agent-card:hover {
+            background: rgba(60, 60, 80, 0.7);
+            border-left-color: #6496ff;
+            transform: translateX(5px);
+        }
+
+        .agent-card.active {
+            background: rgba(80, 80, 100, 0.7);
+            border-left-color: #ff6b6b;
+        }
+
+        .trait-tag {
+            display: inline-block;
+            background: rgba(100, 150, 255, 0.2);
+            color: #6496ff;
+            padding: 2px 6px;
+            margin: 2px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+
+        .insight-item {
+            background: rgba(80, 60, 40, 0.5);
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #ffab40;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        button {
+            background: rgba(100, 150, 255, 0.2);
+            border: 1px solid #6496ff;
+            color: #6496ff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: rgba(100, 150, 255, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 2px 10px rgba(100, 150, 255, 0.3);
+        }
+
+        #resonance-meter {
+            width: 200px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #resonance-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #6496ff);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+        }
+
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+
+        .loading-text {
+            color: #6496ff;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .loading-bar {
+            width: 300px;
+            height: 4px;
+            background: rgba(100, 150, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .loading-progress {
+            height: 100%;
+            background: #6496ff;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loading-text">Initializing Philosophical Commons...</div>
+        <div class="loading-bar">
+            <div class="loading-progress" id="loading-progress"></div>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    
+    <div id="ui-overlay">
+        <div class="panel" id="agent-panel">
+            <h3>Philosophical Agents</h3>
+            <div id="agent-list"></div>
+        </div>
+        
+        <div class="panel" id="insight-panel">
+            <h3>Emergent Insights</h3>
+            <div id="insight-list"></div>
+        </div>
+        
+        <div class="panel" id="controls-panel">
+            <button onclick="togglePause()">⏯️ Pause/Resume</button>
+            <button onclick="resetSimulation()">🔄 Reset</button>
+            <button onclick="spawnInsight()">💡 Generate Insight</button>
+            <div>
+                <span>Resonance Level:</span>
+                <div id="resonance-meter">
+                    <div id="resonance-fill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global variables
+        let scene, camera, renderer, composer;
+        let agents = [];
+        let insights = [];
+        let selectedAgent = null;
+        let isPaused = false;
+        let resonanceLevel = 0;
+        let mouseX = 0, mouseY = 0;
+
+        // Agent class definitions
+        class PhilosophicalAgent {
+            constructor(id, name, type, traits, position) {
+                this.id = id;
+                this.name = name;
+                this.type = type;
+                this.traits = traits;
+                this.position = position;
+                this.mesh = null;
+                this.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.02,
+                    (Math.random() - 0.5) * 0.02,
+                    (Math.random() - 0.5) * 0.02
+                );
+                this.resonance = Math.random();
+                this.connections = [];
+                this.thoughts = [];
+                this.color = this.getColorByType(type);
+            }
+
+            getColorByType(type) {
+                const colors = {
+                    system: 0x6496ff,
+                    character: 0xff6b6b,
+                    object: 0x40ffab
+                };
+                return colors[type] || 0xffffff;
+            }
+
+            update() {
+                if (isPaused) return;
+
+                // Simple physics simulation
+                this.position.add(this.velocity);
+                
+                // Boundary constraints
+                ['x', 'y', 'z'].forEach(axis => {
+                    if (Math.abs(this.position[axis]) > 5) {
+                        this.velocity[axis] *= -0.8;
+                        this.position[axis] = Math.sign(this.position[axis]) * 5;
+                    }
+                });
+
+                // Update mesh position
+                if (this.mesh) {
+                    this.mesh.position.copy(this.position);
+                    
+                    // Subtle rotation based on resonance
+                    this.mesh.rotation.y += this.resonance * 0.01;
+                    
+                    // Scale based on resonance
+                    const scale = 0.5 + this.resonance * 0.5;
+                    this.mesh.scale.setScalar(scale);
+                }
+
+                // Update connections
+                this.updateConnections();
+            }
+
+            updateConnections() {
+                // Check for nearby agents and create connections
+                agents.forEach(other => {
+                    if (other !== this) {
+                        const distance = this.position.distanceTo(other.position);
+                        if (distance < 3 && !this.connections.includes(other.id)) {
+                            this.connections.push(other.id);
+                            this.generateInsight(other);
+                        } else if (distance > 4 && this.connections.includes(other.id)) {
+                            this.connections = this.connections.filter(id => id !== other.id);
+                        }
+                    }
+                });
+            }
+
+            generateInsight(other) {
+                const insightTypes = [
+                    `${this.name} resonates with ${other.name} through ${this.sharedTrait(other)}`,
+                    `New connection: ${this.name} and ${other.name} discover ${this.complementaryInsight(other)}`,
+                    `Philosophical synthesis: ${this.name} + ${other.name} = emergent understanding`
+                ];
+                
+                const insight = insightTypes[Math.floor(Math.random() * insightTypes.length)];
+                addInsight(insight);
+                updateResonance(0.1);
+            }
+
+            sharedTrait(other) {
+                const shared = this.traits.filter(t => other.traits.includes(t));
+                return shared[0] || 'universal connection';
+            }
+
+            complementaryInsight(other) {
+                const complement = this.traits.find(t => !other.traits.includes(t));
+                return complement || 'mutual understanding';
+            }
+        }
+
+        // Initialize Three.js scene
+        function initScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+            scene.fog = new THREE.Fog(0x0a0a0a, 10, 50);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // Add particle field
+            createParticleField();
+
+            // Initialize agents
+            initializeAgents();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('click', onMouseClick);
+        }
+
+        function createParticleField() {
+            const particleGeometry = new THREE.BufferGeometry();
+            const particleCount = 1000;
+            const positions = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 20;
+                positions[i + 1] = (Math.random() - 0.5) * 20;
+                positions[i + 2] = (Math.random() - 0.5) * 20;
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x6496ff,
+                size: 0.05,
+                transparent: true,
+                opacity: 0.6
+            });
+
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+        }
+
+        function initializeAgents() {
+            const agentData = [
+                { id: 'rosa_resonance_agent', name: 'Rosa Resonance Engine', type: 'system', traits: ['transformative', 'uncontrollable', 'affective', 'dialogical'] },
+                { id: 'taylor_recognition_agent', name: 'Taylor Recognition System', type: 'system', traits: ['dialogical', 'authentic', 'cultural', 'meaning-seeking'] },
+                { id: 'wikan_resonance_agent', name: 'Wikan Empathic Resonator', type: 'system', traits: ['embodied', 'empathetic', 'experiential', 'cross-cultural'] },
+                { id: 'structural_coupling_agent', name: 'Structural Coupling Mechanism', type: 'system', traits: ['autopoietic', 'recursive', 'adaptive', 'boundary-maintaining'] },
+                { id: 'dialogical_self_agent', name: 'Dialogical Self Entity', type: 'character', traits: ['conversational', 'identity-forming', 'relational', 'narrative'] },
+                { id: 'authenticity_seeker', name: 'Authenticity Seeker', type: 'character', traits: ['self-determining', 'original', 'meaningful', 'resistant-to-conformity'] },
+                { id: 'alienation_force', name: 'Alienation Dynamics', type: 'system', traits: ['disconnecting', 'numbing', 'instrumentalizing', 'control-seeking'] },
+                { id: 'recognition_mediator', name: 'Recognition Mediator', type: 'system', traits: ['validating', 'identity-shaping', 'social', 'power-aware'] },
+                { id: 'player_philosopher', name: 'Player-Philosopher', type: 'character', traits: ['curious', 'experimental', 'reflective', 'choice-making'] }
+            ];
+
+            agentData.forEach((data, index) => {
+                const angle = (index / agentData.length) * Math.PI * 2;
+                const radius = 3;
+                const position = new THREE.Vector3(
+                    Math.cos(angle) * radius,
+                    (Math.random() - 0.5) * 2,
+                    Math.sin(angle) * radius
+                );
+
+                const agent = new PhilosophicalAgent(
+                    data.id,
+                    data.name,
+                    data.type,
+                    data.traits,
+                    position
+                );
+
+                // Create visual representation
+                const geometry = new THREE.OctahedronGeometry(0.5);
+                const material = new THREE.MeshPhongMaterial({
+                    color: agent.color,
+                    transparent: true,
+                    opacity: 0.8,
+                    wireframe: false
+                });
+
+                agent.mesh = new THREE.Mesh(geometry, material);
+                agent.mesh.castShadow = true;
+                agent.mesh.receiveShadow = true;
+                agent.mesh.userData = { agent: agent };
+
+                scene.add(agent.mesh);
+                agents.push(agent);
+            });
+
+            updateAgentList();
+        }
+
+        function updateAgentList() {
+            const container = document.getElementById('agent-list');
+            container.innerHTML = '';
+
+            agents.forEach(agent => {
+                const card = document.createElement('div');
+                card.className = 'agent-card';
+                card.innerHTML = `
+                    <strong>${agent.name}</strong>
+                    <div>${agent.traits.map(t => `<span class="trait-tag">${t}</span>`).join('')}</div>
+                `;
+                card.addEventListener('click', () => selectAgent(agent));
+                container.appendChild(card);
+            });
+        }
+
+        function selectAgent(agent) {
+            selectedAgent = agent;
+            document.querySelectorAll('.agent-card').forEach(card => card.classList.remove('active'));
+            event.target.closest('.agent-card').classList.add('active');
+            
+            // Focus camera on selected agent
+            const target = agent.mesh.position.clone();
+            camera.position.lerp(target.clone().add(new THREE.Vector3(0, 3, 5)), 0.1);
+        }
+
+        function addInsight(insight) {
+            if (insights.length >= 10) {
+                insights.shift();
+            }
+            insights.push(insight);
+
+            const container = document.getElementById('insight-list');
+            const item = document.createElement('div');
+            item.className = 'insight-item';
+            item.textContent = insight;
+            container.appendChild(item);
+
+            // Auto-scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateResonance(delta) {
+            resonanceLevel = Math.min(1, Math.max(0, resonanceLevel + delta));
+            document.getElementById('resonance-fill').style.width = `${resonanceLevel * 100}%`;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update agents
+            agents.forEach(agent => agent.update());
+
+            // Update camera
+            const time = Date.now() * 0.0005;
+            if (!selectedAgent) {
+                camera.position.x = Math.cos(time) * 15;
+                camera.position.z = Math.sin(time) * 15;
+                camera.lookAt(scene.position);
+            }
+
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onMouseClick(event) {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2(
+                (event.clientX / window.innerWidth) * 2 - 1,
+                -(event.clientY / window.innerHeight) * 2 + 1
+            );
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children);
+
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                if (object.userData.agent) {
+                    selectAgent(object.userData.agent);
+                }
+            }
+        }
+
+        // Control functions
+        function togglePause() {
+            isPaused = !isPaused;
+        }
+
+        function resetSimulation() {
+            agents.forEach(agent => {
+                agent.position.set(
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 10
+                );
+                agent.resonance = Math.random();
+                agent.connections = [];
+            });
+            insights = [];
+            document.getElementById('insight-list').innerHTML = '';
+            updateResonance(-resonanceLevel);
+        }
+
+        function spawnInsight() {
+            const themes = [
+                "The nature of authentic existence emerges from dialogical encounters",
+                "Resonance transcends cultural boundaries through embodied empathy",
+                "Alienation dissipates when recognition flows freely between agents",
+                "Philosophical synthesis occurs at the intersection of multiple perspectives",
+                "Meaning-making is inherently relational and co-constructed"
+            ];
+            addInsight(themes[Math.floor(Math.random() * themes.length)]);
+            updateResonance(0.2);
+        }
+
+        // Loading simulation
+        function simulateLoading() {
+            const progress = document.getElementById('loading-progress');
+            let width = 0;
+            const interval = setInterval(() => {
+                width += Math.random() * 10;
+                progress.style.width = width + '%';
+                
+                if (width >= 100) {
+                    clearInterval(interval);
+                    document.getElementById('loading-screen').style.display = 'none';
+                    initScene();
+                    animate();
+                }
+            }, 100);
+        }
+
+        // Initialize
+        simulateLoading();
+    </script>
+</body>
+</html>

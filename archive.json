@@ -1,0 +1,602 @@
+[
+  {
+    "name": "deep-res-02",
+    "status": "☑", "icon": "◎", "interactionMode": "⿱", "category": "BEST",
+    "description": "A prime Nested Field instrument for composing with the field's implicit habits.",
+    "files": [
+      { "fileName": "deep-res-02.html", "status": "☑", "delta": "", "notes": "Stable and highly coherent. The Form 〰 is implicit to the Field □." }
+    ]
+  },
+  {
+    "name": "mighty-morph",
+    "status": "☑", "icon": "◫", "interactionMode": "⿱", "category": "BEST",
+    "description": "A Double Deck family exploring the harmonization of two fields.",
+    "files": [
+      { "fileName": "mighty-morph-08bbddeef.html", "status": "☑", "delta": "Δ•", "notes": "Prime stable version. Exhibits emergent harmony and control." },
+      { "fileName": "mighty-morph-09.html", "status": "❒", "delta": "Δ•", "notes": "Spontaneous harmony between fields, but Agent • has no control over Form 〰." },
+      { "fileName": "mighty-morph-20.html", "status": "❒", "delta": "Δ〰", "notes": "Sequencer Form 〰 is visible but decoupled from sound." },
+      { "fileName": "mighty-morph-17.html", "status": "❒", "delta": "Δ〰", "notes": "Sampler-centric Form 〰 is present but unresponsive." },
+      { "fileName": "mighty-morph-18.html", "status": "⧱", "delta": "Δ□", "notes": "Pathological Field collapse. Audio engine is decoupled from visual nodes." }
+    ]
+  },
+  {
+    "name": "Physics Simulations",
+    "status": "☑", "icon": "⌬", "interactionMode": "⿰", "category": "PHYSICS",
+    "description": "Simulations of classical resonance principles.",
+    "files": [
+      { "fileName": "euler-oscillator.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "chladni-00.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "galileo-pendulum.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "hook-explorer.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "oscillator-playground.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "oscillator-game.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "int-oscillator.html", "status": "❒", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Physics Prototypes",
+    "status": "❒", "icon": "⌬", "interactionMode": "⿰", "category": "PHYSICS",
+    "description": "Early-stage explorations into the physics of resonance.",
+    "files": [
+      { "fileName": "res-sim.html", "status": "❒", "delta": "", "notes": "Core resonance simulation." },
+      { "fileName": "rese.html", "status": "❒", "delta": "", "notes": "Early variant." },
+      { "fileName": "res-phys.html", "status": "❒", "delta": "", "notes": "Physics-focused model." },
+      { "fileName": "deep-res-phys.html", "status": "❒", "delta": "", "notes": "Deeper physics integration." }
+    ]
+  },
+  {
+    "name": "Visual Explorations",
+    "status": "☑", "icon": "❖", "interactionMode": "⿰", "category": "VISUAL",
+    "description": "Visual feedback engines where agent and field co-evolve.",
+    "files": [
+      { "fileName": "drt-portal.html", "status": "☑", "delta": "", "notes": "A direct, stable coupling of Agent • and Field □." },
+      { "fileName": "vibe-lab.html", "status": "☑", "delta": "", "notes": "Lab for visual vibe synthesis." }
+    ]
+  },
+  {
+    "name": "Social Science Sims",
+    "status": "☑", "icon": "☗", "interactionMode": "⿰", "category": "SOCIAL SCIENCE",
+    "description": "Simulations of philosophical and sociological resonance theories.",
+    "files": [
+      { "fileName": "res-phil-01.html", "status": "☑", "delta": "", "notes": "Core philosophy simulation." },
+      { "fileName": "rosa-deep.html", "status": "☑", "delta": "", "notes": "Deep dive into Hartmut Rosa's concepts." }
+    ]
+  },
+  {
+    "name": "Sound Instruments",
+    "status": "☑", "icon": "∿", "interactionMode": "⿱", "category": "SOUND",
+    "description": "Instruments for composing with and sampling the morphic field.",
+    "files": [
+      { "fileName": "live-morph.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "deep-res-01.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "glyph-merge.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "morph-field-portal-00.html", "status": "☑", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Hartmut Rosa Models",
+    "status": "☑", "icon": "☗", "interactionMode": "⿰", "category": "HARTMUT",
+    "description": "Visual and interactive models of Hartmut Rosa's theories.",
+    "files": [
+      { "fileName": "rosa-tetra-form.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "res-social-00.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "res-engine.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "meaning-lattice.html", "status": "❒", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Abstract Concepts",
+    "status": "☑", "icon": "✧", "interactionMode": "⿰", "category": "ABSTRACT",
+    "description": "Conceptual and hypnotic resonance experiments.",
+    "files": [
+      { "fileName": "hypno-res-01.html", "status": "☑", "delta": "", "notes": "" },
+      { "fileName": "chladini-plate-01.html", "status": "❒", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Social Simulations",
+    "status": "❒", "icon": "☗", "interactionMode": "⿰", "category": "SOCIAL",
+    "description": "Prototypes for multi-agent social resonance.",
+    "files": [
+      { "fileName": "simsim2.html", "status": "❒", "delta": "", "notes": "" },
+      { "fileName": "res-social.html", "status": "❒", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Total System Hub",
+    "status": "❒", "icon": "⊕", "interactionMode": "⿻", "category": "TOTAL",
+    "description": "A prototype for an integrated hub of all resonant systems.",
+    "files": [
+      { "fileName": "cres-hub-01.html", "status": "❒", "delta": "", "notes": "" }
+    ]
+  },
+  {
+    "name": "Resonant Field Theory",
+    "status": "◌", "icon": "☗", "interactionMode": "", "category": "THEORETICALS",
+    "description": "The core conceptual framework for the RESONOME project, with early prototypes.",
+    "files": [
+      { "fileName": "rft-01.html", "status": "❒", "delta": "", "notes": "First prototype of the theory." },
+      { "fileName": "rft-02.html", "status": "❒", "delta": "", "notes": "Second iteration of the theoretical model." }
+    ]
+  },
+  {
+    "name": "morph-field-portal-desktop.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Random mutation from a desktop build. No sound, but compelling 3D visuals. Potential for a new visual family (❖)?"
+  },
+  {
+    "name": "A Resonant Social Model",
+    "status": "⬨", "category": "ISOLATES", "notes": "An idea for a multi-agent simulation based on Rosa's theories. Could become part of the Social Science (☗) family."
+  },
+  {
+    "name": "deep-resonance-desktop/index.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "hypno-res-02.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-00.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-01.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-03.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-04.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-05.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-06.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-07.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-08.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-09.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-12.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-13.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbeck-14.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbekitu-11-base.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mbekitu-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-01.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-02.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-03.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-04.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-05.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-05b.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-05c.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-06.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-06b.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-08.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-09.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mdeck.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-02.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-03.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-04.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-05.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-06.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-07.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-08.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-08b.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-08bbc.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-08bbd.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-08bbde.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-12.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-13.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-14.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-15.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-16.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-19.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph-21.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "mighty-morph.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-01.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-02.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-03.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-04.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-05.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-06.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-07.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-08.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-09.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-12.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-13.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-14.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-15.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-16.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-17.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-18.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-19.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-20.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-21.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-22.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-23.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-24.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-25.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-26.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-27.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-28.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-29.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-30.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "morph-field-portal-31.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "oscillator-engine.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-02.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-03.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-04.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-05.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-06.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-07.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-08.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-09.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-engine-11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-field.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form2.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form3.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form4.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form5.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form6.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form7.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form8.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form9.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form10.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form11.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form12.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form13.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form14.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form15.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form16.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form17.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form18.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form19.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form20.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "res-form21.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  },
+  {
+    "name": "simsim.html",
+    "status": "⬨", "category": "ISOLATES", "notes": "Unsequenced isolate."
+  }
+]

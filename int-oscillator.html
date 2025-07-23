@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resonance Explorer – Media for Thinking the Unthinkable</title>
+<style>
+  body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:1rem}
+  #app{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  canvas{background:#000;border:1px solid #333}
+  .controls{grid-column:1/-1;display:flex;gap:1rem;flex-wrap:wrap}
+  label{white-space:nowrap}
+  input[type=range]{width:120px}
+  .legend{display:flex;gap:.5rem;font-size:.8rem}
+  .legend span{padding:0 .3em;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="controls">
+    <label>Drive ω <input id="omega" type="range" min="0.2" max="3" step="0.01" value="1"></label>
+    <label>Damping ζ <input id="zeta" type="range" min="0.01" max="1" step="0.01" value="0.1"></label>
+    <label>Amplitude F₀ <input id="force" type="range" min="0.1" max="2" step="0.05" value="1"></label>
+    <button id="play">⏯</button>
+    <button id="record">⏺</button>
+  </div>
+
+  <!-- Live waveform -->
+  <canvas id="wave" width="400" height="200"></canvas>
+
+  <!-- Energy budget -->
+  <canvas id="energy" width="400" height="200"></canvas>
+
+  <!-- Bode preview -->
+  <canvas id="bode" width="400" height="200"></canvas>
+
+  <!-- Phase space -->
+  <canvas id="phase" width="400" height="200"></canvas>
+
+  <div class="legend">
+    <span style="background:#0f0">Kinetic</span>
+    <span style="background:#f0f">Potential</span>
+    <span style="background:#ff0">Dissipated</span>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+const m = 1, k = 1;
+const omegaSlider = document.getElementById('omega');
+const zetaSlider = document.getElementById('zeta');
+const forceSlider = document.getElementById('force');
+let omega = +omegaSlider.value, zeta = +zetaSlider.value, F0 = +forceSlider.value;
+let t = 0, dt = 0.02;
+let x = 0, v = 0;
+const buffer = [];
+const maxLen = 500;
+
+/* ========== Canvas setup ========== */
+const w = id => document.getElementById(id);
+const waveCv = w('wave'), waveCtx = waveCv.getContext('2d');
+const energyCv = w('energy'), energyCtx = energyCv.getContext('2d');
+const bodeCv = w('bode'), bodeCtx = bodeCv.getContext('2d');
+const phaseCv = w('phase'), phaseCtx = phaseCv.getContext('2d');
+
+/* ========== Shared drawing helpers ========== */
+function drawAxes(ctx, w, h){
+  ctx.strokeStyle='#444';
+  ctx.beginPath();
+  ctx.moveTo(0,h/2); ctx.lineTo(w,h/2);
+  ctx.moveTo(0,h); ctx.lineTo(w,h);
+  ctx.stroke();
+}
+function plot(ctx, arr, scale=1, color='#0ff'){
+  ctx.strokeStyle=color;
+  ctx.beginPath();
+  arr.forEach((y,i)=>ctx.lineTo(i, arr.length>0 ? (1-y*scale)*ctx.canvas.height/2 : 0));
+  ctx.stroke();
+}
+function plotEnergy(ctx, Ek, Ep, Pd){
+  const h=ctx.canvas.height;
+  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  drawAxes(ctx,ctx.canvas.width,ctx.canvas.height);
+  ctx.fillStyle='#0f0'; ctx.fillRect(0,h*(1-Ek/2),10,h*Ek/2);
+  ctx.fillStyle='#f0f'; ctx.fillRect(15,h*(1-Ep/2),10,h*Ep/2);
+  ctx.fillStyle='#ff0'; ctx.fillRect(30,h*(1-Pd/5),10,h*Pd/5);
+}
+
+/* ========== Bode cache ========== */
+const bodeData = [];
+function computeBode(){
+  bodeData.length=0;
+  // crude steady-state amp via analytic |H|
+  for(let w=0.1; w<=3; w+=0.05){
+    const denom = Math.sqrt((k-m*w*w)**2 + (2*zeta*Math.sqrt(k*m)*w)**2);
+    const amp = F0 / denom;
+    bodeData.push({w,amp});
+  }
+}
+computeBode();
+
+/* ========== Animation ========== */
+let running = true;
+function step(){
+  if(!running) return;
+  // RK4 integration
+  const w0 = Math.sqrt(k/m);
+  const c = 2*zeta*Math.sqrt(k*m);
+  const a1 = (-c*v - k*x + F0*Math.cos(omega*t))/m;
+  const v1 = v;
+  const a2 = (-c*(v+a1*dt/2) - k*(x+v1*dt/2) + F0*Math.cos(omega*(t+dt/2)))/m;
+  const v2 = v + a1*dt/2;
+  const a3 = (-c*(v+a2*dt/2) - k*(x+v2*dt/2) + F0*Math.cos(omega*(t+dt/2)))/m;
+  const v3 = v + a2*dt/2;
+  const a4 = (-c*(v+a3*dt) - k*(x+v3*dt) + F0*Math.cos(omega*(t+dt)))/m;
+  v += (a1+2*a2+2*a3+a4)*dt/6;
+  x += (v1+2*v2+2*v3+(v+a3*dt))*dt/6;
+  t += dt;
+
+  // store & trim
+  buffer.push(x);
+  if(buffer.length>maxLen) buffer.shift();
+
+  // draw
+  waveCtx.clearRect(0,0,waveCv.width,waveCv.height);
+  drawAxes(waveCtx,waveCv.width,waveCv.height);
+  plot(waveCtx,buffer,50,'#0ff');
+
+  // energy
+  const Ek = 0.5*m*v*v;
+  const Ep = 0.5*k*x*x;
+  const Pd = c*v*v;
+  plotEnergy(energyCtx,Ek,Ep,Pd);
+
+  // bode preview
+  bodeCtx.clearRect(0,0,bodeCv.width,bodeCv.height);
+  drawAxes(bodeCtx,bodeCv.width,bodeCv.height);
+  bodeCtx.strokeStyle='#0aa';
+  bodeCtx.beginPath();
+  bodeData.forEach(p=>bodeCtx.lineTo(p.w*100, bodeCv.height*(1-p.amp/5)));
+  bodeCtx.stroke();
+  // current omega cursor
+  bodeCtx.fillStyle='#fff';
+  bodeCtx.fillRect(omega*100-1,0,2,bodeCv.height);
+
+  // phase portrait
+  phaseCtx.clearRect(0,0,phaseCv.width,phaseCv.height);
+  drawAxes(phaseCtx,phaseCv.width,phaseCv.height);
+  phaseCtx.strokeStyle='#f0a';
+  phaseCtx.beginPath();
+  const last = Math.min(buffer.length, 200);
+  for(let i=buffer.length-last;i<buffer.length-1;i++){
+    const x1 = buffer[i]*40+phaseCv.width/2;
+    const v1 = (i<buffer.length-1?(buffer[i+1]-buffer[i])/dt:0)*40+phaseCv.height/2;
+    phaseCtx.lineTo(x1,v1);
+  }
+  phaseCtx.stroke();
+
+  requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+
+/* ========== Controls ========== */
+omegaSlider.oninput=e=>omega=+e.target.value;
+zetaSlider.oninput=e=>{zeta=+e.target.value;computeBode();};
+forceSlider.oninput=e=>F0=+e.target.value;
+
+const play = document.getElementById('play');
+const record = document.getElementById('record');
+w('play').onclick=()=>running=!running;
+let recording=false, snapshots=[];
+w('record').onclick=()=>{
+  recording=!recording;
+  if(recording){snapshots=[];w('record').textContent='⏹';}
+  else{w('record').textContent='⏺'; console.table(snapshots);}
+};
+setInterval(()=>recording && snapshots.push({omega,zeta,F0,x,v,t}),100);
+
+/* ========== Symbolic panel (tiny) ========== */
+const formula = document.createElement('div');
+formula.style.whiteSpace='pre';
+formula.textContent = "mẍ + 2ζω₀ẋ + ω₀²x = F₀cos(ωt)";
+document.body.append(formula);
+
+// Start the animation loop!
+step();
+});
+</script>
+</body>
+</html>

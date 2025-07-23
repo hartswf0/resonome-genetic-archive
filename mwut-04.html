@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Field Compose (mwut)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; cursor: none; touch-action: none; }
+        #canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* Simplified UI for node indicators */
+        .node-indicator {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            pointer-events: none;
+            transition: all 0.2s ease, transform 0.1s ease-out;
+            z-index: 3;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            opacity: 0; /* Hidden by default, shown via 'L' key */
+        }
+        .node-indicator.visible { opacity: 0.6; }
+        .node-indicator.active {
+            background-color: #0ff;
+            box-shadow: 0 0 15px #0ff;
+            transform: scale(1.5);
+            opacity: 1;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class MorphicFieldPortal {
+            constructor() {
+                // Core Systems
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+                
+                // Simplified Audio System
+                this.audioContext = null;
+                this.masterGain = null;
+                this.reverb = null;
+                this.analyser = null;
+                this.frequencyData = null;
+                this.audioLevel = 0;
+                
+                this.auditionVoice = null; // The main voice that "samples" the field with the mouse
+                this.droneVoices = [];    // 8 voices for the background drone layer
+                
+                // Field State
+                this.fieldMesh = null;
+                this.time = 0;
+                this.fieldParams = { intensity: 0.7, flow: 0.8, seed: Math.random() * 1000 };
+                
+                // Simplified "Sequencer" (Node Grid)
+                this.nodes = [];
+                this.nodeIndicators = [];
+                this.nodeStates = Array(8).fill(false); // Single layer of node states
+                this.dronesActive = true; // Drone layer is on by default
+                this.isMuted = false;
+
+                // Interaction
+                this.mouse = new THREE.Vector2(0.5, 0.5);
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupThreeJS();
+                this.createMorphicField();
+                this.initializeNodes();
+                this.setupInteraction();
+                this.animate();
+            }
+            
+            setupThreeJS() {
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 5;
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.updateNodeIndicatorPositions();
+                });
+            }
+            
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(15, 15, 200, 200);
+                
+                const vertexShader = `
+                    uniform float time; uniform float intensity; uniform float flow; uniform float seed;
+                    uniform vec2 mouse; varying vec2 vUv; varying float vDeformation;
+                    float perlin(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+                    void main() {
+                        vUv = uv; vec3 pos = position;
+                        float mouseDist = distance(uv, mouse);
+                        float mouseInfluence = smoothstep(0.3, 0.0, mouseDist);
+                        float deformation = perlin(pos.xy * 0.4 + time * flow * 0.1 + seed) * intensity;
+                        deformation += sin(length(pos.xy) * 5.0 - time * 2.0 + seed) * 0.15 * intensity;
+                        pos.z += deformation + mouseInfluence * 0.5;
+                        vDeformation = abs(deformation);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }`;
+
+                const fragmentShader = `
+                    uniform float time; uniform float audioLevel; uniform vec2 mouse;
+                    varying vec2 vUv; varying float vDeformation;
+                    vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0); vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www); return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y); }
+                    void main() {
+                        float mouseDist = distance(vUv, mouse);
+                        float hue = 0.1 + vDeformation * 2.0 + time * 0.05;
+                        float sat = 0.7 + vDeformation * 0.3;
+                        float val = 0.1 + vDeformation * 1.5 + audioLevel * 2.0 + smoothstep(0.1, 0.0, mouseDist) * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }`;
+
+                this.fieldMesh = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 }, audioLevel: { value: 0 }, mouse: { value: this.mouse },
+                        intensity: { value: this.fieldParams.intensity },
+                        flow: { value: this.fieldParams.flow },
+                        seed: { value: this.fieldParams.seed },
+                    },
+                    blending: THREE.AdditiveBlending, depthWrite: false
+                }));
+                this.scene.add(this.fieldMesh);
+            }
+
+            initializeNodes() {
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const radius = 0.35;
+                    this.nodes.push({ x: 0.5 + Math.cos(angle) * radius, y: 0.5 + Math.sin(angle) * radius });
+                    const indicator = document.createElement('div');
+                    indicator.className = 'node-indicator';
+                    document.body.appendChild(indicator);
+                    this.nodeIndicators.push(indicator);
+                }
+                this.updateNodeIndicatorPositions();
+                this.toggleNodeVisibility(); // Set initial visibility
+            }
+
+            updateNodeIndicatorPositions() {
+                this.nodeIndicators.forEach((indicator, i) => {
+                    const node = this.nodes[i];
+                    indicator.style.left = (node.x * window.innerWidth - 5) + 'px';
+                    indicator.style.top = ((1 - node.y) * window.innerHeight - 5) + 'px';
+                });
+            }
+
+            toggleNodeVisibility() {
+                this.dronesActive = !this.dronesActive;
+                this.nodeIndicators.forEach(indicator => indicator.classList.toggle('visible', this.dronesActive));
+                // Also update drone volumes
+                this.nodeStates.forEach((state, i) => {
+                    if (this.droneVoices[i]) {
+                        const targetGain = state && this.dronesActive ? 0.1 : 0;
+                        this.droneVoices[i].gain.gain.setTargetAtTime(targetGain, this.audioContext.currentTime, 0.1);
+                    }
+                });
+            }
+
+            async setupAudio() {
+                if (this.audioContext) return;
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await this.audioContext.resume();
+                
+                this.masterGain = this.audioContext.createGain();
+                this.masterGain.connect(this.audioContext.destination);
+                
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.analyser.connect(this.masterGain);
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+
+                // Create Audition Voice (for mouse sweeping)
+                this.auditionVoice = {
+                    osc: this.audioContext.createOscillator(),
+                    filter: this.audioContext.createBiquadFilter(),
+                    gain: this.audioContext.createGain(),
+                };
+                this.auditionVoice.osc.type = 'sawtooth';
+                this.auditionVoice.filter.type = 'lowpass';
+                this.auditionVoice.gain.gain.value = 0; // Start silent
+                this.auditionVoice.osc.connect(this.auditionVoice.filter);
+                this.auditionVoice.filter.connect(this.auditionVoice.gain);
+                this.auditionVoice.gain.connect(this.masterGain);
+                this.auditionVoice.osc.start();
+
+                // Create Drone Voices (for toggled nodes)
+                const baseFreqs = [55, 61.74, 65.41, 73.42, 82.41, 87.31, 98, 110];
+                this.droneVoices = baseFreqs.map(freq => {
+                    const voice = {
+                        osc: this.audioContext.createOscillator(),
+                        gain: this.audioContext.createGain()
+                    };
+                    voice.osc.type = 'sine';
+                    voice.osc.frequency.value = freq;
+                    voice.gain.gain.value = 0; // Start silent
+                    voice.osc.connect(voice.gain);
+                    voice.gain.connect(this.masterGain);
+                    voice.osc.start();
+                    return voice;
+                });
+            }
+            
+            setupInteraction() {
+                const canvas = document.getElementById('canvas');
+                const getMouseUV = (e) => new THREE.Vector2(e.clientX / window.innerWidth, 1 - e.clientY / window.innerHeight);
+
+                // This is the primary sound interaction: mouse movement
+                canvas.addEventListener('mousemove', (e) => {
+                    if (!this.audioContext) return;
+                    const uv = getMouseUV(e);
+                    this.mouse.copy(uv);
+
+                    // Map mouse position to sound parameters
+                    const pitch = 20 + uv.y * 800;
+                    const filterQ = uv.x * 20;
+                    
+                    this.auditionVoice.osc.frequency.setTargetAtTime(pitch, this.audioContext.currentTime, 0.01);
+                    this.auditionVoice.filter.Q.setTargetAtTime(filterQ, this.audioContext.currentTime, 0.01);
+                });
+
+                // Turn on audition voice when mouse enters
+                canvas.addEventListener('mouseenter', () => {
+                    if (!this.audioContext) this.setupAudio();
+                    this.auditionVoice.gain.gain.setTargetAtTime(0.3, this.audioContext.currentTime, 0.02);
+                });
+
+                // Turn off audition voice when mouse leaves
+                canvas.addEventListener('mouseleave', () => {
+                    if (!this.audioContext) return;
+                    this.auditionVoice.gain.gain.setTargetAtTime(0, this.audioContext.currentTime, 0.2);
+                });
+
+                // Click to toggle drone nodes
+                canvas.addEventListener('mousedown', (e) => {
+                    const uv = getMouseUV(e);
+                    let nearest = -1, minDist = Infinity;
+                    this.nodes.forEach((node, i) => {
+                        const dist = uv.distanceTo(new THREE.Vector2(node.x, node.y));
+                        if (dist < 0.05 && dist < minDist) { minDist = dist; nearest = i; }
+                    });
+
+                    if (nearest !== -1) {
+                        this.nodeStates[nearest] = !this.nodeStates[nearest];
+                        const targetGain = this.nodeStates[nearest] && this.dronesActive ? 0.1 : 0;
+                        this.droneVoices[nearest].gain.gain.setTargetAtTime(targetGain, this.audioContext.currentTime, 0.1);
+                        this.nodeIndicators[nearest].classList.toggle('active', this.nodeStates[nearest]);
+                    }
+                });
+
+                // Keyboard controls
+                document.addEventListener('keydown', (e) => {
+                    if (e.key.toLowerCase() === 'l') { // Toggle drone layer visibility & sound
+                        this.toggleNodeVisibility();
+                    }
+                    if (e.key.toLowerCase() === 'm') { // Mute/unmute
+                        this.isMuted = !this.isMuted;
+                        this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 1.0, this.audioContext.currentTime, 0.01);
+                    }
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.time += 0.01;
+                this.audioLevel = this.analyser ? this.updateAudioLevel() : 0;
+                
+                this.fieldMesh.material.uniforms.time.value = this.time;
+                this.fieldMesh.material.uniforms.audioLevel.value = this.audioLevel;
+                this.fieldMesh.material.uniforms.mouse.value.copy(this.mouse);
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            updateAudioLevel() {
+                if (!this.analyser || !this.frequencyData) return 0;
+                this.analyser.getByteFrequencyData(this.frequencyData);
+                return this.frequencyData.reduce((a, b) => a + b, 0) / this.frequencyData.length / 255;
+            }
+        }
+
+        window.addEventListener('load', () => new MorphicFieldPortal());
+    </script>
+</body>
+</html>

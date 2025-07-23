@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Resonance Engine – Media for Thinking the Unthinkable</title>
+  <style>
+    body{margin:0;overflow:hidden;background:#111;color:#eee;font-family:sans-serif;}
+    #overlay,#sliders,#deriv,#bode,#galleryPanel{
+      position:absolute;background:rgba(0,0,0,.5);padding:8px;border-radius:4px;
+      z-index:10;font-size:13px;
+    }
+    #overlay{top:10px;left:10px;}
+    #sliders{top:10px;left:280px;}
+    #deriv{top:200px;left:10px;white-space:pre;color:#0f0;}
+    #bode{bottom:10px;left:10px;}
+    #plot{top:10px;right:10px;border:1px solid #444;}
+    #galleryPanel{bottom:10px;right:10px;display:flex;gap:4px;}
+    button{margin-right:4px;}
+  </style>
+</head>
+
+<body>
+  <!-- Read-outs -->
+  <div id="overlay">
+    <p><strong>Resonance Engine</strong></p>
+    <p>Drive Ω: <span id="freq">—</span> rad/s</p>
+    <p>Natural ω₀: <span id="omega0">—</span> rad/s</p>
+    <p>Quality Q: <span id="Q">—</span></p>
+  </div>
+
+  <!-- Parameter sliders -->
+  <div id="sliders">
+    <label>k <input type="range" id="kRange" min="0.1" max="10" step="0.1" value="4"></label><br>
+    <label>c <input type="range" id="cRange" min="0.01" max="2" step="0.01" value="0.1"></label><br>
+    <label>m <input type="range" id="mRange" min="0.1" max="10" step="0.1" value="1"></label>
+  </div>
+
+  <!-- Symbolic derivation -->
+  <pre id="deriv"></pre>
+
+  <!-- Strip-chart -->
+  <canvas id="plot" width="500" height="200"></canvas>
+
+  <!-- Bode preview -->
+  <div id="bode"><canvas id="bodeCanvas" width="300" height="150"></canvas></div>
+
+  <!-- Transport & snapshots -->
+  <div style="position:absolute; top:150px; left:10px; z-index:10;">
+    <button id="pauseBtn">⏸ Pause</button>
+    <button id="recordBtn">⏺ Record</button>
+    <button id="saveBtn">📸 Save Snapshot</button>
+  </div>
+  <div id="galleryPanel"></div>
+
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+
+  <script>
+    /* ========= Three.js Scene ========= */
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 15);
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.PointLight(0xffffff, 1);
+    light.position.set(10,10,10);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x222222));
+
+    /* ========= Visual oscillator ========= */
+    const pivot = new THREE.Object3D(); scene.add(pivot);
+    const spring = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05,0.05,5,12),
+      new THREE.MeshPhongMaterial({color:0x8888ff})
+    ); spring.position.y = -2.5; pivot.add(spring);
+
+    const bob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5,32,32),
+      new THREE.MeshPhongMaterial({color:0xff4444})
+    ); bob.position.y = -5; pivot.add(bob);
+
+    /* ========= Physics ========= */
+    let k=4, c=0.1, m=1;
+    let omega0, zeta, Q;
+    function updateDerived(){
+      omega0 = Math.sqrt(k/m);
+      zeta   = c/(2*m*omega0);
+      Q      = 1/(2*zeta);
+      document.getElementById('omega0').textContent = omega0.toFixed(2);
+      document.getElementById('Q').textContent      = Q.toFixed(2);
+      updateDeriv();
+    }
+    updateDerived();
+
+    let x=0.5, v=0, time=0;
+    const dt = 0.02;
+    let driveFreq = omega0*0.5, sweepDir=1;
+
+    /* ========= UI hooks ========= */
+    ['k','c','m'].forEach(p=>{
+      const el = document.getElementById(p+'Range');
+      el.addEventListener('input', e=>{
+        window[p] = parseFloat(e.target.value);
+        updateDerived();
+      });
+    });
+
+    let paused=false, recording=false, history=[];
+    document.getElementById('pauseBtn').onclick = ()=> paused=!paused;
+    document.getElementById('recordBtn').onclick = ()=> recording=!recording;
+
+    /* ========= Charts ========= */
+    const ctx  = document.getElementById('plot').getContext('2d');
+    const buf  = new Array(500).fill(0);
+    function push(val){ buf.shift(); buf.push(val); }
+    function drawPlot(){
+      ctx.clearRect(0,0,500,200);
+      ctx.strokeStyle='cyan'; ctx.beginPath();
+      buf.forEach((y,i)=>ctx.lineTo(i,100-60*y));
+      ctx.stroke();
+    }
+
+    const bctx = document.getElementById('bodeCanvas').getContext('2d');
+    function drawBode(){
+      bctx.clearRect(0,0,300,150);
+      bctx.strokeStyle='gold'; bctx.beginPath();
+      for(let w=0;w<300;w++){
+        const ω = (w/300)*3*omega0;
+        const mag = 1/Math.sqrt(Math.pow(k-m*ω*ω,2)+Math.pow(c*ω,2));
+        bctx.lineTo(w,140-100*mag);
+      }
+      bctx.stroke();
+      const xCur = (driveFreq/(3*omega0))*300;
+      bctx.strokeStyle='red'; bctx.beginPath();
+      bctx.moveTo(xCur,0); bctx.lineTo(xCur,150); bctx.stroke();
+    }
+
+    function updateDeriv(){
+      document.getElementById('deriv').textContent =
+`ODE: ẍ + ${(c/m).toFixed(2)} ẋ + ${(k/m).toFixed(2)} x = ${(1/m).toFixed(2)} cos(${driveFreq.toFixed(2)} t)
+Roots: s = ${(-zeta*omega0).toFixed(2)} ± ${(omega0*Math.sqrt(1-zeta*zeta)).toFixed(2)}i`;
+    }
+
+    /* ========= Snapshots ========= */
+    document.getElementById('saveBtn').onclick = ()=>{
+      const shot=document.createElement('canvas');
+      shot.width=120; shot.height=80;
+      shot.getContext('2d').drawImage(document.getElementById('plot'),0,0,120,80);
+      shot.title=`k=${k}, c=${c}, m=${m}`;
+      shot.style.cursor='pointer';
+      shot.onclick=()=>{
+        [k,c,m]=shot.title.match(/[\d.]+/g).map(Number);
+        ['k','c','m'].forEach(p=>document.getElementById(p+'Range').value=window[p]);
+        updateDerived();
+      };
+      document.getElementById('galleryPanel').appendChild(shot);
+    };
+
+    /* ========= Loop ========= */
+    function animate(){
+      requestAnimationFrame(animate);
+      if(paused) return;
+
+      driveFreq += sweepDir*0.0008;
+      if(driveFreq>omega0*1.5||driveFreq<omega0*0.5) sweepDir*=-1;
+      document.getElementById('freq').textContent=driveFreq.toFixed(2);
+
+      const accel=(Math.cos(driveFreq*time)-c*v-k*x)/m;
+      v+=accel*dt; x+=v*dt; time+=dt;
+      pivot.rotation.z=x;
+
+      push(x); drawPlot(); drawBode();
+      if(recording) history.push({x,v,t:time});
+
+      if(history.length){
+        const idx=Math.floor(((time/10)%1)*history.length);
+        const g=new THREE.Mesh(
+          new THREE.SphereGeometry(0.4,16,16),
+          new THREE.MeshBasicMaterial({color:'cyan',transparent:true,opacity:0.3})
+        );
+        g.position.y=-5-history[idx].x;
+        pivot.add(g); setTimeout(()=>pivot.remove(g),200);
+      }
+
+      renderer.render(scene,camera);
+    }
+    animate();
+
+    window.addEventListener('resize',()=>{
+      camera.aspect=innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight);
+    });
+  </script>
+</body>
+</html>

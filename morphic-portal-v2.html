@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Portal 𓉗</title>
+    <style>
+        :root {
+            --active-glow: rgba(255, 255, 255, 0.7);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none;
+            touch-action: none;
+            color: #fff;
+            font-family: monospace;
+        }
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 1rem 2rem;
+            font-size: 1.5rem;
+            color: rgba(255, 255, 255, 0.8);
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 100;
+            transition: opacity 0.5s ease;
+        }
+        #start-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+        }
+        #seq {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 5;
+            transition: opacity 0.3s ease;
+        }
+        .seq-row {
+            display: flex;
+            width: 100%;
+            gap: 5px;
+        }
+        .step {
+            flex: 1;
+            height: 5vh;
+            min-height: 40px;
+            max-height: 60px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            border: 1px solid rgba(255,255,255,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: rgba(255,255,255,0.4);
+            user-select: none;
+        }
+        .step.active {
+            color: #fff;
+            text-shadow: 0 0 8px var(--active-glow);
+        }
+        .step[data-y="0"] { background: rgba(255, 0, 150, 0.1); }
+        .step[data-y="1"] { background: rgba(0, 255, 255, 0.1); }
+        .step[data-y="2"] { background: rgba(255, 255, 0, 0.1); }
+        .step[data-y="3"] { background: rgba(150, 255, 0, 0.1); }
+
+        .step[data-y="0"].active { background: rgba(255, 0, 150, 0.7); }
+        .step[data-y="1"].active { background: rgba(0, 255, 255, 0.7); }
+        .step[data-y="2"].active { background: rgba(255, 255, 0, 0.7); }
+        .step[data-y="3"].active { background: rgba(150, 255, 0, 0.7); }
+        
+        .step.playing { 
+            border-color: var(--active-glow);
+            transform: scale(1.05);
+        }
+        
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 5;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .bpm-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .bpm-btn {
+            width: 30px;
+            height: 30px;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <button id="start-button">𓉗</button>
+    <canvas id="canvas"></canvas>
+    <div id="seq"></div>
+    <div id="controls">
+        <div class="bpm-control">
+            <button class="bpm-btn" onclick="portal.changeBPM(-5)">⇇</button>
+            <span id="bpm-display">70</span>
+            <button class="bpm-btn" onclick="portal.changeBPM(5)">⇉</button>
+        </div>
+        <div id="toggle-ui" class="bpm-btn" style="padding-top: 4px;">⧈</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class MorphicFieldPortal {
+            constructor() {
+                this.scene = null; this.camera = null; this.renderer = null;
+                this.audioContext = null; this.masterGain = null; this.analyser = null; this.reverb = null;
+                this.droneOscillators = []; this.droneFilters = [];
+                this.frequencyData = null;
+                
+                this.mouse = { x: 0, y: 0, down: false };
+                this.morphicState = { intensity: 0.5, frequency: 110, resonance: 0.7, bloom: 0.8, flow: 0.6 };
+                
+                this.fieldMesh = null; this.time = 0;
+                
+                // Sequencer
+                this.steps = Array(16).fill(0).map(() => ({ trigger: false, reverse: false, length: 0.2, pitch: 1.0 }));
+                this.currentStep = 0; this.bpm = 70; this.schedulerInterval = null; this.nextStepTime = 0;
+                this.uiVisible = true;
+
+                // Granular Engine
+                this.granular = { sourceNode: null, buffer: null, bufferPos: 0 };
+                
+                this.isInitialized = false;
+                this.setupThreeJS();
+                this.setupSequencerUI();
+                this.animate();
+            }
+            
+            async init() {
+                if (this.isInitialized) return;
+                await this.setupAudio();
+                this.createMorphicField();
+                this.setupInteraction();
+                this.startSequencer();
+                document.getElementById('start-button').classList.add('hidden');
+                document.getElementById('controls').style.opacity = '1';
+                this.isInitialized = true;
+            }
+            
+            setupThreeJS() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 5;
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            async setupAudio() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.masterGain = this.audioContext.createGain();
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                await this.createReverb();
+
+                this.masterGain.connect(this.analyser);
+                this.analyser.connect(this.audioContext.destination);
+                
+                this.createDroneSound();
+                this.setupGranularEngine();
+            }
+            
+            async createReverb() {
+                const reverbBuffer = this.audioContext.createBuffer(2, this.audioContext.sampleRate * 2, this.audioContext.sampleRate);
+                for (let ch = 0; ch < reverbBuffer.numberOfChannels; ch++) {
+                    const data = reverbBuffer.getChannelData(ch);
+                    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2.5);
+                }
+                this.reverb = this.audioContext.createConvolver();
+                this.reverb.buffer = reverbBuffer;
+                const reverbGain = this.audioContext.createGain();
+                reverbGain.gain.value = 0.4;
+                this.reverb.connect(reverbGain);
+                reverbGain.connect(this.masterGain);
+            }
+            
+            createDroneSound() {
+                const droneGain = this.audioContext.createGain();
+                droneGain.gain.value = 0.4;
+                droneGain.connect(this.masterGain); 
+                droneGain.connect(this.reverb);
+
+                const freqs = [1, 1.5, 2, 0.5, 3];
+                freqs.forEach((mul, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const filter = this.audioContext.createBiquadFilter();
+                    osc.type = i === 0 ? 'sine' : ['sawtooth', 'triangle', 'square'][i % 3];
+                    filter.type = 'lowpass';
+                    osc.connect(filter); filter.connect(droneGain);
+                    osc.start();
+                    this.droneOscillators.push(osc); this.droneFilters.push(filter);
+                });
+                this.updateDroneAudio();
+                this.granular.sourceNode = droneGain;
+            }
+
+            setupGranularEngine() {
+                const bufferSize = this.audioContext.sampleRate * 2; // 2-second buffer
+                this.granular.buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                const scriptNode = this.audioContext.createScriptProcessor(1024, 1, 1);
+                
+                scriptNode.onaudioprocess = (e) => {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const bufferData = this.granular.buffer.getChannelData(0);
+                    for (let i = 0; i < inputData.length; i++) {
+                        bufferData[this.granular.bufferPos] = inputData[i];
+                        this.granular.bufferPos = (this.granular.bufferPos + 1) % bufferSize;
+                    }
+                };
+
+                this.granular.sourceNode.connect(scriptNode);
+                scriptNode.connect(this.audioContext.destination); // Must be connected to something
+            }
+            
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(20, 20, 128, 128);
+                const vertexShader = `
+                    uniform float time, intensity, flow; varying vec2 vUv; varying float vDistortion;
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        float wave = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                        float morphic = sin(pos.x * 4.0 + time * flow) * cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                        pos.z += wave + morphic;
+                        vDistortion = abs(wave + morphic);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }`;
+                const fragmentShader = `
+                    uniform float time, bloom, audioLevel; varying vec2 vUv; varying float vDistortion;
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float dist = length(center);
+                        float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                        float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                        float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4);
+                        vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                        float alpha = (0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2) * smoothstep(1.5, 0.0, dist);
+                        gl_FragColor = vec4(color, alpha);
+                    }`;
+                const material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: { time: { value: 0 }, intensity: { value: this.morphicState.intensity }, flow: { value: this.morphicState.flow }, bloom: { value: this.morphicState.bloom }, audioLevel: { value: 0 } },
+                    transparent: true, blending: THREE.AdditiveBlending
+                });
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+            }
+            
+            setupSequencerUI() {
+                const seq = document.getElementById('seq');
+                seq.innerHTML = '';
+                const symbols = ['𓉗', '𓃑', '▒', '▓'];
+                for (let y = 0; y < 4; y++) {
+                    const row = document.createElement('div');
+                    row.className = 'seq-row';
+                    for (let x = 0; x < 16; x++) {
+                        const div = document.createElement('div');
+                        div.className = 'step';
+                        div.dataset.x = x; div.dataset.y = y;
+                        div.textContent = symbols[y];
+                        div.onclick = () => this.toggleStep(x, y, div);
+                        row.appendChild(div);
+                    }
+                    seq.appendChild(row);
+                }
+            }
+
+            toggleStep(x, y, div) {
+                const step = this.steps[x];
+                if (y === 0) step.trigger = !step.trigger;
+                if (y === 1) step.reverse = !step.reverse;
+                if (y === 2) step.length = (step.length + 0.2) % 1.0;
+                if (y === 3) step.pitch = [1.0, 1.5, 0.5, 2.0, 0.75][( [1.0, 1.5, 0.5, 2.0, 0.75].indexOf(step.pitch) + 1 ) % 5];
+                
+                div.classList.toggle('active', y < 2 ? (y === 0 ? step.trigger : step.reverse) : true);
+                if (y > 1) div.style.opacity = 0.4 + step[y === 2 ? 'length' : 'pitch'] / (y === 3 ? 2:1) * 0.6;
+            }
+            
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                const schedule = () => {
+                    const now = this.audioContext.currentTime;
+                    while(this.nextStepTime < now + 0.1) {
+                        this.playStep(this.currentStep, this.nextStepTime);
+                        this.nextStepTime += (60 / this.bpm) / 4;
+                        this.currentStep = (this.currentStep + 1) % 16;
+                    }
+                };
+                this.schedulerInterval = setInterval(schedule, 25);
+            }
+            
+            playStep(stepIndex, time) {
+                const stepData = this.steps[stepIndex];
+                if (!stepData.trigger && !stepData.reverse) return;
+
+                const grain = this.audioContext.createBufferSource();
+                grain.buffer = this.granular.buffer;
+                grain.playbackRate.value = stepData.pitch;
+                if (stepData.reverse) grain.buffer = this.reverseBuffer(this.granular.buffer);
+
+                const gain = this.audioContext.createGain();
+                const envAttack = 0.01;
+                const envDecay = stepData.length;
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(0.7, time + envAttack);
+                gain.gain.linearRampToValueAtTime(0, time + envAttack + envDecay);
+
+                grain.connect(gain);
+                gain.connect(this.masterGain);
+                
+                const offset = Math.max(0, this.granular.bufferPos - (this.audioContext.sampleRate * 0.1));
+                grain.start(time, offset / this.audioContext.sampleRate, envAttack + envDecay);
+            }
+
+            reverseBuffer(buffer) {
+                const data = buffer.getChannelData(0).slice().reverse();
+                const newBuffer = this.audioContext.createBuffer(1, buffer.length, buffer.sampleRate);
+                newBuffer.copyToChannel(data, 0);
+                return newBuffer;
+            }
+            
+            changeBPM(delta) { this.bpm = Math.max(30, Math.min(160, this.bpm + delta)); document.getElementById('bpm-display').textContent = this.bpm; }
+            
+            toggleUI() { this.uiVisible = !this.uiVisible; document.getElementById('seq').style.opacity = this.uiVisible ? '1' : '0'; document.getElementById('controls').style.opacity = this.uiVisible ? '1' : '0'; }
+
+            setupInteraction() {
+                const canvas = document.getElementById('canvas');
+                document.getElementById('toggle-ui').onclick = () => this.toggleUI();
+                const handleStart = (e) => { this.mouse.down = true; this.updateMouse(e); };
+                const handleMove = (e) => { if(this.mouse.down) { this.updateMouse(e); this.updateMorphicState(e); } };
+                const handleEnd = () => { this.mouse.down = false; };
+                canvas.addEventListener('mousedown', handleStart); canvas.addEventListener('mousemove', handleMove);
+                canvas.addEventListener('mouseup', handleEnd); canvas.addEventListener('mouseleave', handleEnd);
+                canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleStart(e.touches[0]); }, { passive: false });
+                canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e.touches[0]); }, { passive: false });
+                canvas.addEventListener('touchend', handleEnd);
+            }
+            
+            updateMouse(e) { this.mouse.x = e.clientX / window.innerWidth; this.mouse.y = 1 - e.clientY / window.innerHeight; }
+            
+            updateMorphicState(e) {
+                this.morphicState.intensity = this.mouse.y;
+                this.morphicState.frequency = 55 + this.mouse.x * 330;
+                this.morphicState.resonance = Math.sin(this.time * 0.01 + this.mouse.x * Math.PI) * 0.5 + 0.5;
+                this.morphicState.bloom = 0.3 + this.mouse.y * 0.7;
+                this.morphicState.flow = this.mouse.x * 2;
+                this.updateDroneAudio();
+            }
+            
+            updateDroneAudio() {
+                if (!this.audioContext) return;
+                const baseFreq = this.morphicState.frequency;
+                const freqs = [1, 1.5, 2, 0.5, 3];
+                this.droneOscillators.forEach((osc, i) => { osc.frequency.setTargetAtTime(baseFreq * freqs[i], this.audioContext.currentTime, 0.1); });
+                this.droneFilters.forEach(filter => {
+                    filter.frequency.setTargetAtTime(200 + this.morphicState.intensity * 1000, this.audioContext.currentTime, 0.1);
+                    filter.Q.setTargetAtTime(this.morphicState.resonance * 15 + 1, this.audioContext.currentTime, 0.1);
+                });
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.time += 0.016;
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    const audioLevel = this.frequencyData.reduce((s, v) => s + v, 0) / (this.frequencyData.length * 255);
+                    if (this.fieldMesh) this.fieldMesh.material.uniforms.audioLevel.value = audioLevel;
+                }
+                if (this.fieldMesh) {
+                    const u = this.fieldMesh.material.uniforms;
+                    u.time.value = this.time; u.intensity.value = this.morphicState.intensity;
+                    u.flow.value = this.morphicState.flow; u.bloom.value = this.morphicState.bloom;
+                }
+                if (this.isInitialized) {
+                    const visualStep = (this.currentStep - 1 + 16) % 16;
+                    document.querySelectorAll('.step.playing').forEach(el => el.classList.remove('playing'));
+                    document.querySelectorAll(`.step[data-x="${visualStep}"]`).forEach(el => el.classList.add('playing'));
+                }
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        
+        let portal;
+        window.addEventListener('load', () => {
+            portal = new MorphicFieldPortal();
+            document.getElementById('start-button').addEventListener('click', () => portal.init());
+        });
+    </script>
+</body>
+</html>

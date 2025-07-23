@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rosa's Social Resonance Dynamics Simulator</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: rgba(255, 255, 255, .85);
+      --accent: #667eea;
+      --text: #2c3e50;
+      --subtle: #5a6c7d;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      overflow: hidden;
+      color: var(--text);
+    }
+    #canvas-container { position: fixed; inset: 0; z-index: 1; }
+    #ui-panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      max-height: 90vh;
+      background: var(--panel);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 25px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .1);
+      z-index: 10;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+    #ui-panel h1 { font-size: 18px; font-weight: 600; margin-bottom: 20px; text-align: center; }
+    .control-group { margin-bottom: 20px; }
+    .control-label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--subtle);
+    }
+    .parameter-slider {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      outline: none;
+      margin: 6px 0;
+    }
+    .parameter-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .value-display { float: right; font-weight: 600; color: var(--accent); }
+    .button-group { display: flex; gap: 6px; margin-top: 10px; }
+    .mode-button {
+      flex: 1;
+      padding: 8px;
+      background: #e9ecef;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: .2s;
+    }
+    .mode-button.active { background: var(--accent); color: #fff; }
+    .resonance-indicator { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin: 6px 0; }
+    .resonance-bar {
+      height: 100%;
+      background: linear-gradient(90deg,#ff6b6b 0%,#feca57 50%,#48dbfb 100%);
+      transition: width .5s;
+    }
+    #info-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      max-width: 380px;
+      background: var(--panel);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .1);
+      z-index: 10;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<!-- UI Panel -->
+<div id="ui-panel">
+  <h1>Rosa’s Social Resonance Dynamics</h1>
+
+  <div class="control-group">
+    <span class="control-label">Social Configuration</span>
+    <div class="button-group">
+      <button class="mode-button active" data-mode="interactive">Interactive</button>
+      <button class="mode-button" data-mode="experiment">Experiment</button>
+      <button class="mode-button" data-mode="historical">Historical</button>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Horizontal</span>
+    <input class="parameter-slider" id="horizontal" type="range" min="0" max="100" value="70">
+    <span class="value-display" id="horizontal-val">70%</span>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Diagonal</span>
+    <input class="parameter-slider" id="diagonal" type="range" min="0" max="100" value="50">
+    <span class="value-display" id="diagonal-val">50%</span>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Vertical</span>
+    <input class="parameter-slider" id="vertical" type="range" min="0" max="100" value="30">
+    <span class="value-display" id="vertical-val">30%</span>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Self</span>
+    <input class="parameter-slider" id="self" type="range" min="0" max="100" value="60">
+    <span class="value-display" id="self-val">60%</span>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Overall Resonance</span>
+    <div class="resonance-indicator"><div class="resonance-bar" id="overall-bar" style="width:52.5%"></div></div>
+  </div>
+
+  <div class="control-group">
+    <span class="control-label">Societal Scale</span>
+    <input class="parameter-slider" id="scale" type="range" min="1" max="5" value="3">
+    <span class="value-display" id="scale-val">Community</span>
+  </div>
+</div>
+
+<!-- Info Panel -->
+<div id="info-panel">
+  <strong>Resonance Theory in Action</strong>
+  <p id="info-text">Adjust parameters to observe how social resonance and alienation manifest across Rosa’s four axes.</p>
+</div>
+
+<script>
+class ResonanceSimulator {
+  constructor() {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.clock = new THREE.Clock();
+    this.controls = null;
+
+    this.nodes = [];
+    this.links = [];
+    this.particles = null;
+
+    this.params = {
+      horizontal: 70,
+      diagonal: 50,
+      vertical: 30,
+      self: 60,
+      scale: 3,
+      mode: 'interactive'
+    };
+
+    this.init();
+    this.setupEvents();
+    this.rebuild();
+    this.animate();
+  }
+
+  init() {
+    this.renderer.setSize(innerWidth, innerHeight);
+    this.renderer.setPixelRatio(devicePixelRatio);
+    document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+    this.scene.background = new THREE.Color(0xf5f7fa);
+
+    this.camera.position.set(0, 5, 15);
+
+    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+
+    const amb = new THREE.AmbientLight(0xffffff, .6);
+    const dir = new THREE.DirectionalLight(0xffffff, .8);
+    dir.position.set(5, 10, 7);
+    this.scene.add(amb, dir);
+
+    addEventListener('resize', () => {
+      this.camera.aspect = innerWidth/innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(innerWidth, innerHeight);
+    });
+  }
+
+  rebuild() {
+    // clear
+    [...this.nodes, ...this.links, this.particles].forEach(obj => {
+      if (obj && obj.parent) obj.parent.remove(obj);
+    });
+    this.nodes = [];
+    this.links = [];
+
+    const nodeCount = 5 * this.params.scale;
+    const axes = [
+      { name:'horizontal', color:0xff7675, pos:[0,0,0] },
+      { name:'diagonal',   color:0x00b894, pos:[5,0,0] },
+      { name:'vertical',   color:0x0984e3, pos:[0,5,0] },
+      { name:'self',       color:0xa29bfe, pos:[0,0,5] }
+    ];
+
+    // nodes
+    axes.forEach(ax=>{
+      const group = [];
+      for (let i=0;i<nodeCount;i++) {
+        const ang = (i/nodeCount)*Math.PI*2;
+        const r = 2 + Math.random()*1.5;
+        const p = new THREE.Vector3(
+          ax.pos[0] + Math.cos(ang)*r,
+          ax.pos[1] + Math.sin(ang)*r,
+          ax.pos[2] + (Math.random()-.5)*2
+        );
+        const m = new THREE.Mesh(
+          new THREE.SphereGeometry(.2,16,16),
+          new THREE.MeshPhongMaterial({color:ax.color, transparent:true, opacity:.8})
+        );
+        m.position.copy(p);
+        this.scene.add(m);
+        const node = {mesh:m, axis:ax.name, orig:p.clone(), vel:new THREE.Vector3(), phase:Math.random()*Math.PI*2, resonance:this.params[ax.name]/100};
+        this.nodes.push(node);
+        group.push(node);
+      }
+      // intra-axis links
+      for (let i=0;i<group.length;i++){
+        for (let j=i+1;j<group.length;j++){
+          if (Math.random() < this.params[group[i].axis]/100){
+            this.makeLink(group[i], group[j]);
+          }
+        }
+      }
+    });
+
+    // inter-axis
+    const h = this.nodes.filter(n=>n.axis==='horizontal');
+    const d = this.nodes.filter(n=>n.axis==='diagonal');
+    const v = this.nodes.filter(n=>n.axis==='vertical');
+    const s = this.nodes.filter(n=>n.axis==='self');
+    [h,d,v,s].forEach(arr=>{
+      arr.forEach(n=>{
+        this.nodes.forEach(other=>{
+          if (other.axis!==n.axis && Math.random() < this.params.diagonal/200){
+            this.makeLink(n, other);
+          }
+        });
+      });
+    });
+
+    // particle system
+    this.createParticles();
+
+    this.updateOverallBar();
+  }
+
+  makeLink(a,b){
+    const geo = new THREE.BufferGeometry().setFromPoints([a.mesh.position, b.mesh.position]);
+    const mat = new THREE.LineBasicMaterial({color:0x888888, transparent:true, opacity:.5});
+    const line = new THREE.Line(geo,mat);
+    this.scene.add(line);
+    this.links.push({line, a, b});
+  }
+
+  createParticles(){
+    const N = 300;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(N*3);
+    for (let i=0;i<N*3;i++) pos[i]=(Math.random()-.5)*30;
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    const mat = new THREE.PointsMaterial({size:.1, color:0x48dbfb, transparent:true, opacity:.6});
+    this.particles = new THREE.Points(geo,mat);
+    this.scene.add(this.particles);
+  }
+
+  updateOverallBar(){
+    const avg = (this.params.horizontal+this.params.diagonal+this.params.vertical+this.params.self)/4;
+    document.getElementById('overall-bar').style.width = avg+'%';
+  }
+
+  setupEvents(){
+    const sliders = document.querySelectorAll('.parameter-slider');
+    sliders.forEach(sl=>{
+      sl.addEventListener('input', e=>{
+        const id = e.target.id;
+        const val = e.target.value;
+        this.params[id] = +val;
+        document.getElementById(id+'-val').textContent = val+'%';
+        if (id==='scale'){
+          const labels = {1:'Individual',2:'Family',3:'Community',4:'Institutional',5:'Societal'};
+          document.getElementById('scale-val').textContent = labels[val];
+        }
+        this.updateOverallBar();
+        this.rebuild();
+      });
+    });
+
+    document.querySelectorAll('.mode-button').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        document.querySelectorAll('.mode-button').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        this.params.mode = btn.dataset.mode;
+        this.handleMode();
+      });
+    });
+  }
+
+  handleMode(){
+    const txt = document.getElementById('info-text');
+    if (this.params.mode === 'interactive'){
+      txt.textContent = 'Interactive mode: freely adjust sliders to explore Rosa’s resonance theory.';
+      return;
+    }
+    if (this.params.mode === 'experiment'){
+      txt.textContent = 'Experiment: watch engineered control suppress resonance.';
+      let c = 0;
+      const iv = setInterval(()=>{
+        c += 5;
+        document.getElementById('vertical').value = Math.min(c,100);
+        document.getElementById('vertical-val').textContent = Math.min(c,100)+'%';
+        this.params.vertical = Math.min(c,100);
+        const others = Math.max(5,100-c);
+        ['horizontal','diagonal','self'].forEach(id=>{
+          document.getElementById(id).value = others;
+          document.getElementById(id+'-val').textContent = others+'%';
+          this.params[id] = others;
+        });
+        this.updateOverallBar();
+        this.rebuild();
+        if (c>=95) clearInterval(iv);
+      },800);
+      return;
+    }
+    if (this.params.mode === 'historical'){
+      txt.textContent = 'Historical comparison cycling...';
+      const configs = [
+        {h:90,d:70,v:20,s:85,name:'Hunter-Gatherer'},
+        {h:30,d:50,v:90,s:40,name:'Feudal'},
+        {h:45,d:65,v:75,s:55,name:'Industrial'},
+        {h:75,d:85,v:40,s:70,name:'Network Society'}
+      ];
+      let idx = 0;
+      const iv = setInterval(()=>{
+        const cfg = configs[idx];
+        ['horizontal','diagonal','vertical','self'].forEach(k=>{
+          document.getElementById(k[0]).value = cfg[k[0]];
+          document.getElementById(k[0]+'-val').textContent = cfg[k[0]]+'%';
+          this.params[k[0]] = cfg[k[0]];
+        });
+        this.updateOverallBar();
+        this.rebuild();
+        txt.textContent = cfg.name;
+        idx = (idx+1)%configs.length;
+      },2000);
+      // stop on mode change
+      document.querySelectorAll('.mode-button').forEach(b=>b.addEventListener('click',()=>clearInterval(iv),{once:true}));
+    }
+  }
+
+  animate(){
+    requestAnimationFrame(()=>this.animate());
+    const dt = this.clock.getDelta();
+    // animate nodes
+    this.nodes.forEach(n=>{
+      const r = this.params[n.axis]/100;
+      const osc = Math.sin(this.clock.elapsedTime*2+n.phase)*.2;
+      const dir = n.orig.clone().sub(n.mesh.position).multiplyScalar(.05+r*osc*.1);
+      n.vel.add(dir).multiplyScalar(.95);
+      n.mesh.position.add(n.vel.clone().multiplyScalar(dt));
+      n.mesh.scale.setScalar(.8+r*.6);
+      const hue = .7-r*.7;
+      n.mesh.material.color.setHSL(hue,.8,.5);
+    });
+    // update links
+    this.links.forEach(l=>{
+      const pts = [l.a.mesh.position, l.b.mesh.position];
+      l.line.geometry.setFromPoints(pts);
+      const r = (l.a.resonance+l.b.resonance)/2;
+      l.line.material.color.setHSL(.7-r*.7,.8,.5);
+      l.line.material.opacity = r*.7;
+    });
+    // rotate particles
+    if (this.particles) this.particles.rotation.y += dt*.05;
+    this.controls.update();
+    this.renderer.render(this.scene,this.camera);
+  }
+}
+
+// init
+addEventListener('load', () => new ResonanceSimulator());
+</script>
+</body>
+</html>

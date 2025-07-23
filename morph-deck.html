@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        /* General Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* Body Styles */
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensure body takes full viewport height */
+        }
+
+        /* Portal Container for Canvases */
+        #portal-container {
+            position: fixed; /* Use fixed for full viewport coverage */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex; /* Arrange canvases side-by-side */
+        }
+        
+        /* Individual Canvas Containers */
+        .canvas-container {
+            width: 50%; /* Each takes half the width */
+            height: 100%;
+            position: relative; /* For canvas absolute positioning */
+            transition: opacity 0.3s ease-in-out; /* Smooth opacity transitions */
+        }
+
+        /* Canvas Element */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100% !important;
+            height: 100% !important;
+            display: block; /* Remove extra space below canvas */
+        }
+        
+        /* Controls Panel */
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            background: rgba(0,0,0,0.5);
+            padding: 15px 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+            transition: opacity 0.5s ease;
+        }
+
+        /* Slider Containers */
+        .slider-container {
+            width: 100%;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none; /* Override default appearance */
+            appearance: none;
+            width: 300px;
+            height: 4px; /* Thin slider track */
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        /* Slider Thumb Styling */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #0ff; /* Cyan thumb */
+            cursor: pointer;
+            margin-top: -6px; /* Center thumb vertically */
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+        }
+
+        input[type=range]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #0ff;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+        }
+
+        /* Slider Labels */
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 300px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 5px;
+        }
+
+        /* Hidden Utility Class */
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none !important; /* Prevent interaction when hidden */
+        }
+
+        /* Fuzz Slider (Vertical Left) */
+        #fuzz-slider-container {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 101;
+            transition: opacity 0.5s ease;
+        }
+
+        #fuzz-slider {
+            width: 150px; /* Width when rotated */
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            transform: rotate(-90deg) translateX(-50%); /* Rotate and align */
+            transform-origin: top left; /* Pivot point for rotation */
+        }
+
+        #fuzz-slider::-webkit-slider-thumb {
+            background: #fff; /* White thumb for fuzz */
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.7);
+        }
+
+        #fuzz-slider::-moz-range-thumb {
+            background: #fff;
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.7);
+        }
+
+        #fuzz-label {
+            color: white;
+            font-size: 12px;
+            margin-top: 170px; /* Position label after rotated slider */
+            writing-mode: vertical-rl; /* Vertical text */
+            text-orientation: mixed;
+            opacity: 0.5;
+        }
+
+        /* Influence Slider (Vertical Right) */
+        #influence-slider-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 101;
+            transition: opacity 0.5s ease;
+        }
+
+        #influence-slider {
+            width: 150px;
+            height: 4px;
+            background: rgba(0, 255, 255, 0.2);
+            transform: rotate(-90deg) translateX(-50%);
+            transform-origin: top left;
+        }
+
+        #influence-slider::-webkit-slider-thumb {
+            background: #0ff; /* Cyan thumb for influence */
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+        }
+
+        #influence-slider::-moz-range-thumb {
+            background: #0ff;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+        }
+
+        #influence-label {
+            color: #0ff;
+            font-size: 12px;
+            margin-top: 170px;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            opacity: 0.5;
+        }
+
+        /* Play/Pause Button */
+        #play-pause-button {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 101;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Courier New', monospace;
+        }
+        
+        #play-pause-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+        }
+
+        /* Start Button */
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+        }
+
+        #start-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <div id="table-a-container" class="canvas-container">
+            <canvas id="canvas-a"></canvas>
+        </div>
+        <div id="table-b-container" class="canvas-container">
+            <canvas id="canvas-b"></canvas>
+        </div>
+    </div>
+
+    <div id="controls" class="hidden">
+        <div class="slider-container">
+            <div class="slider-labels">
+                <span>A: Drone</span>
+                <span>B: Sequencer</span>
+            </div>
+            <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+    </div>
+
+    <div id="fuzz-slider-container" class="hidden">
+        <span id="fuzz-label">FUZZ</span>
+        <input type="range" id="fuzz-slider" min="0" max="1" step="0.01" value="0">
+    </div>
+    <div id="influence-slider-container" class="hidden">
+        <span id="influence-label">INFLUENCE</span>
+        <input type="range" id="influence-slider" min="0" max="1" step="0.01" value="1.0">
+    </div>
+
+    <button id="start-button">Enter Morphic Field</button>
+    <button id="play-pause-button" class="hidden">►</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Helper function for distortion curve (used by Web Audio API WaveShaperNode)
+        function makeDistortionCurve(amount) {
+            let k = typeof amount === 'number' ? amount : 50,
+                n_samples = 44100,
+                curve = new Float32Array(n_samples),
+                deg = Math.PI / 180,
+                i = 0,
+                x;
+            for ( ; i < n_samples; ++i ) {
+                x = i * 2 / n_samples - 1;
+                curve[i] = ( 3 + k ) * x * 20 * deg / ( Math.PI + k * Math.abs(x) );
+            }
+            return curve;
+        };
+
+        class MorphicField {
+            constructor(canvas, isSequencer = false) {
+                this.canvas = canvas;
+                if (!this.canvas) {
+                    console.error("MorphicField: Canvas element not found.");
+                    return;
+                }
+                this.container = this.canvas.parentElement; // Get the parent container for opacity control
+                if (!this.container) {
+                    console.error("MorphicField: Parent container not found for canvas:", canvas.id);
+                }
+                this.isSequencer = isSequencer;
+
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+
+                this.audioContext = null;
+                this.outputNode = null;
+                this.fuzzGain = null; // Specific to sequencer for drone influence
+                this.analyser = null;
+                this.frequencyData = null;
+
+                this.material = null;
+                this.time = 0;
+                this.mouse = new THREE.Vector2(0.5, 0.5); // Default mouse position to center
+
+                // Sequencer specific properties
+                if (this.isSequencer) {
+                    this.layers = [];
+                    this.voices = [];
+                    this.currentStep = 0;
+                    this.bpm = 120;
+                    this.nextStepTime = 0;
+                    this.schedulerInterval = null;
+                    this.isPlaying = false; // Sequencer starts paused
+                    this.influence = 1.0; // Influences volume and visual beat pulse
+                }
+
+                this.initVisuals(); // Initialize visual components
+            }
+
+            initVisuals() {
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 5; // Camera distance for perspective
+
+                this.createField(); // Create the 3D plane
+
+                // Event listeners for mouse interaction
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mouse.x = (e.clientX - rect.left) / rect.width;
+                    this.mouse.y = 1.0 - (e.clientY - rect.top) / rect.height; // Invert Y for WebGL coords
+                });
+
+                // Sequencer specific click interaction for nodes
+                if (this.isSequencer) {
+                    this.initSequencerLayers();
+                    this.canvas.addEventListener('click', (e) => {
+                        const rect = this.canvas.getBoundingClientRect();
+                        const x = (e.clientX - rect.left) / rect.width;
+                        const y = 1.0 - (e.clientY - rect.top) / rect.height;
+                        this.toggleNode(x, y);
+                    });
+                }
+            }
+
+            // Method to create and connect audio nodes
+            createAudioContext(audioContext, destination) {
+                this.audioContext = audioContext;
+                this.outputNode = this.audioContext.createGain(); // Main output for this deck
+                this.outputNode.connect(destination); // Connect to master output
+
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 128;
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinBinCount);
+                this.outputNode.connect(this.analyser); // Connect analyser to this deck's output
+
+                if (this.isSequencer) {
+                    this.fuzzGain = this.audioContext.createGain(); // Gain node for fuzz effect
+                    this.fuzzGain.gain.value = 0; // Starts at 0 fuzz
+                    this.createSequencerVoices();
+                    this.startSequencer(); // Start the sequencer scheduler
+                } else {
+                    this.createDroneVoice();
+                }
+            }
+
+            // Creates the 3D plane and applies shaders
+            createField() {
+                const geometry = new THREE.PlaneGeometry(10, 10, 200, 200); // Large, highly subdivided plane
+                const vertexShader = `
+                    uniform float time;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    varying vec2 vUv;
+                    varying float vDistortion;
+
+                    // Simple Perlin-like noise function
+                    float perlin(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        float dist = distance(uv, mouse); // Distance from mouse cursor
+                        float strength = smoothstep(0.5, 0.0, dist); // Influence falls off from mouse
+                        float distortion = perlin(pos.xy * 0.5 + time * 0.1) * 0.5; // Perlin noise for base distortion
+                        
+                        // Apply distortion based on mouse proximity and audio level
+                        pos.z += (strength * 0.5 + audioLevel * 2.0) * distortion;
+                        vDistortion = distortion; // Pass distortion to fragment shader
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform float beatPulse; // For sequencer pulse
+                    varying vec2 vUv;
+                    varying float vDistortion;
+
+                    // HSV to RGB conversion function (standard GLSL)
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+
+                    void main() {
+                        // Hue changes over time and based on X-coordinate
+                        float hue = ${this.isSequencer ? '0.55' : '0.1'} + vUv.x * 0.2 + time * 0.02;
+                        float sat = 0.5 + vDistortion * 0.5; // Saturation based on distortion
+                        // Value/Brightness based on audio, distortion, and beat pulse
+                        float val = 0.1 + audioLevel * 2.0 + vDistortion * 0.5 + beatPulse * 0.5;
+                        vec3 color = hsv2rgb(vec3(hue, sat, val));
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `;
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        mouse: { value: this.mouse },
+                        audioLevel: { value: 0 },
+                        beatPulse: { value: 0 }
+                    },
+                });
+
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+
+            // Creates a simple drone sound
+            createDroneVoice() {
+                const osc1 = this.audioContext.createOscillator();
+                const osc2 = this.audioContext.createOscillator();
+                const lfo = this.audioContext.createOscillator();
+                const lfoGain = this.audioContext.createGain();
+
+                osc1.type = 'sine';
+                osc1.frequency.value = 55; // A1
+                osc2.type = 'sawtooth';
+                osc2.frequency.value = 55.1; // Slightly detuned A1
+                
+                lfo.type = 'sine';
+                lfo.frequency.value = 0.2; // Slow LFO for pitch modulation
+                lfoGain.gain.value = 5; // LFO modulation depth
+
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc1.frequency);
+                lfoGain.connect(osc2.frequency);
+
+                osc1.connect(this.outputNode);
+                osc2.connect(this.outputNode);
+
+                osc1.start();
+                osc2.start();
+                lfo.start();
+            }
+
+            // Initializes sequencer grid state
+            initSequencerLayers() {
+                // 4 layers, each with 8 steps. First layer active by default.
+                for (let i = 0; i < 4; i++) {
+                    this.layers.push({ isActive: i === 0, nodeStates: Array(8).fill(false) });
+                }
+                // Example: initial pattern for the first layer
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+
+            // Creates the 8 voices for the sequencer
+            createSequencerVoices() {
+                // Wave shaper for distortion (fuzz effect)
+                const distortion = this.audioContext.createWaveShaper();
+                distortion.curve = makeDistortionCurve(200); // Apply heavy distortion
+                
+                this.fuzzGain.connect(distortion); // Drone output connects to fuzzGain, then to distortion
+                distortion.connect(this.outputNode); // Distorted signal goes to deck output
+
+                // Create 8 oscillator-gain pairs
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle'; // Triangle wave for sequencer notes
+                    osc.frequency.value = 110 + i * 55; // Escalating frequencies (A2, D3, G3, C4, F4, A#4, D#5, G#5)
+                    gain.gain.value = 0; // Start muted
+                    osc.connect(gain);
+                    gain.connect(this.outputNode); // Notes go directly to deck output (after fuzz for drone)
+                    osc.start();
+                    this.voices.push({ osc, gain });
+                }
+            }
+
+            // Starts the sequencer scheduling loop
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+                this.nextStepTime = this.audioContext.currentTime;
+                // isPlaying is managed by the play/pause button, so no change here
+                this.schedulerInterval = setInterval(() => this.scheduler(), 50); // Schedule every 50ms
+            }
+
+            // Schedules notes for playback
+            scheduler() {
+                if (!this.isPlaying) return; // Only schedule if playing
+
+                const lookahead = 0.1; // Schedule events up to 100ms in advance
+                while (this.nextStepTime < this.audioContext.currentTime + lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    const secondsPerStep = 60 / this.bpm / 2; // Calculate time for 8th notes
+                    this.nextStepTime += secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8; // Move to next step, loop at 8
+                }
+            }
+
+            // Plays a single step's notes
+            scheduleStep(step, time) {
+                // Trigger visual beat pulse
+                this.material.uniforms.beatPulse.value = 1.0 * this.influence;
+
+                this.layers.forEach(layer => {
+                    if (layer.isActive && layer.nodeStates[step]) {
+                        const voice = this.voices[step];
+                        voice.gain.gain.cancelScheduledValues(time); // Clear any pending ramps
+                        voice.gain.gain.setValueAtTime(0, time); // Start at 0 gain
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01); // Quick attack
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15); // Quick decay
+                    }
+                });
+            }
+
+            // Toggles sequencer node state on click
+            toggleNode(x, y) {
+                const step = Math.floor(x * 8); // Determine step (0-7)
+                const layerIndex = Math.floor(y * 4); // Determine layer (0-3)
+                if (step >= 0 && step < 8 && layerIndex >= 0 && layerIndex < 4) {
+                    // Activate clicked layer and deactivate others
+                    this.layers.forEach((layer, i) => layer.isActive = (i === layerIndex));
+                    const state = this.layers[layerIndex].nodeStates[step];
+                    this.layers[layerIndex].nodeStates[step] = !state; // Toggle state
+                }
+            }
+
+            // Main animation loop update
+            update() {
+                this.time += 0.01; // Increment time for shader animations
+                this.material.uniforms.time.value = this.time;
+
+                // Update audio level uniform from analyser
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    let sum = this.frequencyData.reduce((a, b) => a + b, 0);
+                    let avg = sum / this.frequencyData.length;
+                    this.material.uniforms.audioLevel.value = avg / 255; // Normalize to 0-1
+                }
+
+                // Decay beat pulse
+                if (this.isSequencer && this.material.uniforms.beatPulse.value > 0) {
+                    this.material.uniforms.beatPulse.value *= 0.9;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            // Handles window resize events
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.camera.aspect = rect.width / rect.height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(rect.width, rect.height);
+            }
+
+            // Sets the opacity of the canvas container (for visual crossfading)
+            setOpacity(value) {
+                if (this.container) {
+                    this.container.style.opacity = value;
+                }
+            }
+        }
+
+        // --- Main Application Setup ---
+        let leftDeck, rightDeck, audioContext;
+
+        function init() {
+            const startButton = document.getElementById('start-button');
+            const playPauseButton = document.getElementById('play-pause-button');
+            const crossfaderSlider = document.getElementById('crossfader-slider');
+            const fuzzSlider = document.getElementById('fuzz-slider');
+            const influenceSlider = document.getElementById('influence-slider');
+
+            const controls = document.getElementById('controls');
+            const fuzzSliderContainer = document.getElementById('fuzz-slider-container');
+            const influenceSliderContainer = document.getElementById('influence-slider-container');
+
+            // Event listener for the initial start button click
+            startButton.addEventListener('click', async () => {
+                if (audioContext) return; // Prevent multiple initializations
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume(); // Resume audio context (required by browsers)
+
+                const masterOut = audioContext.createGain(); // Master gain node
+                masterOut.connect(audioContext.destination); // Connect to speakers
+
+                // Initialize the two decks
+                leftDeck = new MorphicField(document.getElementById('canvas-a'), false); // Drone deck
+                rightDeck = new MorphicField(document.getElementById('canvas-b'), true); // Sequencer deck
+
+                // Create audio components for each deck, connecting to masterOut
+                leftDeck.createAudioContext(audioContext, masterOut);
+                rightDeck.createAudioContext(audioContext, masterOut);
+
+                // Connect drone output to sequencer's fuzz input
+                if (leftDeck.outputNode && rightDeck.fuzzGain) {
+                    leftDeck.outputNode.connect(rightDeck.fuzzGain);
+                }
+
+                // Set initial crossfader state (both audio and visual)
+                const initialCrossfaderValue = parseFloat(crossfaderSlider.value);
+                const gainL = Math.cos(initialCrossfaderValue * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - initialCrossfaderValue) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+                leftDeck.setOpacity(Math.sqrt(gainL));
+                rightDeck.setOpacity(Math.sqrt(gainR));
+
+                // Hide start button and show controls
+                startButton.classList.add('hidden');
+                controls.classList.remove('hidden');
+                fuzzSliderContainer.classList.remove('hidden');
+                influenceSliderContainer.classList.remove('hidden');
+                playPauseButton.classList.remove('hidden'); // Fix: remove 'hidden'
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►';
+
+                // Start the animation loop
+                function animate() {
+                    requestAnimationFrame(animate);
+                    leftDeck.update();
+                    rightDeck.update();
+                }
+                animate();
+
+                // Trigger an initial resize to correctly size canvases
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            // Play/Pause button functionality
+            playPauseButton.addEventListener('click', () => {
+                if (!rightDeck) return;
+                rightDeck.isPlaying = !rightDeck.isPlaying; // Toggle play state
+                playPauseButton.textContent = rightDeck.isPlaying ? '❚❚' : '►'; // Update button text
+            });
+
+            // Crossfader slider functionality
+            crossfaderSlider.addEventListener('input', (e) => {
+                if (!leftDeck || !rightDeck) return;
+                const value = parseFloat(e.target.value);
+                // Equal-power crossfading for audio
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                leftDeck.outputNode.gain.value = gainL;
+                rightDeck.outputNode.gain.value = gainR;
+
+                // Visual crossfading (opacity of containers)
+                leftDeck.setOpacity(Math.sqrt(gainL));
+                rightDeck.setOpacity(Math.sqrt(gainR));
+            });
+
+            // Fuzz slider functionality
+            fuzzSlider.addEventListener('input', (e) => {
+                if (rightDeck && rightDeck.fuzzGain) {
+                    // Use setTargetAtTime for smooth parameter changes
+                    rightDeck.fuzzGain.gain.setTargetAtTime(parseFloat(e.target.value), audioContext.currentTime, 0.01);
+                }
+            });
+
+            // Influence slider functionality
+            influenceSlider.addEventListener('input', (e) => {
+                if (rightDeck) {
+                    rightDeck.influence = parseFloat(e.target.value);
+                }
+            });
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                if (leftDeck) leftDeck.resize();
+                if (rightDeck) rightDeck.resize();
+            });
+        }
+
+        // Initialize the application once the DOM is ready
+        init();
+    </script>
+</body>
+</html>

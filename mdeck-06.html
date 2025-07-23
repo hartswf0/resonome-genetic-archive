@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Morphic Resonance Portal</title>
+    <style>
+        /* General Reset and Body Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* Prevent text selection */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none; /* Hide default cursor */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh */
+            font-family: 'Courier New', monospace; /* Classic monospace font */
+            color: #E0FFFF; /* Light cyan text color */
+        }
+        
+        /* Canvas for Three.js */
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            transition: opacity 0.5s ease; /* For fading when UI is shown */
+        }
+        
+        /* Loading Indicator */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(224, 255, 255, 0.5); /* Semi-transparent cyan */
+            font-size: 1.2em;
+            z-index: 100;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Unified Master Control Panel */
+        #master-control-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px; /* Spacing between control groups */
+            z-index: 50;
+            opacity: 1; /* Initially visible */
+            transition: opacity 0.4s ease, transform 0.4s ease;
+            backdrop-filter: blur(5px);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 25px; /* More padding for a chunkier feel */
+            border-radius: 15px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            pointer-events: auto; /* Active when visible */
+            max-width: 90vw; /* Responsive width */
+            max-height: 90vh; /* Responsive height */
+            overflow-y: auto; /* Scroll if content exceeds height */
+        }
+
+        #master-control-panel.hidden {
+            opacity: 0;
+            pointer-events: none; /* Make non-interactive when hidden */
+            transform: translate(-50%, -50%) scale(0.95); /* Slight scale down on hide */
+        }
+        
+        /* Control Group Layout */
+        .control-group {
+            display: flex;
+            flex-direction: column; /* Stack label and control */
+            align-items: center;
+            gap: 8px;
+            width: 100%; /* Take full width of panel */
+        }
+
+        .control-group label {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(224, 255, 255, 0.8);
+        }
+
+        /* BPM Display and Buttons */
+        .bpm-display {
+            font-size: 2.2em; /* Large BPM number */
+            font-weight: bold;
+            color: #00FFFF;
+            padding: 5px 0;
+            min-width: 80px; /* Ensure consistent width */
+            text-align: center;
+        }
+        
+        .bpm-btns {
+            display: flex;
+            gap: 12px; /* Spacing between BPM buttons */
+        }
+
+        .bpm-btn {
+            width: 55px; /* Larger buttons */
+            height: 55px;
+            background: rgba(224, 255, 255, 0.1);
+            border: 2px solid rgba(224, 255, 255, 0.3);
+            color: #E0FFFF;
+            font-size: 2.5em; /* Larger symbols */
+            line-height: 1; /* Center symbol */
+            cursor: pointer;
+            border-radius: 8px; /* Slightly more rounded */
+            transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+            display: flex; /* For centering unicode symbols */
+            align-items: center;
+            justify-content: center;
+        }
+        .bpm-btn:hover {
+            background: rgba(224, 255, 255, 0.2);
+            border-color: #E0FFFF;
+        }
+        .bpm-btn:active {
+            background: #E0FFFF;
+            color: #000;
+            box-shadow: 0 0 10px #E0FFFF;
+            transform: scale(0.98); /* Slight press effect */
+        }
+
+        /* Slider Styles (Chunkier, TM-like) */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 200px; /* Wider slider */
+            height: 16px; /* Thicker slider track */
+            background: rgba(224, 255, 255, 0.15);
+            border-radius: 6px;
+            outline: none;
+            cursor: grab;
+            margin: 0;
+            padding: 0;
+            box-shadow: inset 0 0 3px rgba(0,0,0,0.5);
+            transition: background 0.1s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 32px; /* Larger thumb */
+            height: 32px;
+            border-radius: 50%;
+            background: #00FFFF; /* Cyan thumb */
+            cursor: grab;
+            box-shadow: 0 0 8px #00FFFF;
+            border: 2px solid #00FFFF; /* Matching border */
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            cursor: grabbing;
+            background: #E0FFFF; /* White on active grab */
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1); /* Slight pulse on grab */
+        }
+
+        /* Firefox specific slider styles */
+        input[type="range"]::-moz-range-thumb {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #00FFFF;
+            cursor: grab;
+            box-shadow: 0 0 8px #00FFFF;
+            border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        input[type="range"]:active::-moz-range-thumb {
+            cursor: grabbing;
+            background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1);
+        }
+
+        /* Sampler Buttons */
+        .sampler-btns {
+            display: flex;
+            gap: 10px;
+        }
+        .sampler-btn {
+            width: 60px; /* Wider buttons */
+            height: 40px;
+            background: rgba(224, 255, 255, 0.1);
+            border: 2px solid rgba(224, 255, 255, 0.3);
+            color: #E0FFFF;
+            font-size: 1.5em; /* Larger symbols */
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .sampler-btn:hover { background: rgba(224, 255, 255, 0.2); border-color: #E0FFFF; }
+        .sampler-btn:active { background: #E0FFFF; color: #000; box-shadow: 0 0 10px #E0FFFF; transform: scale(0.98); }
+        .sampler-btn.active { background: #FF0096; border-color: #FF0096; color: #000; box-shadow: 0 0 10px #FF0096; } /* Active (recording/playing) color: Magenta */
+        
+        /* Sequencer Grid Styles */
+        #sequencer-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 55px); /* Larger columns */
+            grid-gap: 8px; /* More spacing */
+            padding: 10px;
+            border-radius: 12px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            background: rgba(0, 0, 0, 0.3); /* Darker translucent background for grid */
+        }
+        
+        .step {
+            width: 55px; 
+            height: 55px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            border: 2px solid rgba(224, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5em; /* Larger symbols */
+            line-height: 1; 
+            color: rgba(224, 255, 255, 0.5); /* Default symbol color */
+            background: rgba(224, 255, 255, 0.05); /* Very subtle base color */
+        }
+        
+        .step.active { /* Active (toggled on) state */
+            color: #000; /* Black text on active */
+            border-color: currentColor; /* Border matches active color */
+            box-shadow: 0 0 10px currentColor, inset 0 0 5px rgba(255,255,255,0.5);
+            transform: scale(1.02);
+        }
+        /* Active background color is now set by JS via style attribute */
+        
+        .step.playing { /* Playing (current step) indicator */
+            box-shadow: 0 0 20px #E0FFFF, 0 0 30px rgba(224, 255, 255, 0.5); /* Strong white glow */
+            transform: scale(1.15); /* Stronger pulse */
+            border-color: #E0FFFF; /* White border */
+            z-index: 1; /* Bring to front for pulse effect */
+        }
+
+        /* Color Palette for Sequencer Steps */
+        #color-palette {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 8px;
+            justify-content: center;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,255,255,0.2);
+            background: rgba(0,0,0,0.2);
+            max-width: 100%; /* Ensure it fits within the panel */
+        }
+        .color-swatch {
+            width: 38px; /* Larger swatches */
+            height: 38px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.1s ease, transform 0.1s ease;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .color-swatch.selected {
+            border-color: #E0FFFF;
+            transform: scale(1.2);
+            box-shadow: 0 0 10px #E0FFFF;
+        }
+
+        /* Info Text */
+        .info-text {
+            font-size: 0.75em;
+            text-align: center;
+            color: rgba(224, 255, 255, 0.6);
+            margin-top: 10px;
+            line-height: 1.4;
+            max-width: 90%; /* Prevent overflow */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="loading" id="loading">Initializing Morphic Field...</div>
+    
+    <div id="master-control-panel">
+        <div class="control-group">
+            <label>BPM</label>
+            <div class="bpm-display" id="bpm-display">120</div>
+            <div class="bpm-btns">
+                <button class="bpm-btn" id="bpm-down-btn">𓃑</button>
+                <button class="bpm-btn" id="bpm-up-btn">𓉗</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>DRONE VOLUME</label>
+            <input type="range" id="drone-volume-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>SEQUENCER VOLUME</label>
+            <input type="range" id="seq-volume-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>FUZZ MIX</label>
+            <input type="range" id="fuzz-mix-slider" min="0" max="1" step="0.01" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>SAMPLE</label>
+            <div class="sampler-btns">
+                <button class="sampler-btn" id="capture-sample-btn">𓈌</button>
+                <button class="sampler-btn" id="play-sample-btn">𓈋</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>SAMPLE VOLUME</label>
+            <input type="range" id="sample-volume-slider" min="0" max="1" step="0.01" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>MODE MIX</label>
+            <input type="range" id="mode-mix-slider" min="0" max="1" step="0.01" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>STEP COLOR</label>
+            <div id="color-palette"></div>
+        </div>
+
+        <div id="sequencer-grid"></div>
+
+        <div class="info-text">
+            Field interaction: Cursor position sculpts drone.<br>
+            SHIFT+CLICK / 2-Finger Tap: Toggle UI.
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Utility function to convert HSV to RGB (for setting step background colors)
+        function hsvToRgb(h, s, v) {
+            let r, g, b;
+            const i = Math.floor(h * 6);
+            const f = h * 6 - i;
+            const p = v * (1 - s);
+            const q = v * (1 - f * s);
+            const t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+        }
+
+        class MorphicFieldPortal {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.audioContext = null;
+                this.masterGain = null;
+                this.droneMasterGain = null; // Volume for the drone oscillators
+                this.seqMasterGain = null;   // Volume for sequencer triggered effects
+                this.reverb = null;
+                this.oscillators = [];
+                this.filters = [];
+                this.analyser = null;
+                this.frequencyData = null;
+                this.fuzzNode = null;
+                this.fuzzWetGain = null;
+                this.fuzzDryGain = null;
+
+                // Sampler properties
+                this.samplerBuffer = null;
+                this.samplerSource = null;
+                this.samplerGain = null;
+                this.isSampling = false;
+                this.isSamplerPlaying = false;
+                this.recorder = null;
+                this.recordedChunks = [];
+                this.captureDuration = 4; // seconds (e.g., 4 bars at 60 BPM)
+
+                // Global mouse/touch state for field interaction
+                this.mouse = { x: 0, y: 0, down: false };
+                
+                // Morphic State parameters, controlled by interaction and sequencer
+                this.morphicState = {
+                    masterVolume: 0.5,
+                    droneVolume: 0.5,
+                    seqVolume: 0.5,
+                    frequency: 220,
+                    resonance: 0.7,
+                    bloom: 0.8,
+                    flow: 0.6,
+                    harmonic: 0.4,
+                    fuzzAmount: 0.0,
+                    sampleVolume: 0.0,
+                    interactionModeMix: 0.0 // 0.0 = Sequencer, 1.0 = Reactive Canvas
+                };
+                
+                this.fieldMesh = null;
+                this.particles = null;
+                this.time = 0; // Global time for animations and LFOs
+                
+                // Sequencer properties: { active: boolean, colorIndex: number } for each step
+                this.steps = Array(8).fill().map(() => Array(4).fill().map(() => ({ active: false, colorIndex: 0 })));
+                this.currentStep = 0;
+                this.bpm = 120;
+                this.secondsPerStep = (60 / this.bpm) / 4; // Each step is a 16th note
+                this.nextStepTime = 0;
+                this.sequencerInterval = null;
+                this.uiVisible = true; // Overall UI visibility (Master Control Panel)
+
+                // Color palette for sequencer steps (HSV values)
+                this.colorPalette = [
+                    [0.0, 1.0, 1.0],   // Red
+                    [0.16, 1.0, 1.0],  // Yellow-Green
+                    [0.33, 1.0, 1.0],  // Green
+                    [0.5, 1.0, 1.0],   // Cyan
+                    [0.66, 1.0, 1.0],  // Blue
+                    [0.83, 1.0, 1.0],  // Magenta
+                    [0.0, 0.0, 1.0],   // White
+                    [0.0, 0.0, 0.5]    // Grey
+                ];
+                this.activeColorIndex = 0; // Index of the currently selected color for steps
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupThreeJS();
+                this.createMorphicField();
+                this.setupSequencerUI();
+                this.setupControlsUI();
+                this.setupColorPaletteUI(); // Needs to be after setupControlsUI to find palette div
+                
+                this.loadStateFromURL(); // Load state (includes steps, BPM, morphicState, UI visibility)
+                this.updateSequencerUI(); // Apply loaded steps to UI
+                this.updateControlsUI();   // Apply loaded morphicState to UI controls
+                this.updateColorPaletteUI(); // Update color palette selected swatch based on loaded activeColorIndex
+                
+                this.setupInteraction(); // Set up event listeners (including audio activation)
+                this.animate();
+                
+                document.getElementById('loading').style.display = 'none';
+                this.toggleUI(this.uiVisible); // Set initial UI visibility
+            }
+            
+            setupThreeJS() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ 
+                    canvas: document.getElementById('canvas'),
+                    antialias: true,
+                    alpha: true
+                });
+                
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                this.camera.position.z = 5;
+                
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            async setupAudio() {
+                if (!this.audioContext || this.audioContext.state === 'closed') {
+                    try {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        
+                        // Master Gain: Controls overall output volume (mapped to mouse Y)
+                        this.masterGain = this.audioContext.createGain();
+                        this.masterGain.gain.value = this.morphicState.masterVolume;
+                        this.masterGain.connect(this.audioContext.destination);
+                        
+                        // Analyser: Feeds visual feedback, connected before masterGain
+                        this.analyser = this.audioContext.createAnalyser();
+                        this.analyser.fftSize = 256;
+                        this.analyser.connect(this.masterGain); 
+                        this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                        
+                        // Drone Master Gain: Controls volume of the core oscillators/drone
+                        this.droneMasterGain = this.audioContext.createGain();
+                        this.droneMasterGain.gain.value = this.morphicState.droneVolume;
+                        
+                        // Sequencer Master Gain: Controls volume of the sequencer-triggered effects
+                        this.seqMasterGain = this.audioContext.createGain();
+                        this.seqMasterGain.gain.value = this.morphicState.seqVolume;
+
+                        // Fuzz/Distortion setup (WaveShaper)
+                        this.fuzzNode = this.audioContext.createWaveShaper();
+                        this.fuzzNode.curve = this.makeDistortionCurve(this.morphicState.fuzzAmount * 100);
+                        this.fuzzNode.oversample = '4x';
+
+                        this.fuzzWetGain = this.audioContext.createGain();
+                        this.fuzzDryGain = this.audioContext.createGain();
+                        this.fuzzWetGain.gain.value = this.morphicState.fuzzAmount;
+                        this.fuzzDryGain.gain.value = 1 - this.morphicState.fuzzAmount;
+
+                        // Route drone output through fuzz dry/wet mix, then to analyser
+                        this.droneMasterGain.connect(this.fuzzDryGain);
+                        this.droneMasterGain.connect(this.fuzzWetGain);
+                        this.fuzzWetGain.connect(this.fuzzNode);
+                        this.fuzzNode.connect(this.analyser);
+                        this.fuzzDryGain.connect(this.analyser);
+                        
+                        // Sequencer effects also connect to analyser
+                        this.seqMasterGain.connect(this.analyser);
+
+                        // Sampler Gain: For captured loops
+                        this.samplerGain = this.audioContext.createGain();
+                        this.samplerGain.gain.value = this.morphicState.sampleVolume;
+                        this.samplerGain.connect(this.analyser); // Sampler also feeds analyser
+
+                        // Create reverb effect
+                        await this.createReverb();
+                        
+                        // Create oscillator bank (connected to droneMasterGain)
+                        this.createOscillatorBank();
+                        
+                        console.log("AudioContext initialized.");
+                    } catch (error) {
+                        console.warn('Audio context initialization failed:', error);
+                        alert('Audio cannot be started. Please ensure your browser allows autoplay or try refreshing.');
+                        return false; 
+                    }
+                }
+                
+                if (this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                    console.log("AudioContext resumed.");
+                }
+
+                if (!this.sequencerInterval) {
+                    this.startSequencer();
+                }
+                return true; 
+            }
+
+            makeDistortionCurve(amount) {
+                const k = typeof amount === 'number' ? amount : 50; 
+                const n_samples = 44100;
+                const curve = new Float32Array(n_samples);
+                const deg = Math.PI / 180;
+                for (let i = 0; i < n_samples; i++) {
+                    const x = i * 2 / n_samples - 1;
+                    curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+                }
+                return curve;
+            }
+            
+            async createReverb() {
+                const reverbBuffer = this.audioContext.createBuffer(2, this.audioContext.sampleRate * 3, this.audioContext.sampleRate);
+                
+                for (let channel = 0; channel < reverbBuffer.numberOfChannels; channel++) {
+                    const channelData = reverbBuffer.getChannelData(channel);
+                    for (let i = 0; i < channelData.length; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / channelData.length, 2);
+                    }
+                }
+                
+                this.reverb = this.audioContext.createConvolver();
+                this.reverb.buffer = reverbBuffer;
+                
+                const reverbGain = this.audioContext.createGain();
+                reverbGain.gain.value = 0.3;
+                this.reverb.connect(reverbGain);
+                this.reverb.connect(this.analyser); // Reverb output to analyser
+            }
+            
+            createOscillatorBank() {
+                // Stop existing oscillators before creating new ones
+                this.oscillators.forEach(osc => osc.stop());
+                this.oscillators = [];
+                this.filters = [];
+
+                const baseFreq = this.morphicState.frequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                
+                frequencies.forEach((freq, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    const filter = this.audioContext.createBiquadFilter();
+                    
+                    osc.type = i === 0 ? 'sine' : ['sawtooth', 'triangle', 'square'][i % 3];
+                    osc.frequency.value = freq;
+                    gain.gain.value = 0.1 / frequencies.length;
+                    
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 800 + i * 400;
+                    filter.Q.value = this.morphicState.resonance * 10;
+                    
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.droneMasterGain); // Connect to drone's master gain
+                    
+                    osc.start();
+                    
+                    this.oscillators.push(osc);
+                    this.filters.push(filter);
+                });
+            }
+            
+            // ==================== Sampler Controls ====================
+            async captureSample() {
+                if (!this.audioContext || this.audioContext.state !== 'running') {
+                    console.warn("AudioContext not running, cannot capture.");
+                    return;
+                }
+                if (this.isSampling) {
+                    console.warn("Already sampling.");
+                    return;
+                }
+                
+                const captureBtn = document.getElementById('capture-sample-btn');
+                captureBtn.classList.add('active'); // Indicate recording
+
+                // Create a destination node to capture audio from the main output
+                const destination = this.audioContext.createMediaStreamDestination();
+                this.masterGain.connect(destination); // Route ALL portal audio to capturer
+
+                this.recorder = new MediaRecorder(destination.stream);
+                this.recordedChunks = [];
+                this.isSampling = true;
+
+                this.recorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        this.recordedChunks.push(event.data);
+                    }
+                };
+
+                this.recorder.onstop = async () => {
+                    captureBtn.classList.remove('active');
+                    const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+                    const audioURL = URL.createObjectURL(blob);
+                    
+                    try {
+                        const response = await fetch(audioURL);
+                        const arrayBuffer = await response.arrayBuffer();
+                        this.samplerBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                        console.log("Sampler loop captured and decoded.");
+                        this.playSample(true); // Automatically play after capture
+                    } catch (error) {
+                        console.error("Error decoding audio data:", error);
+                        alert("Error capturing sample. Try again.");
+                    } finally {
+                        URL.revokeObjectURL(audioURL);
+                        this.isSampling = false;
+                        this.masterGain.disconnect(destination); // Disconnect capturer
+                        this.updateStateInURL(); // Update state to reflect sample exists
+                    }
+                };
+
+                this.recorder.start();
+                console.log("Sampling started for " + this.captureDuration + " seconds.");
+                setTimeout(() => {
+                    if (this.recorder.state === 'recording') {
+                        this.recorder.stop();
+                    }
+                }, this.captureDuration * 1000); 
+            }
+
+            playSample(forcePlay = false) {
+                if (!this.samplerBuffer) {
+                    console.warn("No audio loop captured.");
+                    return;
+                }
+
+                const playBtn = document.getElementById('play-sample-btn');
+                if (this.isSamplerPlaying && !forcePlay) {
+                    // Already playing, stop it
+                    if (this.samplerSource) {
+                        this.samplerGain.gain.setTargetAtTime(0, this.audioContext.currentTime, 0.05); // Fade out
+                        this.samplerSource.stop(this.audioContext.currentTime + 0.1); 
+                        this.samplerSource.onended = () => {
+                            this.samplerSource.disconnect();
+                            this.samplerSource = null;
+                        };
+                    }
+                    this.isSamplerPlaying = false;
+                    playBtn.classList.remove('active');
+                    console.log("Sampler loop stopped.");
+                } else if (!this.isSamplerPlaying) {
+                    // Start playing
+                    if (this.samplerSource) { // Ensure previous source is cleaned up if it was manually stopped
+                        this.samplerSource.disconnect();
+                        this.samplerSource = null;
+                    }
+                    this.samplerSource = this.audioContext.createBufferSource();
+                    this.samplerSource.buffer = this.samplerBuffer;
+                    this.samplerSource.loop = true;
+                    this.samplerSource.connect(this.samplerGain);
+                    this.samplerSource.start(0);
+
+                    this.samplerGain.gain.setTargetAtTime(this.morphicState.sampleVolume, this.audioContext.currentTime, 0.05); // Fade in to current sample volume
+                    this.isSamplerPlaying = true;
+                    playBtn.classList.add('active');
+                    console.log("Sampler loop playing.");
+                }
+                this.updateStateInURL(); // Update state on play/stop
+            }
+
+            // ==================== Morphic Field Visuals ====================
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(20, 20, 128, 128);
+                
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform vec2 mouse;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        
+                        float dist = distance(uv, mouse);
+                        float wave = sin(dist * 15.0 - time * 2.0) * 0.1;
+                        float ripple = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                        
+                        float morphic = sin(pos.x * 4.0 + time * flow) * 
+                                       cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                        
+                        pos.z += wave + ripple + morphic;
+                        vDistortion = abs(wave + ripple + morphic);
+                        vPosition = pos;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float bloom;
+                    uniform float harmonic;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float dist = length(center);
+                        
+                        float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                        float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                        float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4); 
+                        brightness = max(0.1, brightness); 
+                        
+                        vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                        
+                        float cursorDist = distance(vUv, mouse);
+                        float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0);
+                        color += vec3(0.1, 0.2, 0.3) * cursorGlow;
+                        
+                        float alpha = 0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2;
+                        alpha *= smoothstep(1.5, 0.0, dist);
+                        alpha += cursorGlow * 0.5;
+                        
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader,
+                    fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: this.morphicState.intensity },
+                        flow: { value: this.morphicState.flow },
+                        bloom: { value: this.morphicState.bloom },
+                        harmonic: { value: this.morphicState.harmonic },
+                        mouse: { value: new THREE.Vector2(0.5, 0.5) },
+                        audioLevel: { value: 0 }
+                    },
+                    transparent: true,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+                
+                this.createParticleField();
+            }
+            
+            createParticleField() {
+                const particleCount = 1000;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 20;
+                    positions[i + 1] = (Math.random() - 0.5) * 20;
+                    positions[i + 2] = (Math.random() - 0.5) * 10;
+                    
+                    colors[i] = 0.1 + Math.random() * 0.2;
+                    colors[i + 1] = 0.5 + Math.random() * 0.5;
+                    colors[i + 2] = 0.8 + Math.random() * 0.2;
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                
+                const material = new THREE.PointsMaterial({
+                    size: 0.05,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.6,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+            
+            // ==================== Sequencer UI & Logic ====================
+            setupSequencerUI() {
+                const seqGrid = document.getElementById('sequencer-grid');
+                seqGrid.innerHTML = ''; // Clear any existing elements
+                for (let x = 0; x < 8; x++) {
+                    for (let y = 0; y < 4; y++) {
+                        const div = document.createElement('div');
+                        div.classList.add('step');
+                        div.dataset.x = x;
+                        div.dataset.y = y;
+                        div.textContent = '░'; 
+                        div.onclick = (event) => {
+                            // Only toggle if UI is visible and not part of a multi-touch gesture
+                            if (this.uiVisible) {
+                                const stepState = this.steps[x][y];
+                                if (stepState.active && stepState.colorIndex === this.activeColorIndex) {
+                                    // If active and same color selected, toggle off
+                                    stepState.active = false;
+                                } else {
+                                    // If inactive or different color selected, activate with current color
+                                    stepState.active = true;
+                                    stepState.colorIndex = this.activeColorIndex;
+                                }
+                                this.updateSequencerUI(); // Update UI
+                                this.updateStateInURL(); // Save state
+                            }
+                        };
+                        seqGrid.appendChild(div);
+                    }
+                }
+            }
+
+            // Updates the visual state of the sequencer UI elements based on this.steps array
+            updateSequencerUI() {
+                for (let x = 0; x < 8; x++) {
+                    for (let y = 0; y < 4; y++) {
+                        const div = document.querySelector(`#sequencer-grid .step[data-x="${x}"][data-y="${y}"]`);
+                        if (div) {
+                            const stepState = this.steps[x][y];
+                            div.classList.toggle('active', stepState.active);
+                            div.textContent = stepState.active ? '▓' : '░';
+                            
+                            // Set background color dynamically based on its stored colorIndex
+                            if (stepState.active) {
+                                const color = this.colorPalette[stepState.colorIndex];
+                                div.style.backgroundColor = hsvToRgb(color[0], color[1], color[2]);
+                                div.style.borderColor = hsvToRgb(color[0], color[1], color[2]);
+                                div.style.color = 'black'; 
+                            } else {
+                                div.style.backgroundColor = 'rgba(224, 255, 255, 0.05)'; 
+                                div.style.borderColor = 'rgba(224, 255, 255, 0.2)';
+                                div.style.color = 'rgba(224, 255, 255, 0.5)';
+                            }
+                        }
+                    }
+                }
+            }
+            
+            setupControlsUI() {
+                // BPM Buttons
+                document.getElementById('bpm-up-btn').onclick = () => this.changeBPM(5);
+                document.getElementById('bpm-down-btn').onclick = () => this.changeBPM(-5);
+
+                // Drone Volume Slider
+                document.getElementById('drone-volume-slider').oninput = (e) => {
+                    this.morphicState.droneVolume = parseFloat(e.target.value);
+                    if (this.droneMasterGain) this.droneMasterGain.gain.value = this.morphicState.droneVolume;
+                    this.updateStateInURL();
+                };
+
+                // Sequencer Volume Slider
+                document.getElementById('seq-volume-slider').oninput = (e) => {
+                    this.morphicState.seqVolume = parseFloat(e.target.value);
+                    if (this.seqMasterGain) this.seqMasterGain.gain.value = this.morphicState.seqVolume;
+                    this.updateStateInURL();
+                };
+
+                // Fuzz Mix Slider
+                document.getElementById('fuzz-mix-slider').oninput = (e) => {
+                    this.morphicState.fuzzAmount = parseFloat(e.target.value);
+                    if (this.fuzzNode) {
+                        this.fuzzNode.curve = this.makeDistortionCurve(this.morphicState.fuzzAmount * 100);
+                        this.fuzzDryGain.gain.value = 1 - this.morphicState.fuzzAmount;
+                        this.fuzzWetGain.gain.value = this.morphicState.fuzzAmount;
+                    }
+                    this.updateStateInURL();
+                };
+
+                // Sampler Controls
+                document.getElementById('capture-sample-btn').onclick = () => this.captureSample();
+                document.getElementById('play-sample-btn').onclick = () => this.playSample();
+                document.getElementById('sample-volume-slider').oninput = (e) => {
+                    this.morphicState.sampleVolume = parseFloat(e.target.value);
+                    if (this.samplerGain) this.samplerGain.gain.value = this.morphicState.sampleVolume;
+                    this.updateStateInURL();
+                };
+
+                // Mode Mix Slider (New Control)
+                document.getElementById('mode-mix-slider').oninput = (e) => {
+                    this.morphicState.interactionModeMix = parseFloat(e.target.value);
+                    this.updateStateInURL();
+                    // Optional: Visual feedback for nodes when mode mix changes
+                    this.updateNodeIndicators(); 
+                };
+            }
+
+            updateControlsUI() {
+                document.getElementById('bpm-display').textContent = this.bpm;
+                document.getElementById('drone-volume-slider').value = this.morphicState.droneVolume;
+                document.getElementById('seq-volume-slider').value = this.morphicState.seqVolume;
+                document.getElementById('fuzz-mix-slider').value = this.morphicState.fuzzAmount;
+                document.getElementById('sample-volume-slider').value = this.morphicState.sampleVolume;
+                document.getElementById('mode-mix-slider').value = this.morphicState.interactionModeMix;
+            }
+
+            setupColorPaletteUI() {
+                const paletteDiv = document.getElementById('color-palette');
+                paletteDiv.innerHTML = '';
+                this.colorPalette.forEach((hsvColor, index) => {
+                    const swatch = document.createElement('div');
+                    swatch.classList.add('color-swatch');
+                    swatch.style.backgroundColor = hsvToRgb(hsvColor[0], hsvColor[1], hsvColor[2]);
+                    swatch.dataset.colorIndex = index;
+                    swatch.onclick = () => {
+                        this.activeColorIndex = index;
+                        this.updateColorPaletteUI(); // Update selection visuals
+                        this.updateStateInURL(); 
+                    };
+                    paletteDiv.appendChild(swatch);
+                });
+                this.updateColorPaletteUI(); // Ensure initial selection is correct
+            }
+
+            updateColorPaletteUI() {
+                document.querySelectorAll('#color-palette .color-swatch').forEach(s => s.classList.remove('selected'));
+                const selectedSwatch = document.querySelector(`#color-palette .color-swatch[data-color-index="${this.activeColorIndex}"]`);
+                if (selectedSwatch) {
+                    selectedSwatch.classList.add('selected');
+                }
+            }
+            
+            startSequencer() {
+                if (this.sequencerInterval) {
+                    clearInterval(this.sequencerInterval);
+                }
+                
+                this.nextStepTime = this.audioContext.currentTime;
+                
+                this.sequencerInterval = setInterval(() => {
+                    const now = this.audioContext.currentTime;
+                    if (now + 0.1 > this.nextStepTime) {
+                        this.playStep(this.currentStep);
+                        this.nextStepTime += this.secondsPerStep;
+                        this.currentStep = (this.currentStep + 1) % 8;
+                    }
+                }, 25);
+            }
+            
+            playStep(step) {
+                document.querySelectorAll('.step.playing').forEach(el => el.classList.remove('playing'));
+                
+                for (let y = 0; y < 4; y++) {
+                    const el = document.querySelector(`#sequencer-grid .step[data-x="${step}"][data-y="${y}"]`);
+                    if (el) {
+                        el.classList.add('playing');
+                        
+                        const stepState = this.steps[step][y];
+                        if (stepState.active) {
+                            // Sequencer row actions
+                            switch(y) {
+                                case 0: this.triggerPulse(); break;
+                                case 1: this.bumpIntensity(); break;
+                                case 2: this.shiftBloom(); break;
+                                case 3: this.grainGlitch(); break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // ==================== Sequencer Triggered Effects ====================
+            triggerPulse() {
+                // Visual feedback: brief intensity surge
+                const oldIntensity = this.morphicState.intensity;
+                this.morphicState.intensity = 1; 
+                setTimeout(() => { this.morphicState.intensity = oldIntensity; }, 100);
+
+                // Audio feedback: brief frequency shift on drone
+                if (this.oscillators.length > 0 && this.audioContext) {
+                    const now = this.audioContext.currentTime;
+                    this.oscillators.forEach(osc => {
+                        const originalFreq = osc.frequency.value;
+                        osc.frequency.setTargetAtTime(originalFreq * 1.05, now, 0.01);
+                        osc.frequency.setTargetAtTime(originalFreq, now + 0.05, 0.05);
+                    });
+                }
+            }
+            
+            bumpIntensity() {
+                // Visual feedback: permanent intensity increase
+                this.morphicState.intensity = Math.min(1, this.morphicState.intensity + 0.2);
+                
+                // Audio feedback: drone filter sweep
+                if (this.filters.length > 0 && this.audioContext) {
+                    const now = this.audioContext.currentTime;
+                    this.filters.forEach(filter => {
+                        const originalFreq = filter.frequency.value;
+                        filter.frequency.setTargetAtTime(originalFreq * 1.5, now, 0.01); 
+                        filter.frequency.setTargetAtTime(originalFreq, now + 0.2, 0.05);
+                    });
+                }
+            }
+            
+            shiftBloom() {
+                // Visual feedback: randomize bloom amount
+                this.morphicState.bloom = 0.3 + Math.random() * 0.7; 
+            }
+            
+            grainGlitch() {
+                // Visual feedback: brief distortion on canvas (e.g. increase shader flow)
+                const oldFlow = this.morphicState.flow;
+                this.morphicState.flow = oldFlow * 2; 
+                setTimeout(() => { this.morphicState.flow = oldFlow; }, 100);
+
+                // Audio feedback: burst of fuzz/distortion from the current drone signal
+                if (this.fuzzWetGain && this.audioContext) {
+                    const now = this.audioContext.currentTime;
+                    const currentFuzzAmount = this.morphicState.fuzzAmount;
+
+                    this.fuzzWetGain.gain.cancelScheduledValues(now);
+                    this.fuzzWetGain.gain.setValueAtTime(currentFuzzAmount, now);
+                    this.fuzzWetGain.gain.linearRampToValueAtTime(1.0, now + 0.005); 
+                    this.fuzzWetGain.gain.linearRampToValueAtTime(currentFuzzAmount, now + 0.15); 
+                }
+            }
+            
+            changeBPM(delta) {
+                this.bpm = Math.max(60, Math.min(240, this.bpm + delta)); 
+                this.secondsPerStep = (60/this.bpm)/4;
+                document.getElementById('bpm-display').textContent = this.bpm;
+                this.updateStateInURL(); 
+            }
+            
+            // ==================== UI Visibility & Interaction ====================
+            toggleUI(forceVisibility = null) {
+                this.uiVisible = (forceVisibility !== null) ? forceVisibility : !this.uiVisible;
+                const panel = document.getElementById('master-control-panel');
+                const canvas = document.getElementById('canvas');
+
+                if (this.uiVisible) {
+                    panel.classList.remove('hidden');
+                    canvas.style.opacity = '0.4'; 
+                } else {
+                    panel.classList.add('hidden');
+                    canvas.style.opacity = '1.0'; 
+                }
+                this.updateStateInURL(); 
+            }
+            
+            setupInteraction() {
+                const canvas = document.getElementById('canvas');
+                
+                const handleStart = async (e) => {
+                    const audioReady = await this.setupAudio(); 
+                    if (!audioReady) return;
+
+                    // UI Toggle: Shift+Click (desktop) or Two-finger tap (mobile)
+                    if (e.shiftKey || (e.touches && e.touches.length === 2)) {
+                        this.toggleUI();
+                        return;
+                    }
+                    
+                    // Interaction on canvas: influenced by Mode Mix slider
+                    // Only process field interaction if UI is hidden
+                    if (!this.uiVisible) {
+                        this.mouse.down = true;
+                        this.updateMouse(e); // Update mouse position for cursor glow
+
+                        const mouseUV = this.getMouseUV(e);
+                        const nearestNode = this.findNearestNode(mouseUV);
+                        const interactionModeMix = this.morphicState.interactionModeMix;
+
+                        let handledAsNodeToggle = false;
+                        if (nearestNode !== -1) {
+                            // Effective hit radius shrinks as interactionModeMix increases
+                            // At 0.0, effectiveNodeRadius is 0.12 (full sensitivity)
+                            // At 1.0, effectiveNodeRadius is 0.0 (no sensitivity, always sculpt)
+                            const initialNodeHitRadius = 0.12; 
+                            const distToNearest = Math.sqrt(
+                                Math.pow(this.nodes[nearestNode].x - mouseUV.x, 2) + 
+                                Math.pow(this.nodes[nearestNode].y - mouseUV.y, 2)
+                            );
+
+                            const effectiveNodeRadius = initialNodeHitRadius * (1.0 - interactionModeMix);
+
+                            if (distToNearest < effectiveNodeRadius) {
+                                // If within the shrinking hit area, it's a node toggle
+                                this.toggleNode(nearestNode); 
+                                handledAsNodeToggle = true;
+                            }
+                        }
+
+                        // If it wasn't handled as a node toggle OR if interactionModeMix is high, then sculpt the field.
+                        // The `interactionModeMix > 0.0` ensures that at least some sculpting happens if not purely sequencer mode.
+                        if (!handledAsNodeToggle || interactionModeMix > 0.0) { 
+                             this.updateMorphicState(mouseUV); // Sculpt the field parameters
+                        }
+                    }
+                };
+                
+                const handleMove = (e) => {
+                    // Always update mouse position for cursor glow, regardless of UI visibility
+                    this.updateMouse(e); 
+                    
+                    // Continuous sculpting only happens when mouse is down AND UI is hidden AND Mode Mix is not pure sequencer
+                    if (this.mouse.down && !this.uiVisible && this.morphicState.interactionModeMix > 0.0) { 
+                        const mouseUV = this.getMouseUV(e);
+                        this.updateMorphicState(mouseUV); 
+                    }
+                };
+                
+                const handleEnd = () => {
+                    this.mouse.down = false;
+                };
+                
+                // Helper to get UV from event (used by handleStart/Move)
+                this.getMouseUV = (e) => {
+                    const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                    const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                    return {
+                        x: clientX / window.innerWidth,
+                        y: 1 - clientY / window.innerHeight // Invert Y for UV coordinates
+                    };
+                };
+
+                // Mouse events
+                canvas.addEventListener('mousedown', handleStart);
+                canvas.addEventListener('mousemove', handleMove);
+                canvas.addEventListener('mouseup', handleEnd);
+                canvas.addEventListener('mouseleave', handleEnd); 
+                
+                // Touch events
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); 
+                    handleStart(e); 
+                }, { passive: false });
+
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length > 0) { 
+                        handleMove(e.touches[0]); 
+                    }
+                }, { passive: false });
+
+                canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    handleEnd();
+                }, { passive: false });
+            }
+            
+            updateMouse(e) {
+                // Gets clientX/Y from mouse event or first touch
+                const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+                this.mouse.x = clientX / window.innerWidth;
+                this.mouse.y = 1 - clientY / window.innerHeight;
+
+                if (this.fieldMesh) {
+                    this.fieldMesh.material.uniforms.mouse.value.set(this.mouse.x, this.mouse.y);
+                }
+            }
+            
+            updateMorphicState(mouseUV) { // Now accepts mouseUV directly
+                const x = mouseUV.x;
+                const y = mouseUV.y;
+                
+                this.morphicState.masterVolume = y; 
+                this.morphicState.frequency = 100 + x * 400; 
+                this.morphicState.resonance = Math.sin(this.time * 0.01 + x * Math.PI) * 0.5 + 0.5; 
+                this.morphicState.bloom = 0.3 + y * 0.7; 
+                this.morphicState.flow = x * 2; 
+                this.morphicState.harmonic = Math.cos(this.time * 0.005 + y * Math.PI) * 0.5 + 0.5; 
+                
+                this.updateAudio();
+                this.updateStateInURL();
+            }
+            
+            updateAudio() {
+                if (!this.audioContext || this.oscillators.length === 0) return;
+                
+                // Update master volume (controlled by mouse Y)
+                this.masterGain.gain.setTargetAtTime(this.morphicState.masterVolume, this.audioContext.currentTime, 0.1);
+                // Update drone and sequencer volumes (controlled by sliders)
+                this.droneMasterGain.gain.setTargetAtTime(this.morphicState.droneVolume, this.audioContext.currentTime, 0.05);
+                this.seqMasterGain.gain.setTargetAtTime(this.morphicState.seqVolume, this.audioContext.currentTime, 0.05);
+                this.samplerGain.gain.setTargetAtTime(this.morphicState.sampleVolume, this.audioContext.currentTime, 0.05);
+
+                const baseFreq = this.morphicState.frequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                
+                this.oscillators.forEach((osc, i) => {
+                    osc.frequency.setTargetAtTime(frequencies[i], this.audioContext.currentTime, 0.1);
+                });
+                
+                this.filters.forEach(filter => {
+                    filter.frequency.setTargetAtTime(
+                        200 + this.morphicState.intensity * 1000, 
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                    filter.Q.setTargetAtTime(
+                        this.morphicState.resonance * 15 + 1,
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                });
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.time += 0.016; 
+
+                // Update audio analysis (for visual feedback)
+                let audioLevel = 0;
+                if (this.analyser && this.frequencyData) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    audioLevel = this.frequencyData.reduce((sum, value) => sum + value, 0) / (this.frequencyData.length * 255);
+                }
+                
+                // Update field mesh uniforms
+                if (this.fieldMesh) {
+                    const uniforms = this.fieldMesh.material.uniforms;
+                    uniforms.time.value = this.time;
+                    uniforms.intensity.value = this.morphicState.intensity;
+                    uniforms.flow.value = this.morphicState.flow;
+                    uniforms.bloom.value = this.morphicState.bloom;
+                    uniforms.harmonic.value = this.morphicState.harmonic;
+                    uniforms.audioLevel.value = audioLevel;
+                }
+                
+                // Update particles
+                if (this.particles) {
+                    const positions = this.particles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i + 2] += Math.sin(this.time * 0.01 + i) * 0.01;
+                        positions[i] += Math.cos(this.time * 0.005 + i) * 0.005;
+                    }
+                    this.particles.geometry.attributes.position.needsUpdate = true;
+                    this.particles.rotation.y = this.time * 0.005;
+                }
+                
+                // Auto-evolve when not interacting
+                if (!this.mouse.down) {
+                    this.morphicState.flow = 0.6 + Math.sin(this.time * 0.003) * 0.4;
+                    this.morphicState.harmonic = 0.4 + Math.cos(this.time * 0.002) * 0.3;
+                    this.updateAudio(); 
+                }
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            // ==================== State Serialization ====================
+            updateStateInURL() {
+                const state = {
+                    morphicState: this.morphicState,
+                    steps: this.steps, 
+                    bpm: this.bpm,     
+                    uiVisible: this.uiVisible,
+                    activeColorIndex: this.activeColorIndex,
+                    isSamplerPlaying: this.isSamplerPlaying 
+                };
+                try {
+                    const encoded = btoa(JSON.stringify(state));
+                    window.location.hash = encoded;
+                } catch (error) {
+                    console.warn('Failed to update URL state (likely too large or malformed):', error);
+                }
+            }
+            
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        
+                        // Load morphic state
+                        if (state.morphicState) {
+                            Object.assign(this.morphicState, state.morphicState);
+                            this.updateAudio(); 
+                            
+                            if (this.fuzzNode && this.morphicState.fuzzAmount !== undefined) {
+                                this.fuzzNode.curve = this.makeDistortionCurve(this.morphicState.fuzzAmount * 100);
+                                this.fuzzDryGain.gain.value = 1 - this.morphicState.fuzzAmount;
+                                this.fuzzWetGain.gain.value = this.morphicState.fuzzAmount;
+                            }
+                        }
+                        
+                        // Load sequencer steps
+                        if (state.steps && Array.isArray(state.steps) && state.steps.length === 8 && Array.isArray(state.steps[0]) && state.steps[0].length === 4) {
+                            this.steps = state.steps.map(col => col.map(step => ({
+                                active: typeof step.active === 'boolean' ? step.active : false,
+                                colorIndex: typeof step.colorIndex === 'number' ? step.colorIndex : 0
+                            })));
+                        } else {
+                            console.warn('Invalid sequencer steps in URL hash, reverting to default.');
+                            this.steps = Array(8).fill().map(() => Array(4).fill().map(() => ({ active: false, colorIndex: 0 })));
+                        }
+
+                        // Load BPM
+                        if (typeof state.bpm === 'number' && state.bpm >= 60 && state.bpm <= 240) {
+                            this.bpm = state.bpm;
+                            this.secondsPerStep = (60 / this.bpm) / 4;
+                        } else {
+                            console.warn('Invalid BPM in URL hash, reverting to default.');
+                            this.bpm = 120;
+                            this.secondsPerStep = (60 / this.bpm) / 4;
+                        }
+
+                        // Load UI visibility
+                        if (typeof state.uiVisible === 'boolean') {
+                            this.uiVisible = state.uiVisible;
+                        }
+
+                        // Load active color index
+                        if (typeof state.activeColorIndex === 'number' && state.activeColorIndex >= 0 && state.activeColorIndex < this.colorPalette.length) {
+                            this.activeColorIndex = state.activeColorIndex;
+                        } else {
+                            this.activeColorIndex = 0;
+                        }
+
+                        // Load sampler playing state (but not the audio buffer itself)
+                        if (typeof state.isSamplerPlaying === 'boolean') {
+                            this.isSamplerPlaying = state.isSamplerPlaying;
+                            if (this.isSamplerPlaying) { 
+                                document.getElementById('play-sample-btn').classList.add('active');
+                            } else {
+                                document.getElementById('play-sample-btn').classList.remove('active');
+                            }
+                        }
+
+                        this.updateSequencerUI();
+                        this.updateControlsUI();
+                        this.updateColorPaletteUI();
+                    }
+                } catch (error) {
+                    console.warn('Failed to load state from URL:', error);
+                    // Reset to initial defaults if parsing fails
+                    this.morphicState = {
+                        masterVolume: 0.5, droneVolume: 0.5, seqVolume: 0.5,
+                        frequency: 220, resonance: 0.7, bloom: 0.8, 
+                        flow: 0.6, harmonic: 0.4, fuzzAmount: 0.0, sampleVolume: 0.0,
+                        interactionModeMix: 0.0
+                    };
+                    this.steps = Array(8).fill().map(() => Array(4).fill().map(() => ({ active: false, colorIndex: 0 })));
+                    this.bpm = 120;
+                    this.secondsPerStep = (60 / this.bpm) / 4;
+                    this.uiVisible = true;
+                    this.activeColorIndex = 0;
+                    this.isSamplerPlaying = false; 
+                    document.getElementById('play-sample-btn').classList.remove('active'); 
+
+                    this.updateAudio();
+                    this.updateSequencerUI();
+                    this.updateControlsUI();
+                    this.updateColorPaletteUI();
+                }
+            }
+        }
+        
+        // Initialize the portal
+        let portal; 
+        window.addEventListener('load', () => {
+            portal = new MorphicFieldPortal();
+        });
+    </script>
+</body>
+</html>

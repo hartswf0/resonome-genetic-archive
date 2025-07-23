@@ -1,0 +1,121 @@
+[
+    {
+        "name": "deep-res-02",
+        "status": "☑",
+        "icon": "◎",
+        "hasLineage": false,
+        "category": "BEST",
+        "files": [
+            {
+                "name": "deep-res-02.html",
+                "status": "☑",
+                "delta": "",
+                "description": ""
+            }
+        ]
+    },
+    {
+        "name": "mwut",
+        "status": "☑",
+        "icon": "◎",
+        "hasLineage": true,
+        "category": "BEST",
+        "files": [
+            {
+                "name": "mwut.html",
+                "status": "☑",
+                "delta": "",
+                "description": "Single morphic resonance field, sequencer implicit to field."
+            },
+            {
+                "name": "mwut-03.html",
+                "status": "❒",
+                "delta": "Δ〰",
+                "description": "Unique blue mutation. Only one color, only one layer."
+            },
+            {
+                "name": "mwut-04.html",
+                "status": "❒",
+                "delta": "Δ〰",
+                "description": "Another unique mutation, multicolor, looks like flame."
+            }
+        ]
+    },
+    {
+        "name": "mighty-morph",
+        "status": "❒",
+        "icon": "◫",
+        "hasLineage": true,
+        "category": "PHYSICS",
+        "files": [
+            {
+                "name": "mighty-morph-09.html",
+                "status": "❒",
+                "delta": "Δ•",
+                "description": "Works but no sequencer/sampler control. Sounds are working together."
+            },
+            {
+                "name": "mighty-morph-20.html",
+                "status": "❒",
+                "delta": "Δ〰",
+                "description": "No sampler control, white flashing light sequencer, piano keys work but no sound control."
+            },
+            {
+                "name": "mighty-morph-17.html",
+                "status": "❒",
+                "delta": "Δ〰",
+                "description": "Sample-centric turn. Visuals and sound appear, but sampler seems unresponsive."
+            },
+            {
+                "name": "mighty-morph-18.html",
+                "status": "⧱",
+                "delta": "Δ□",
+                "description": "Field Collapse. Audio cannot be started, visual nodes not defined."
+            }
+        ]
+    },
+    {
+        "name": "drt-portal",
+        "status": "☑",
+        "icon": "❖",
+        "hasLineage": false,
+        "category": "VISUAL",
+        "files": [
+            {
+                "name": "drt-portal.html",
+                "status": "☑",
+                "delta": "",
+                "description": ""
+            }
+        ]
+    },
+    {
+        "name": "res-phil-01",
+        "status": "☑",
+        "icon": "☗",
+        "hasLineage": false,
+        "category": "SOCIAL SCIENCE",
+        "files": [
+            {
+                "name": "res-phil-01.html",
+                "status": "☑",
+                "delta": "",
+                "description": ""
+            }
+        ]
+    },
+    {
+        "name": "int-oscillator",
+        "status": "❒",
+        "icon": "⌬",
+        "hasLineage": false,
+        "category": "PHYSICS",
+        "files": [
+            {
+                "name": "int-oscillator.html",
+                "status": "❒",
+                "delta": "",
+                "description": ""
+            }
+        ]
+    }\n]

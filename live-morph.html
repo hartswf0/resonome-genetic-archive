@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Living Morphic Field Resonance Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  canvas{position:fixed;top:0;left:0;width:100%;height:100%;cursor:none}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+/* ------------------------------------------------------------------
+   CONFIGURATION & STATE
+------------------------------------------------------------------ */
+const state = {
+  pointerDown:false,
+  pointer:{x:0,y:0},
+  lastPointer:{x:0,y:0},
+  drag:{x:0,y:0},
+  hue:0,
+  spectrum:0
+};
+
+/* ------------------------------------------------------------------
+   AUDIO CONTEXT – LIVING DRONE
+------------------------------------------------------------------ */
+let audioCtx, masterGain, drone, filter, convolver, analyser, dataArray;
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+  masterGain.connect(audioCtx.destination);
+
+  // Convolver for vast space
+  const convLength = audioCtx.sampleRate * 4;
+  const impulse = audioCtx.createBuffer(2, convLength, audioCtx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const chan = impulse.getChannelData(ch);
+    for (let i = 0; i < convLength; i++) {
+      chan[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / convLength, 2);
+    }
+  }
+  convolver = audioCtx.createConvolver();
+  convolver.buffer = impulse;
+  convolver.connect(masterGain);
+
+  // Filter
+  filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(600, audioCtx.currentTime);
+  filter.Q.setValueAtTime(20, audioCtx.currentTime);
+  filter.connect(convolver);
+
+  // Drone oscillator bank
+  drone = [];
+  [1, 1.5, 2.5, 3.5, 5, 7].forEach((h, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(55 * h, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.3 / (idx + 1), audioCtx.currentTime);
+    osc.connect(gain);
+    gain.connect(filter);
+    osc.start();
+    drone.push({osc, gain, baseFreq: 55 * h});
+  });
+
+  // Analyser for visual feedback
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  filter.connect(analyser);
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+}
+
+/* ------------------------------------------------------------------
+   THREE.JS SCENE
+------------------------------------------------------------------ */
+let scene, camera, renderer, clock;
+let mesh, material;
+const vertexShader = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const fragmentShader = `
+uniform float time;
+uniform vec2 pointer;
+uniform float hue;
+uniform float spectrum;
+varying vec2 vUv;
+
+vec3 h2rgb(float h) {
+  h = mod(h, 1.0);
+  vec3 rgb = clamp(abs(mod(h*6.0+vec3(0.0,4.0,2.0),6.0)-3.0)-1.0,0.0,1.0);
+  return rgb;
+}
+
+float noise(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+  vec2 p = vUv * 3.0 - 1.5;
+  float t = time * 0.2;
+  vec2 drift = vec2(cos(t), sin(t)) * 0.5;
+  float n = noise(p * 3.0 + drift);
+  float d = length(p - (pointer * 2.0 - 1.0)) + n * 0.5;
+  float rings = sin(d * 8.0 - time * 4.0) * 0.5 + 0.5;
+  rings = pow(rings, 2.0 + spectrum * 2.0);
+  vec3 col = h2rgb(hue + rings * 0.2 + d * 0.05);
+  col = mix(col, vec3(1.0, 0.8, 1.2), spectrum);
+  gl_FragColor = vec4(col, rings * 0.5);
+}
+`;
+
+function initScene() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 10);
+  camera.position.z = 1;
+  clock = new THREE.Clock();
+
+  const plane = new THREE.PlaneGeometry(2, 2);
+  material = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms: {
+      time: {value:0},
+      pointer: {value:new THREE.Vector2(0.5,0.5)},
+      hue: {value:0},
+      spectrum: {value:0}
+    },
+    transparent:true
+  });
+  mesh = new THREE.Mesh(plane, material);
+  scene.add(mesh);
+
+  renderer = new THREE.WebGLRenderer({canvas:document.getElementById('canvas'), antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(devicePixelRatio);
+}
+
+/* ------------------------------------------------------------------
+   INTERACTION & URL STATE
+------------------------------------------------------------------ */
+function readHash() {
+  const h = location.hash.slice(1);
+  if (!h) return;
+  try {
+    const obj = JSON.parse(atob(h));
+    state.hue = obj.hue || 0;
+    state.spectrum = obj.spectrum || 0;
+  } catch {}
+}
+function writeHash() {
+  const data = btoa(JSON.stringify({hue:state.hue, spectrum:state.spectrum}));
+  history.replaceState(null, null, '#' + data);
+}
+
+function onPointerDown(e) {
+  if (!audioCtx) initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  state.pointerDown = true;
+  updatePointer(e);
+}
+function onPointerUp() { state.pointerDown = false; }
+function onPointerMove(e) {
+  if (state.pointerDown) updatePointer(e);
+}
+function updatePointer(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  state.lastPointer.x = state.pointer.x;
+  state.lastPointer.y = state.pointer.y;
+  state.pointer.x = (e.clientX - rect.left) / rect.width;
+  state.pointer.y = 1 - (e.clientY - rect.top) / rect.height;
+  state.drag.x = state.pointer.x - state.lastPointer.x;
+  state.drag.y = state.pointer.y - state.lastPointer.y;
+}
+
+/* ------------------------------------------------------------------
+   ANIMATION LOOP
+------------------------------------------------------------------ */
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const t = clock.getElapsedTime();
+
+  // Update visuals
+  material.uniforms.time.value = t;
+  material.uniforms.pointer.value.set(state.pointer.x, state.pointer.y);
+  material.uniforms.hue.value = state.hue;
+  material.uniforms.spectrum.value = state.spectrum;
+
+  // Update audio
+  if (analyser) {
+    analyser.getByteFrequencyData(dataArray);
+    const avg = dataArray.reduce((a,b)=>a+b,0) / dataArray.length;
+    state.spectrum = avg / 255;
+
+    // Modulate drones
+    const freqMod = 1 + state.spectrum * 4 + state.drag.x * 10;
+    drone.forEach(({osc, baseFreq})=>{
+      osc.frequency.setTargetAtTime(baseFreq * freqMod, audioCtx.currentTime, 0.1);
+    });
+    filter.frequency.setTargetAtTime(200 + state.spectrum * 1000, audioCtx.currentTime, 0.1);
+    filter.Q.setTargetAtTime(5 + state.spectrum * 30, audioCtx.currentTime, 0.1);
+  }
+
+  // Modulate hue
+  state.hue = (state.hue + 0.0005 + state.drag.x * 0.1) % 1;
+
+  // Write state to URL
+  if (state.pointerDown || state.drag.x || state.drag.y) writeHash();
+
+  renderer.render(scene, camera);
+}
+
+/* ------------------------------------------------------------------
+   START
+------------------------------------------------------------------ */
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.addEventListener('pointerdown', onPointerDown);
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('pointermove', onPointerMove);
+readHash();
+initScene();
+animate();
+</script>
+</body>
+</html>

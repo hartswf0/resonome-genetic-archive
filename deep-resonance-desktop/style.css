@@ -1,0 +1,6 @@
+body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #0ff; font-family: monospace; }
+canvas { display: block; position: fixed; top: 0; left: 0; z-index: -1; }
+#controls { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 15px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+.layer { padding: 10px; border: 1px solid #055; border-radius: 5px; }
+.layer-controls { display: flex; align-items: center; gap: 15px; }
+#add-layer-btn { position: fixed; bottom: 150px; left: 50%; transform: translateX(-50%); padding: 10px 20px; background: #0ff; color: #000; border: none; border-radius: 5px; cursor: pointer; }

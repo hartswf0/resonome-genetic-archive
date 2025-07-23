@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergent Glyphic Morphic Sequencer Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            touch-action: none;
+        }
+
+        #canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .glyph-node {
+            position: absolute;
+            font-size: 24px;
+            color: #444;
+            user-select: none;
+            pointer-events: auto;
+            z-index: 100;
+            text-shadow: 0 0 5px rgba(255,255,255,0.2);
+            transition: all 0.1s ease;
+            cursor: pointer;
+        }
+
+        .glyph-node.active {
+            color: #ff6b35;
+            text-shadow: 0 0 15px #ff6b35, 0 0 25px #ff6b35;
+        }
+
+        .glyph-node.playing {
+            transform: scale(1.5);
+            color: #00ff88;
+            text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88;
+        }
+
+        .tempo-dial {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #333;
+            border-radius: 50px;
+            padding: 10px 20px;
+            color: #fff;
+            font-size: 16px;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .tempo-dial.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- Field Shader & Nodes -->
+    <canvas id="canvas"></canvas>
+    
+    <!-- Glyphic Interaction -->
+    <div id="glyphNodes"></div>
+    
+    <!-- Hidden Tempo Control -->
+    <div id="tempoDial" class="tempo-dial">♪ <span id="bpmValue">120</span> BPM</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        // ===== SEQUENCER TOPOLOGY =====
+        class GlyphicSequencer {
+            constructor() {
+                this.steps = 8;
+                this.currentStep = 0;
+                this.bpm = 120;
+                this.pattern = new Array(8).fill(false);
+                this.isPlaying = true;
+                this.lastBeatTime = 0;
+                
+                // Glyphic clusters for each step
+                this.glyphClusters = [
+                    '𓉗𓉗𓉗𓉗𓉗𓉗𓉗𓉗𓉗𓉗',
+                    '𓃑𓃑𓃑𓃑𓃑𓃑',
+                    '░░░░░░░░░░░░░░░',
+                    '▒▒▒▒▒▒▒▒▒▒▒▒▒▒',
+                    '▓▓▓▓▓▓▓▓▓▓▓▓▓▓',
+                    '𓈌𓈌𓈌𓈌𓈌𓈌𓈌',
+                    '⿰⿰⿰⿰⿰⿰⿰⿰⿰',
+                    '❏❐❑❒❏❐❑❒❏❐❑❒❏❐❑'
+                ];
+                
+                // Node positions in UV space (0-1)
+                this.nodePositions = [
+                    {x: 0.2, y: 0.2}, {x: 0.8, y: 0.2},
+                    {x: 0.15, y: 0.5}, {x: 0.85, y: 0.5},
+                    {x: 0.1, y: 0.8}, {x: 0.9, y: 0.8},
+                    {x: 0.5, y: 0.1}, {x: 0.5, y: 0.9}
+                ];
+                
+                this.nodes = [];
+                this.createGlyphNodes();
+                this.loadStateFromURL();
+            }
+            
+            createGlyphNodes() {
+                const container = document.getElementById('glyphNodes');
+                
+                for (let i = 0; i < this.steps; i++) {
+                    const node = document.createElement('div');
+                    node.className = 'glyph-node';
+                    node.textContent = this.glyphClusters[i];
+                    node.dataset.step = i;
+                    
+                    // Position based on UV coordinates
+                    const pos = this.nodePositions[i];
+                    node.style.left = (pos.x * window.innerWidth) + 'px';
+                    node.style.top = (pos.y * window.innerHeight) + 'px';
+                    
+                    node.addEventListener('touchstart', this.toggleStep.bind(this));
+                    node.addEventListener('click', this.toggleStep.bind(this));
+                    
+                    container.appendChild(node);
+                    this.nodes.push(node);
+                }
+            }
+            
+            toggleStep(event) {
+                event.preventDefault();
+                const step = parseInt(event.target.dataset.step);
+                this.pattern[step] = !this.pattern[step];
+                this.updateNodeVisual(step);
+                this.saveStateToURL();
+            }
+            
+            updateNodeVisual(step) {
+                const node = this.nodes[step];
+                if (this.pattern[step]) {
+                    node.classList.add('active');
+                } else {
+                    node.classList.remove('active');
+                }
+            }
+            
+            update(time) {
+                const beatInterval = (60 / this.bpm) * 1000;
+                
+                if (time - this.lastBeatTime >= beatInterval) {
+                    this.step();
+                    this.lastBeatTime = time;
+                }
+                
+                this.animateNodeDrift(time);
+            }
+            
+            step() {
+                // Remove playing class from previous step
+                this.nodes[this.currentStep].classList.remove('playing');
+                
+                this.currentStep = (this.currentStep + 1) % this.steps;
+                
+                // Add playing class to current step
+                this.nodes[this.currentStep].classList.add('playing');
+                
+                // Trigger audio if step is active
+                if (this.pattern[this.currentStep]) {
+                    audioEngine.trigger(this.currentStep);
+                }
+                
+                // Update shader uniforms
+                if (morphicField) {
+                    morphicField.onBeat(this.currentStep, this.pattern[this.currentStep]);
+                }
+            }
+            
+            animateNodeDrift(time) {
+                // Drift & Mutation: Subtly jitter glyphs using noise LFO
+                for (let i = 0; i < this.nodes.length; i++) {
+                    const node = this.nodes[i];
+                    const pos = this.nodePositions[i];
+                    
+                    const noiseX = Math.sin(time * 0.001 + i * 0.5) * 10;
+                    const noiseY = Math.cos(time * 0.0015 + i * 0.7) * 8;
+                    
+                    node.style.left = (pos.x * window.innerWidth + noiseX) + 'px';
+                    node.style.top = (pos.y * window.innerHeight + noiseY) + 'px';
+                }
+            }
+            
+            setBPM(newBPM) {
+                this.bpm = Math.max(60, Math.min(200, newBPM));
+                document.getElementById('bpmValue').textContent = this.bpm;
+                this.saveStateToURL();
+            }
+            
+            saveStateToURL() {
+                const state = {
+                    pattern: this.pattern,
+                    bpm: this.bpm,
+                    seed: morphicField ? morphicField.seed : 42
+                };
+                window.location.hash = btoa(JSON.stringify(state));
+            }
+            
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        this.pattern = state.pattern || this.pattern;
+                        this.bpm = state.bpm || this.bpm;
+                        
+                        // Update visuals
+                        for (let i = 0; i < this.steps; i++) {
+                            this.updateNodeVisual(i);
+                        }
+                        this.setBPM(this.bpm);
+                        
+                        if (morphicField && state.seed) {
+                            morphicField.seed = state.seed;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not load state from URL');
+                }
+            }
+        }
+        
+        // ===== AUDIO SYNTH & GATING =====
+        class AudioEngine {
+            constructor() {
+                this.context = null;
+                this.masterGain = null;
+                this.reverb = null;
+                this.filter = null;
+                this.carriers = [];
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    this.context = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create master gain
+                    this.masterGain = this.context.createGain();
+                    this.masterGain.gain.value = 0.3;
+                    this.masterGain.connect(this.context.destination);
+                    
+                    // Create reverb
+                    await this.createReverb();
+                    
+                    // Create filter
+                    this.filter = this.context.createBiquadFilter();
+                    this.filter.type = 'lowpass';
+                    this.filter.frequency.value = 800;
+                    this.filter.Q.value = 5;
+                    this.filter.connect(this.reverb);
+                    
+                    // Create drone carriers
+                    this.createDroneCarriers();
+                    
+                    console.log('Audio engine initialized');
+                } catch (error) {
+                    console.error('Audio initialization failed:', error);
+                }
+            }
+            
+            async createReverb() {
+                this.reverb = this.context.createConvolver();
+                
+                // Create impulse response
+                const length = this.context.sampleRate * 2;
+                const impulse = this.context.createBuffer(2, length, this.context.sampleRate);
+                
+                for (let channel = 0; channel < 2; channel++) {
+                    const channelData = impulse.getChannelData(channel);
+                    for (let i = 0; i < length; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+                    }
+                }
+                
+                this.reverb.buffer = impulse;
+                this.reverb.connect(this.masterGain);
+            }
+            
+            createDroneCarriers() {
+                const frequencies = [110, 220, 330, 440, 550, 660, 770, 880];
+                
+                for (let i = 0; i < 8; i++) {
+                    const carrier = this.context.createOscillator();
+                    const modulator = this.context.createOscillator();
+                    const modGain = this.context.createGain();
+                    const gain = this.context.createGain();
+                    
+                    // FM synthesis
+                    carrier.frequency.value = frequencies[i];
+                    modulator.frequency.value = frequencies[i] * 0.5;
+                    modGain.gain.value = 50;
+                    
+                    modulator.connect(modGain);
+                    modGain.connect(carrier.frequency);
+                    
+                    gain.gain.value = 0;
+                    carrier.connect(gain);
+                    gain.connect(this.filter);
+                    
+                    carrier.start();
+                    modulator.start();
+                    
+                    this.carriers.push({
+                        carrier,
+                        modulator,
+                        gain,
+                        frequency: frequencies[i]
+                    });
+                }
+            }
+            
+            trigger(step) {
+                if (!this.context || this.context.state !== 'running') {
+                    this.context?.resume();
+                    return;
+                }
+                
+                const carrier = this.carriers[step];
+                if (!carrier) return;
+                
+                // Morphic gesture based on step
+                const now = this.context.currentTime;
+                const gesture = this.getGesture(step);
+                
+                switch (gesture) {
+                    case 'pulse':
+                        carrier.gain.gain.setValueAtTime(0, now);
+                        carrier.gain.gain.linearRampToValueAtTime(0.1, now + 0.01);
+                        carrier.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                        break;
+                        
+                    case 'bloom':
+                        carrier.gain.gain.setValueAtTime(0, now);
+                        carrier.gain.gain.linearRampToValueAtTime(0.05, now + 0.1);
+                        carrier.gain.gain.linearRampToValueAtTime(0, now + 0.8);
+                        break;
+                        
+                    case 'glitch':
+                        for (let i = 0; i < 3; i++) {
+                            const t = now + i * 0.05;
+                            carrier.gain.gain.setValueAtTime(0.08, t);
+                            carrier.gain.gain.setValueAtTime(0, t + 0.02);
+                        }
+                        break;
+                        
+                    case 'sweep':
+                        carrier.gain.gain.setValueAtTime(0.06, now);
+                        carrier.gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                        
+                        carrier.carrier.frequency.setValueAtTime(carrier.frequency, now);
+                        carrier.carrier.frequency.exponentialRampToValueAtTime(carrier.frequency * 2, now + 0.2);
+                        carrier.carrier.frequency.exponentialRampToValueAtTime(carrier.frequency, now + 0.5);
+                        break;
+                }
+                
+                // Filter sweep
+                this.filter.frequency.setValueAtTime(this.filter.frequency.value, now);
+                this.filter.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+                this.filter.frequency.exponentialRampToValueAtTime(800, now + 0.3);
+            }
+            
+            getGesture(step) {
+                const gestures = ['pulse', 'bloom', 'glitch', 'sweep'];
+                return gestures[step % 4];
+            }
+        }
+        
+        // ===== FIELD SHADER & NODES =====
+        class MorphicField {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+                this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                
+                this.seed = Math.random() * 1000;
+                this.time = 0;
+                this.beatStep = 0;
+                this.beatActive = false;
+                
+                this.createShaderMaterial();
+                this.createMesh();
+                
+                window.addEventListener('resize', this.onWindowResize.bind(this));
+            }
+            
+            createShaderMaterial() {
+                this.material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        u_time: { value: 0 },
+                        u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                        u_seed: { value: this.seed },
+                        u_beatStep: { value: 0 },
+                        u_beatActive: { value: 0.0 },
+                        u_nodePositions: { 
+                            value: sequencer.nodePositions.map(p => new THREE.Vector2(p.x, p.y))
+                        }
+                    },
+                    vertexShader: `
+                        void main() {
+                            gl_Position = vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float u_time;
+                        uniform vec2 u_resolution;
+                        uniform float u_seed;
+                        uniform float u_beatStep;
+                        uniform float u_beatActive;
+                        uniform vec2 u_nodePositions[8];
+                        
+                        // Noise functions
+                        float hash(vec2 p) {
+                            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+                        }
+                        
+                        float noise(vec2 p) {
+                            vec2 i = floor(p);
+                            vec2 f = fract(p);
+                            f = f * f * (3.0 - 2.0 * f);
+                            
+                            float a = hash(i);
+                            float b = hash(i + vec2(1.0, 0.0));
+                            float c = hash(i + vec2(0.0, 1.0));
+                            float d = hash(i + vec2(1.0, 1.0));
+                            
+                            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+                        }
+                        
+                        float fbm(vec2 p) {
+                            float value = 0.0;
+                            float amplitude = 0.5;
+                            
+                            for (int i = 0; i < 5; i++) {
+                                value += amplitude * noise(p);
+                                p *= 2.0;
+                                amplitude *= 0.5;
+                            }
+                            
+                            return value;
+                        }
+                        
+                        // Fractal flow field
+                        vec2 flowField(vec2 p) {
+                            float n1 = fbm(p + u_time * 0.1 + u_seed);
+                            float n2 = fbm(p + vec2(100.0) + u_time * 0.15 + u_seed);
+                            return vec2(n1, n2) * 2.0 - 1.0;
+                        }
+                        
+                        void main() {
+                            vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+                            vec2 p = uv * 4.0 - 2.0;
+                            
+                            // Base fractal flow
+                            vec2 flow = flowField(p);
+                            float flowMag = length(flow);
+                            
+                            // Tendrils and ripples
+                            float tendrils = sin(p.x * 3.0 + flow.y * 2.0 + u_time) * 
+                                           cos(p.y * 2.5 + flow.x * 1.5 + u_time * 0.8);
+                            
+                            float ripples = sin(flowMag * 8.0 - u_time * 3.0) * 0.5 + 0.5;
+                            
+                            // Node influence
+                            float nodeGlow = 0.0;
+                            for (int i = 0; i < 8; i++) {
+                                vec2 nodePos = u_nodePositions[i] * 4.0 - 2.0;
+                                float dist = distance(p, nodePos);
+                                
+                                float influence = exp(-dist * 2.0) * 0.5;
+                                if (int(u_beatStep) == i && u_beatActive > 0.5) {
+                                    influence *= 3.0 * (sin(u_time * 10.0) * 0.5 + 0.5);
+                                }
+                                
+                                nodeGlow += influence;
+                            }
+                            
+                            // Combine all elements
+                            float intensity = (tendrils + ripples + nodeGlow + flowMag * 0.3) * 0.3;
+                            
+                            // Color palette
+                            vec3 color1 = vec3(0.1, 0.0, 0.2);  // Deep purple
+                            vec3 color2 = vec3(0.2, 0.1, 0.0);  // Dark orange
+                            vec3 color3 = vec3(0.0, 0.3, 0.1);  // Dark green
+                            vec3 accent = vec3(1.0, 0.4, 0.0);   // Bright orange
+                            
+                            vec3 baseColor = mix(color1, color2, sin(u_time * 0.5) * 0.5 + 0.5);
+                            baseColor = mix(baseColor, color3, ripples);
+                            
+                            vec3 finalColor = baseColor + accent * nodeGlow * 2.0;
+                            finalColor += vec3(intensity * 0.5);
+                            
+                            // Beat pulse
+                            if (u_beatActive > 0.5) {
+                                finalColor += vec3(0.1, 0.3, 0.1) * sin(u_time * 15.0);
+                            }
+                            
+                            gl_FragColor = vec4(finalColor, 1.0);
+                        }
+                    `
+                });
+            }
+            
+            createMesh() {
+                const geometry = new THREE.PlaneGeometry(2, 2);
+                const mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(mesh);
+            }
+            
+            onBeat(step, active) {
+                this.beatStep = step;
+                this.beatActive = active;
+                this.material.uniforms.u_beatStep.value = step;
+                this.material.uniforms.u_beatActive.value = active ? 1.0 : 0.0;
+            }
+            
+            render() {
+                this.time += 0.016;
+                this.material.uniforms.u_time.value = this.time;
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            onWindowResize() {
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.material.uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight);
+                
+                // Update glyph positions
+                for (let i = 0; i < sequencer.nodes.length; i++) {
+                    const pos = sequencer.nodePositions[i];
+                    const node = sequencer.nodes[i];
+                    node.style.left = (pos.x * window.innerWidth) + 'px';
+                    node.style.top = (pos.y * window.innerHeight) + 'px';
+                }
+            }
+        }
+        
+        // ===== GLYPHIC INTERACTION =====
+        class InteractionManager {
+            constructor() {
+                this.tempoDial = document.getElementById('tempoDial');
+                this.isShowingTempo = false;
+                this.touchStartTime = 0;
+                this.touchCount = 0;
+                this.longPressTimer = null;
+                
+                this.bindEvents();
+            }
+            
+            bindEvents() {
+                const canvas = document.getElementById('canvas');
+                
+                // Touch events
+                canvas.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
+                canvas.addEventListener('touchend', this.onTouchEnd.bind(this), { passive: false });
+                canvas.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+                
+                // Mouse events for desktop
+                canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
+                canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
+                canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
+                
+                // Tempo dial interaction
+                this.tempoDial.addEventListener('wheel', this.onTempoWheel.bind(this));
+                this.tempoDial.addEventListener('touchmove', this.onTempoTouch.bind(this));
+            }
+            
+            onTouchStart(event) {
+                event.preventDefault();
+                this.touchCount = event.touches.length;
+                this.touchStartTime = Date.now();
+                
+                if (this.touchCount === 2) {
+                    this.longPressTimer = setTimeout(() => {
+                        this.showTempoDial();
+                    }, 500);
+                }
+            }
+            
+            onTouchEnd(event) {
+                event.preventDefault();
+                this.touchCount = event.touches.length;
+                
+                if (this.longPressTimer) {
+                    clearTimeout(this.longPressTimer);
+                    this.longPressTimer = null;
+                }
+                
+                if (this.touchCount === 0) {
+                    setTimeout(() => {
+                        this.hideTempoDial();
+                    }, 2000);
+                }
+            }
+            
+            onTouchMove(event) {
+                event.preventDefault();
+                if (this.longPressTimer) {
+                    clearTimeout(this.longPressTimer);
+                    this.longPressTimer = null;
+                }
+            }
+            
+            onMouseDown(event) {
+                if (event.button === 2) { // Right click
+                    this.showTempoDial();
+                }
+            }
+            
+            onMouseUp(event) {
+                setTimeout(() => {
+                    this.hideTempoDial();
+                }, 2000);
+            }
+            
+            onMouseMove(event) {
+                // Could add mouse interaction here
+            }
+            
+            showTempoDial() {
+                this.tempoDial.classList.add('visible');
+                this.isShowingTempo = true;
+            }
+            
+            hideTempoDial() {
+                this.tempoDial.classList.remove('visible');
+                this.isShowingTempo = false;
+            }
+            
+            onTempoWheel(event) {
+                event.preventDefault();
+                const delta = event.deltaY > 0 ? -5 : 5;
+                sequencer.setBPM(sequencer.bpm + delta);
+            }
+            
+            onTempoTouch(event) {
+                event.preventDefault();
+                if (event.touches.length === 1) {
+                    const touch = event.touches[0];
+                    const rect = this.tempoDial.getBoundingClientRect();
+                    const centerY = rect.top + rect.height / 2;
+                    const delta = (centerY - touch.clientY) * 0.5;
+                    sequencer.setBPM(sequencer.bpm + delta);
+                }
+            }
+        }
+        
+        // ===== STATE SERIALIZATION =====
+        // Handled within GlyphicSequencer class methods:
+        // - saveStateToURL(): Encodes pattern, BPM, and seed to URL hash
+        // - loadStateFromURL(): Decodes state from URL hash on initialization
+        
+        // ===== INITIALIZATION =====
+        let sequencer, morphicField, audioEngine, interactionManager;
+        
+        function init() {
+            // Initialize in correct order
+            sequencer = new GlyphicSequencer();
+            morphicField = new MorphicField();
+            audioEngine = new AudioEngine();
+            interactionManager = new InteractionManager();
+            
+            // Start the render loop
+            animate();
+            
+            console.log('Emergent Glyphic Morphic Sequencer Portal initialized');
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = performance.now();
+            sequencer.update(time);
+            morphicField.render();
+        }
+        
+        // Start when page loads
+        window.addEventListener('load', init);
+        
+        // Handle visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (audioEngine?.context) {
+                if (document.hidden) {
+                    audioEngine.context.suspend();
+                } else {
+                    audioEngine.context.resume();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

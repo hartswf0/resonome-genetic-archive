@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living Morphic Field Resonance Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none;
+            touch-action: none;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+        #canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* UI Elements */
+        .ui-element {
+            position: fixed;
+            z-index: 10;
+            pointer-events: none;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 12px;
+            text-align: center;
+        }
+        #loading { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        #mode-indicator { bottom: 20px; width: 100%; }
+
+        /* BPM Control */
+        #bpm-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 70%);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            cursor: pointer;
+            z-index: 5;
+            user-select: none;
+            backdrop-filter: blur(2px);
+        }
+        #bpm-control.visible { opacity: 1; pointer-events: auto; }
+        #bpm-control:hover { border-color: rgba(0,255,255,0.6); }
+
+        /* Layer Control Panel */
+        #layer-control-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+        #layer-control-panel.visible { opacity: 1; pointer-events: auto; }
+
+        .layer-icon {
+            width: 40px;
+            height: 40px;
+            border: 2px solid transparent; /* Border for selection state */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            color: rgba(255, 255, 255, 0.8); /* Text color is always bright */
+        }
+        .layer-icon.active {
+            /* Active (playing) state has a glowing effect */
+            box-shadow: 0 0 10px, 0 0 20px, 0 0 30px;
+        }
+        .layer-icon.selected {
+            /* Selected (editing) state has a solid white border */
+            border-color: #fff;
+            transform: scale(1.1);
+        }
+        
+        /* Node & Sampler Indicators */
+        .node-indicator, #sampler-indicator {
+            position: fixed;
+            pointer-events: none;
+            transition: all 0.1s ease-out;
+            z-index: 3;
+        }
+        .node-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            opacity: 0.5;
+        }
+        .node-indicator.active {
+            background: radial-gradient(circle, currentColor 0%, transparent 70%);
+            box-shadow: 0 0 15px currentColor;
+            transform: scale(1.5);
+            opacity: 0.9;
+        }
+        .node-indicator.inactive {
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0.4;
+        }
+        .node-indicator.playing {
+            animation: pulse 0.2s ease-out forwards;
+            background: radial-gradient(circle, #fff 0%, transparent 70%);
+            box-shadow: 0 0 20px #fff;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1.0); } 50% { transform: scale(2.0); } 100% { transform: scale(1.0); }
+        }
+
+        /* Sampler Indicator (Crosshair) */
+        #sampler-indicator {
+            width: 20px;
+            height: 20px;
+            border: 1px solid;
+            border-radius: 50%;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #sampler-indicator.visible { opacity: 0.8; }
+        #sampler-indicator::before, #sampler-indicator::after {
+            content: '';
+            position: absolute;
+            background-color: currentColor; /* Inherits color from parent */
+        }
+        #sampler-indicator::before { top: 50%; left: -5px; width: 30px; height: 1px; transform: translateY(-50%); }
+        #sampler-indicator::after { left: 50%; top: -5px; height: 30px; width: 1px; transform: translateX(-50%); }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="loading" class="ui-element">Initializing Morphic Field...</div>
+    <div id="mode-indicator" class="ui-element"></div>
+    <div id="bpm-control"><div id="bpm-display">120</div></div>
+    <div id="layer-control-panel"></div>
+    <div id="sampler-indicator"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // HSV to RGB conversion function (for use in both JS and GLSL)
+        const hsv2rgb = (h, s, v) => {
+            let r, g, b;
+            let i = Math.floor(h * 6);
+            let f = h * 6 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+        };
+
+        class MorphicFieldPortal {
+            constructor() {
+                // Core Systems
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+                this.audioContext = null; this.masterGain = null; this.reverb = null; this.analyser = null;
+                this.voices = []; this.frequencyData = null; this.audioLevel = 0;
+                
+                // Field State
+                this.fieldMesh = null; this.time = 0;
+                
+                // Sequencer State
+                this.currentStep = 0; this.bpm = 120; this.secondsPerStep = (60 / this.bpm) / 2;
+                this.nextStepTime = 0; this.schedulerInterval = null; this.lookahead = 0.1;
+                this.isPlaying = true; this.nodes = []; this.nodeIndicators = [];
+                
+                // Layer Management
+                this.numLayers = 8; this.layers = []; this.activeLayerIndex = 0;
+                this.layerIcons = ['𓊱', '𓋌', '𓏶', '𓋲', '𓋹', '𓋺', '𓌨', '𓌲'];
+                
+                // Interaction
+                this.mouse = new THREE.Vector2(0.5, 0.5); this.isMouseDown = false;
+                this.samplerMode = false; // NEW: Interaction mode state
+                this.bpmControlVisible = false; this.layerControlVisible = false;
+                this.longPressTimer = null;
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupThreeJS();
+                this.initializeLayers();
+                this.createMorphicField();
+                this.initializeNodes();
+                this.setupInteraction();
+                this.loadStateFromURL();
+                
+                this.updateAllLayerUniforms(); // Initial uniform update
+                this.updateNodeIndicators();
+                this.updateLayerControlUI();
+                this.updateSamplerIndicator();
+                this.updateModeIndicator();
+                document.getElementById('bpm-display').textContent = this.bpm;
+                document.getElementById('loading').style.display = 'none';
+
+                this.animate();
+            }
+            
+            // ==================== LAYER MANAGEMENT & STATE ====================
+            initializeLayers() {
+                for (let i = 0; i < this.numLayers; i++) {
+                    this.layers.push({
+                        id: i,
+                        nodeStates: Array(8).fill(false),
+                        isActive: i === 0, // First layer active by default
+                        // NEW: Unique color and sampler position for each layer
+                        colorHue: (i / this.numLayers + 0.6) % 1.0, // Start with blues/purples
+                        samplerPos: new THREE.Vector2(0.5 + (Math.random() - 0.5) * 0.2, 0.5 + (Math.random() - 0.5) * 0.2),
+                        // Visual parameters remain
+                        fieldIntensity: 0.7, fieldFlow: 0.8, morphicSeed: Math.random() * 1000
+                    });
+                }
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+            
+            // ==================== VISUALS (THREE.JS & SHADERS) ====================
+            setupThreeJS() {
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 6;
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.updateNodeIndicators();
+                    this.updateSamplerIndicator();
+                });
+            }
+            
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(15, 15, 200, 200);
+                
+                // Vertex shader deforms the plane based on ALL active layers
+                const vertexShader = `
+                    uniform float time;
+                    uniform bool layerIsActive[8];
+                    uniform float layerIntensities[8];
+                    uniform float layerFlows[8];
+                    uniform float layerSeeds[8];
+                    varying vec2 vUv;
+                    varying float vTotalDeformation;
+
+                    float perlin(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        vTotalDeformation = 0.0;
+
+                        for(int i = 0; i < 8; i++) {
+                            if(layerIsActive[i]) {
+                                float intensity = layerIntensities[i];
+                                float flow = layerFlows[i];
+                                float seed = layerSeeds[i];
+                                float deformation = perlin(pos.xy * 0.5 + time * flow * 0.1 + seed) * intensity * 0.5;
+                                deformation += sin(length(pos.xy) * 4.0 - time * 2.0 + seed * 5.0) * 0.1 * intensity;
+                                vTotalDeformation += deformation;
+                            }
+                        }
+                        pos.z += vTotalDeformation;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+
+                // Fragment shader now composites colors from all active layers to create a "mosaic"
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform vec2 mouse;
+                    // Uniforms for all layers
+                    uniform bool layerIsActive[8];
+                    uniform float layerHues[8];
+                    uniform float layerIntensities[8];
+                    uniform float layerFlows[8];
+                    uniform float layerSeeds[8];
+                    varying vec2 vUv;
+                    varying float vTotalDeformation;
+
+                    vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0); vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www); return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y); }
+                    float perlin(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+                    
+                    void main() {
+                        vec3 finalColor = vec3(0.0);
+                        
+                        // Loop through all layers and add their color contribution if active
+                        for(int i = 0; i < 8; i++) {
+                            if(layerIsActive[i]) {
+                                float intensity = layerIntensities[i];
+                                float flow = layerFlows[i];
+                                float seed = layerSeeds[i];
+                                
+                                // Calculate this layer's individual visual pattern
+                                float pattern = perlin(vUv * 8.0 + time * flow * 0.2 + seed) * 0.5;
+                                pattern += perlin(vUv * 2.0 - time * flow * 0.1 + seed * 2.0) * 0.5;
+                                
+                                // Determine brightness based on pattern and global audio level
+                                float brightness = (pattern * intensity) * (0.5 + vTotalDeformation * 0.5) + audioLevel * 0.1;
+                                
+                                vec3 layerColor = hsv2rgb(vec3(layerHues[i], 0.8, brightness));
+                                finalColor += layerColor;
+                            }
+                        }
+                        
+                        // Add cursor glow
+                        float cursorDist = distance(vUv, mouse);
+                        float cursorGlow = smoothstep(0.05, 0.0, cursorDist) * (0.5 + audioLevel);
+                        finalColor += vec3(0.5, 0.7, 1.0) * cursorGlow;
+
+                        gl_FragColor = vec4(finalColor, 1.0);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        time: { value: 0 }, audioLevel: { value: 0 }, mouse: { value: this.mouse },
+                        // NEW: Array uniforms for all layers
+                        layerIsActive: { value: this.layers.map(l => l.isActive) },
+                        layerHues: { value: this.layers.map(l => l.colorHue) },
+                        layerIntensities: { value: this.layers.map(l => l.fieldIntensity) },
+                        layerFlows: { value: this.layers.map(l => l.fieldFlow) },
+                        layerSeeds: { value: this.layers.map(l => l.morphicSeed) },
+                    },
+                    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+                });
+                
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+            }
+
+            // NEW: Helper to update all layer-based uniforms at once
+            updateAllLayerUniforms() {
+                if (!this.fieldMesh) return;
+                const uniforms = this.fieldMesh.material.uniforms;
+                uniforms.layerIsActive.value = this.layers.map(l => l.isActive);
+                uniforms.layerHues.value = this.layers.map(l => l.colorHue);
+                uniforms.layerIntensities.value = this.layers.map(l => l.fieldIntensity);
+                uniforms.layerFlows.value = this.layers.map(l => l.fieldFlow);
+                uniforms.layerSeeds.value = this.layers.map(l => l.morphicSeed);
+            }
+
+            initializeNodes() { /* ... unchanged from previous version ... */
+                this.nodes = [];
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const radius = 0.3 + Math.sin(i * 0.7) * 0.05 + Math.random() * 0.05;
+                    this.nodes.push({
+                        baseAngle: angle, baseRadius: radius,
+                        x: 0.5 + Math.cos(angle) * radius,
+                        y: 0.5 + Math.sin(angle) * radius,
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+                this.createNodeIndicators();
+            }
+
+            updateNodePositions() { /* ... unchanged from previous version ... */
+                this.nodes.forEach((node, i) => {
+                    const timeFactor = this.time * 0.005 + node.phase;
+                    const currentRadius = node.baseRadius + Math.sin(timeFactor * 1.5) * 0.01;
+                    const currentAngle = node.baseAngle + Math.cos(timeFactor * 0.8) * 0.01;
+                    node.x = 0.5 + Math.cos(currentAngle) * currentRadius;
+                    node.y = 0.5 + Math.sin(currentAngle) * currentRadius;
+                });
+                this.updateNodeIndicators();
+            }
+
+            updateNodeIndicators() { /* ... modified to use layer color ... */
+                const currentLayer = this.layers[this.activeLayerIndex];
+                const activeColor = hsv2rgb(currentLayer.colorHue, 0.8, 1.0);
+                this.nodeIndicators.forEach((indicator, i) => {
+                    const node = this.nodes[i];
+                    indicator.style.left = (node.x * window.innerWidth - 4) + 'px';
+                    indicator.style.top = ((1 - node.y) * window.innerHeight - 4) + 'px';
+                    indicator.className = `node-indicator ${currentLayer.nodeStates[i] ? 'active' : 'inactive'}`;
+                    if (currentLayer.nodeStates[i]) {
+                        indicator.style.color = activeColor;
+                    }
+                    if (i === this.currentStep && this.layers.some(l => l.isActive && l.nodeStates[i])) {
+                        indicator.classList.add('playing');
+                    }
+                });
+            }
+            createNodeIndicators() { /* ... unchanged ... */
+                this.nodeIndicators = [];
+                for (let i = 0; i < 8; i++) {
+                    const indicator = document.createElement('div');
+                    indicator.className = 'node-indicator';
+                    document.body.appendChild(indicator);
+                    this.nodeIndicators.push(indicator);
+                }
+            }
+            
+            // ==================== AUDIO ENGINE with SAMPLER ====================
+            async setupAudio() { /* ... unchanged ... */
+                if (this.audioContext) return;
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    await this.audioContext.resume();
+                    this.masterGain = this.audioContext.createGain();
+                    this.masterGain.gain.value = 0.25;
+                    this.masterGain.connect(this.audioContext.destination);
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256;
+                    this.analyser.connect(this.masterGain);
+                    this.frequencyData = new Uint8AArray(this.analyser.frequencyBinCount);
+                    await this.createReverb();
+                    this.createVoices();
+                    this.startSequencer();
+                } catch(e) { console.warn("Audio setup failed", e); }
+            }
+            createReverb() { /* ... unchanged ... */
+                const duration = 2, sampleRate = this.audioContext.sampleRate;
+                const buffer = this.audioContext.createBuffer(2, sampleRate * duration, sampleRate);
+                for (let c = 0; c < 2; c++) {
+                    const data = buffer.getChannelData(c);
+                    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
+                }
+                this.reverb = this.audioContext.createConvolver(); this.reverb.buffer = buffer;
+                const gain = this.audioContext.createGain(); gain.gain.value = 0.3;
+                this.reverb.connect(gain); gain.connect(this.analyser);
+            }
+            createVoices() { /* ... unchanged ... */
+                 const baseFreqs = [55, 61.74, 65.41, 73.42, 82.41, 87.31, 98, 110];
+                this.voices = baseFreqs.map((freq, i) => {
+                    const voice = {
+                        osc: this.audioContext.createOscillator(), gain: this.audioContext.createGain(),
+                        filter: this.audioContext.createBiquadFilter(), modOsc: this.audioContext.createOscillator(),
+                        modGain: this.audioContext.createGain()
+                    };
+                    voice.osc.type = 'triangle'; voice.osc.frequency.value = freq;
+                    voice.modOsc.type = 'sine'; voice.modOsc.frequency.value = freq * 1.5;
+                    voice.modGain.gain.value = 0;
+                    voice.modOsc.connect(voice.modGain); voice.modGain.connect(voice.osc.frequency);
+                    voice.filter.type = 'lowpass'; voice.filter.frequency.value = 4000; voice.filter.Q.value = 1;
+                    voice.gain.gain.value = 0;
+                    voice.osc.connect(voice.filter); voice.filter.connect(voice.gain);
+                    voice.gain.connect(this.reverb); voice.gain.connect(this.analyser);
+                    voice.osc.start(); voice.modOsc.start();
+                    return voice;
+                });
+            }
+            startSequencer() { /* ... unchanged ... */
+                if (!this.audioContext || this.schedulerInterval) return;
+                this.nextStepTime = this.audioContext.currentTime;
+                this.schedulerInterval = setInterval(() => this.scheduler(), this.lookahead * 1000 * 0.5);
+            }
+            scheduler() { /* ... unchanged ... */
+                if (!this.isPlaying) return;
+                while (this.nextStepTime < this.audioContext.currentTime + this.lookahead) {
+                    this.scheduleStep(this.currentStep, this.nextStepTime);
+                    this.nextStepTime += this.secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            // CORE AUDIO CHANGE: Schedule step now uses the layer's sampler position to modulate sound
+            scheduleStep(step, time) {
+                const voice = this.voices[step];
+                let notePlayed = false;
+
+                // Find the first active layer that triggers this step
+                const triggeringLayer = this.layers.find(l => l.isActive && l.nodeStates[step]);
+
+                if (triggeringLayer) {
+                    notePlayed = true;
+                    const samplerPos = triggeringLayer.samplerPos;
+
+                    // Use samplerPos to modulate sound parameters
+                    // samplerPos.x (0-1) -> Filter Resonance (Q)
+                    // samplerPos.y (0-1) -> Filter Cutoff
+                    // distance from center -> FM Amount
+                    const distFromCenter = samplerPos.distanceTo(new THREE.Vector2(0.5, 0.5));
+
+                    const filterFreq = 200 + samplerPos.y * 8000;
+                    const filterQ = 0.5 + samplerPos.x * 15;
+                    const fmAmount = distFromCenter * 150;
+
+                    // Schedule audio parameter changes
+                    voice.filter.frequency.setTargetAtTime(filterFreq, time, 0.02);
+                    voice.filter.Q.setTargetAtTime(filterQ, time, 0.02);
+                    voice.modGain.gain.setTargetAtTime(fmAmount, time, 0.02);
+
+                    // Schedule gain envelope
+                    voice.gain.gain.cancelScheduledValues(time);
+                    voice.gain.gain.setValueAtTime(0, time);
+                    voice.gain.gain.linearRampToValueAtTime(0.3, time + 0.01);
+                    voice.gain.gain.exponentialRampToValueAtTime(0.001, time + this.secondsPerStep * 0.8);
+                }
+                
+                if(notePlayed) this.updateNodeIndicators();
+            }
+            
+            // ==================== INTERACTION with SAMPLER MODE ====================
+            setupInteraction() { /* ... modified for sampler mode ... */
+                const getMouseUV = (e) => new THREE.Vector2(e.clientX / window.innerWidth, 1 - e.clientY / window.innerHeight);
+
+                const handleStart = (e) => {
+                    this.setupAudio();
+                    this.isMouseDown = true;
+                    const mouseUV = getMouseUV(e);
+                    if (this.layerControlVisible) return;
+                    
+                    const nearestNode = this.findNearestNode(mouseUV);
+                    if (nearestNode !== -1) {
+                        this.toggleNode(nearestNode);
+                    } else if (this.samplerMode) {
+                        this.updateSamplerPosition(mouseUV);
+                    } else {
+                        this.updateFieldParameters(mouseUV);
+                    }
+                    this.longPressTimer = setTimeout(() => this.showBPMControl(), 800);
+                };
+                const handleMove = (e) => {
+                    const mouseUV = getMouseUV(e);
+                    this.mouse.copy(mouseUV);
+                    if (!this.isMouseDown || this.layerControlVisible) return;
+                    if (this.samplerMode) {
+                        this.updateSamplerPosition(mouseUV);
+                    } else {
+                        this.updateFieldParameters(mouseUV);
+                    }
+                };
+                const handleEnd = () => { this.isMouseDown = false; clearTimeout(this.longPressTimer); };
+
+                // Event listeners
+                document.addEventListener('mousedown', handleStart);
+                document.addEventListener('mousemove', handleMove);
+                document.addEventListener('mouseup', handleEnd);
+                document.addEventListener('touchstart', e => {
+                    e.preventDefault();
+                    if (e.touches.length === 4) { this.toggleSamplerMode(); return; }
+                    if (e.touches.length === 3) { this.toggleLayerControl(); return; }
+                    if (e.touches.length === 2) { this.showBPMControl(); return; }
+                    if (e.touches.length === 1) handleStart(e.touches[0]);
+                }, { passive: false });
+                document.addEventListener('touchmove', e => e.touches.length === 1 && handleMove(e.touches[0]), { passive: false });
+                document.addEventListener('touchend', handleEnd, { passive: false });
+                document.addEventListener('keydown', e => {
+                    if (e.key.toLowerCase() === 's') this.toggleSamplerMode();
+                    if (e.key.toLowerCase() === 'l') this.toggleLayerControl();
+                    if (e.key === ' ') { e.preventDefault(); this.toggleGlobalPlayPause(); }
+                });
+
+                // UI elements
+                document.getElementById('bpm-control').addEventListener('click', e => { e.stopPropagation(); this.cycleBPM(); });
+                this.layerIcons.slice(0, this.numLayers).forEach((iconChar, i) => {
+                    const icon = document.createElement('div');
+                    icon.className = 'layer-icon'; icon.textContent = iconChar;
+                    icon.addEventListener('click', e => { e.stopPropagation(); this.selectLayer(i); });
+                    document.getElementById('layer-control-panel').appendChild(icon);
+                });
+            }
+
+            toggleSamplerMode() {
+                this.samplerMode = !this.samplerMode;
+                this.updateModeIndicator();
+                this.updateSamplerIndicator();
+            }
+            updateModeIndicator() {
+                const indicator = document.getElementById('mode-indicator');
+                indicator.textContent = this.samplerMode ? "SAMPLER MODE (Press 'S' to exit)" : "FIELD SCULPT MODE (Press 'S' to enter Sampler Mode)";
+            }
+            updateSamplerPosition(uv) {
+                this.layers[this.activeLayerIndex].samplerPos.copy(uv);
+                this.updateSamplerIndicator();
+                this.updateStateInURL();
+            }
+            updateSamplerIndicator() {
+                const indicator = document.getElementById('sampler-indicator');
+                if (this.samplerMode) {
+                    const layer = this.layers[this.activeLayerIndex];
+                    indicator.classList.add('visible');
+                    indicator.style.color = hsv2rgb(layer.colorHue, 0.9, 1.0);
+                    indicator.style.left = (layer.samplerPos.x * window.innerWidth - 10) + 'px';
+                    indicator.style.top = ((1 - layer.samplerPos.y) * window.innerHeight - 10) + 'px';
+                } else {
+                    indicator.classList.remove('visible');
+                }
+            }
+            updateFieldParameters(uv) {
+                const layer = this.layers[this.activeLayerIndex];
+                layer.fieldIntensity = 0.3 + uv.y * 0.7;
+                layer.fieldFlow = 0.2 + uv.x * 1.6;
+                this.updateAllLayerUniforms();
+                this.updateStateInURL();
+            }
+            selectLayer(index) {
+                if (this.activeLayerIndex === index) {
+                    this.layers[index].isActive = !this.layers[index].isActive;
+                } else {
+                    this.activeLayerIndex = index;
+                }
+                this.updateLayerControlUI();
+                this.updateNodeIndicators();
+                this.updateSamplerIndicator();
+                this.updateAllLayerUniforms();
+                this.updateStateInURL();
+            }
+            updateLayerControlUI() {
+                document.querySelectorAll('.layer-icon').forEach((icon, i) => {
+                    const layer = this.layers[i];
+                    icon.style.backgroundColor = hsv2rgb(layer.colorHue, 0.4, 0.2);
+                    icon.style.boxShadow = layer.isActive ? `0 0 10px ${hsv2rgb(layer.colorHue, 0.8, 1.0)}` : 'none';
+                    icon.classList.toggle('selected', i === this.activeLayerIndex);
+                });
+            }
+            
+            // ==================== STATE SERIALIZATION ====================
+            updateStateInURL() {
+                const state = {
+                    layers: this.layers.map(l => ({
+                        ns: l.nodeStates, a: l.isActive,
+                        h: l.colorHue, sx: l.samplerPos.x, sy: l.samplerPos.y,
+                        fi: l.fieldIntensity, ff: l.fieldFlow, ms: l.morphicSeed
+                    })),
+                    bpm: this.bpm,
+                    ali: this.activeLayerIndex
+                };
+                window.location.hash = btoa(JSON.stringify(state));
+            }
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        this.layers = state.layers.map((l, i) => ({
+                            id: i, nodeStates: l.ns, isActive: l.a, colorHue: l.h,
+                            samplerPos: new THREE.Vector2(l.sx, l.sy),
+                            fieldIntensity: l.fi, fieldFlow: l.ff, morphicSeed: l.ms
+                        }));
+                        this.bpm = state.bpm; this.secondsPerStep = (60 / this.bpm) / 2;
+                        this.activeLayerIndex = state.ali;
+                    }
+                } catch (e) { console.warn("Failed to load state from URL, using defaults.", e); }
+            }
+
+            // ==================== ANIMATION LOOP ====================
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.time += 0.01;
+                this.audioLevel = this.analyser ? this.updateAudioLevel() : 0;
+                
+                this.fieldMesh.material.uniforms.time.value = this.time;
+                this.fieldMesh.material.uniforms.audioLevel.value = this.audioLevel;
+                
+                this.updateNodePositions();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            // Helper methods (unchanged or minor tweaks)
+            findNearestNode(uv) { let n = -1, d = Infinity; this.nodes.forEach((node, i) => { const dist = uv.distanceTo(new THREE.Vector2(node.x, node.y)); if (dist < 0.1 && dist < d) { d = dist; n = i; } }); return n; }
+            toggleNode(i) { const l = this.layers[this.activeLayerIndex]; l.nodeStates[i] = !l.nodeStates[i]; this.updateNodeIndicators(); this.updateStateInURL(); }
+            updateAudioLevel() { this.analyser.getByteFrequencyData(this.frequencyData); return this.frequencyData.reduce((a, b) => a + b) / this.frequencyData.length / 255; }
+            toggleGlobalPlayPause() { this.isPlaying = !this.isPlaying; if (this.isPlaying) this.startSequencer(); else clearInterval(this.schedulerInterval); this.schedulerInterval = null; }
+            showBPMControl() { document.getElementById('bpm-control').classList.add('visible'); setTimeout(() => document.getElementById('bpm-control').classList.remove('visible'), 3000); }
+            cycleBPM() { const v = [90, 120, 140, 160, 60]; this.bpm = v[(v.indexOf(this.bpm) + 1) % v.length]; this.secondsPerStep = (60 / this.bpm) / 2; document.getElementById('bpm-display').textContent = this.bpm; this.updateStateInURL(); }
+            toggleLayerControl() { document.getElementById('layer-control-panel').classList.toggle('visible'); }
+        }
+
+        window.addEventListener('load', () => new MorphicFieldPortal());
+    </script>
+</body>
+</html>

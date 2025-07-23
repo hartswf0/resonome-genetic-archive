@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Morphic Resonance Dual Turntable</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none; /* Hide default cursor */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh */
+            font-family: 'Courier New', monospace;
+            display: flex;
+            height: 100vh;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .morphic-table-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid transparent; /* Highlight active table */
+            transition: border-color 0.3s ease;
+        }
+
+        .morphic-table-container.active-table {
+            border-color: #0ff;
+        }
+        
+        .morphic-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-family: monospace;
+            z-index: 100;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Mixer Panel */
+        #mixer-panel {
+            width: 150px; /* Narrow central column */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 50;
+            border-left: 1px solid rgba(0, 255, 255, 0.1);
+            border-right: 1px solid rgba(0, 255, 255, 0.1);
+            backdrop-filter: blur(5px);
+            padding: 20px 0;
+        }
+
+        .mixer-control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            width: 100%;
+            padding: 0 10px;
+        }
+
+        .mixer-control-group label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(0,255,255,0.6);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+            transition: opacity .2s;
+            cursor: grab;
+            margin: 0;
+            padding: 0;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #0ff;
+            cursor: grab;
+            box-shadow: 0 0 5px #0ff;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #0ff;
+            cursor: grab;
+            box-shadow: 0 0 5px #0ff;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb,
+        input[type="range"]:active::-moz-range-thumb {
+            cursor: grabbing;
+            box-shadow: 0 0 15px #0ff, 0 0 30px rgba(0,255,255,0.5);
+        }
+
+        #crossfade-slider {
+            transform: rotate(-90deg); /* Vertical slider */
+            width: 120px; /* Make it longer when vertical */
+            margin: 40px 0; /* Adjust margin for vertical display */
+        }
+        
+        /* Hidden BPM Control (now part of mixer panel) */
+        #bpm-control {
+            position: relative; /* Relative to mixer panel */
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 70%);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(0,255,255,0.8);
+            font-size: 12px;
+            opacity: 1; /* Always visible in mixer panel */
+            cursor: pointer;
+            user-select: none;
+            backdrop-filter: blur(2px);
+        }
+        
+        #bpm-control:hover {
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: rgba(0,255,255,0.6);
+        }
+
+        .mixer-buttons {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .mixer-buttons button {
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            color: rgba(0, 255, 255, 0.8);
+            padding: 5px 8px;
+            border-radius: 5px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        .mixer-buttons button:hover {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: rgba(0, 255, 255, 0.5);
+        }
+        .mixer-buttons button.active {
+            background: #0ff;
+            color: #000;
+            box-shadow: 0 0 8px #0ff;
+        }
+
+        /* Hidden Layer Control Panel */
+        #layer-control-panel {
+            position: fixed; /* Fixed relative to viewport */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        #layer-control-panel.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .layer-icon {
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.6);
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .layer-icon:hover {
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border-color: rgba(255,255,255,0.3);
+            color: rgba(255,255,255,0.8);
+        }
+
+        .layer-icon.active { /* Currently playing */
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: #0ff;
+            box-shadow: 0 0 10px #0ff;
+            color: #0ff;
+        }
+
+        .layer-icon.selected { /* Currently being edited */
+            border-color: #fff;
+            box-shadow: 0 0 15px #fff;
+            transform: scale(1.1);
+        }
+        
+        /* Node visualization helpers - positioned relative to viewport */
+        .node-indicator {
+            position: fixed; 
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            pointer-events: none;
+            transition: all 0.2s ease, transform 0.1s ease-out;
+            z-index: 3;
+            opacity: 0.5;
+        }
+        
+        .node-indicator.active {
+            background: radial-gradient(circle, #0ff 0%, transparent 70%);
+            box-shadow: 0 0 15px #0ff;
+            transform: scale(1.5);
+            opacity: 0.9;
+        }
+        
+        .node-indicator.inactive {
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0.4;
+        }
+        
+        .node-indicator.playing {
+            animation: pulse 0.2s ease-out;
+            background: radial-gradient(circle, #fff 0%, transparent 70%);
+            box-shadow: 0 0 20px #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div id="table-a-container" class="morphic-table-container">
+            <canvas id="canvas-a" class="morphic-canvas"></canvas>
+            <div class="loading" id="loading-a">Initializing Table A...</div>
+        </div>
+
+        <div id="mixer-panel">
+            <div id="bpm-control">
+                <div id="bpm-display">120</div>
+            </div>
+
+            <div class="mixer-control-group">
+                <label>Crossfade</label>
+                <input type="range" id="crossfade-slider" min="0" max="1" step="0.01" value="0.5">
+            </div>
+
+            <div class="mixer-control-group">
+                <label>Table A Fuzz</label>
+                <input type="range" id="fuzz-a-slider" min="0" max="1" step="0.01" value="0">
+                <div class="mixer-buttons">
+                    <button id="capture-a">Capture A</button>
+                    <button id="play-a">Play A</button>
+                </div>
+            </div>
+
+            <div class="mixer-control-group">
+                <label>Table B Fuzz</label>
+                <input type="range" id="fuzz-b-slider" min="0" max="1" step="0.01" value="0">
+                <div class="mixer-buttons">
+                    <button id="capture-b">Capture B</button>
+                    <button id="play-b">Play B</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="table-b-container" class="morphic-table-container">
+            <canvas id="canvas-b" class="morphic-canvas"></canvas>
+            <div class="loading" id="loading-b">Initializing Table B...</div>
+        </div>
+    </div>
+
+    <div id="layer-control-panel"></div> <!-- Layer icons will be injected here -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // ==========================================================
+        //  MorphicTable Class: Encapsulates a single turntable
+        // ==========================================================
+        class MorphicTable {
+            constructor(canvasId, containerId, audioContext, outputNode) {
+                this.canvasId = canvasId;
+                this.containerId = containerId;
+                this.audioContext = audioContext;
+                this.outputNode = outputNode; // Node to connect this table's master gain to
+                
+                // Three.js Core
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                
+                // Audio Components
+                this.masterGain = null;
+                this.reverb = null;
+                this.voices = [];
+                this.analyser = null;
+                this.frequencyData = null;
+                this.audioLevel = 0;
+                this.fuzzNode = null; // New: Distortion/Fuzz node
+                this.fuzzWetGain = null;
+                this.fuzzDryGain = null;
+
+                // Sampler / Loop capture
+                this.samplerBuffer = null;
+                this.samplerSource = null;
+                this.samplerGain = null;
+                this.isSampling = false;
+                this.isSamplerPlaying = false;
+                this.recorder = null;
+                this.recordedChunks = [];
+                this.captureDuration = 4; // seconds (e.g., 4 bars at 60 BPM)
+
+                // Field & Morphic State
+                this.fieldMesh = null;
+                this.particles = null;
+                this.time = 0; // Independent time for each table's visuals
+                
+                // Emergent Sequencer System
+                this.nodes = [];
+                this.numLayers = 8; // Each table has 8 layers
+                this.layers = []; // Array of layer objects
+                this.activeLayerIndex = 0; // The layer currently selected for editing/display on THIS table
+                this.currentStep = 0; // Global sequencer step (synced by DJ)
+                this.secondsPerStep = 0; // Will be set by DJ class
+
+                // Initialize this table
+                this.init();
+            }
+            
+            init() {
+                this.setupThreeJS();
+                this.initializeLayers(); 
+                this.createMorphicField();
+                this.initializeNodes(); // Nodes are specific to each table's visual space
+                this.setupAudioNodes(); 
+            }
+
+            // ==================== Layer Management (Table specific) ====================
+            initializeLayers() {
+                this.layers = []; // Clear any existing layers if re-initializing
+                for (let i = 0; i < this.numLayers; i++) {
+                    this.layers.push({
+                        id: i,
+                        nodeStates: Array(8).fill(false), // All nodes off by default for new layers
+                        fieldIntensity: 0.7,
+                        fieldFlow: 0.8,
+                        morphicSeed: Math.random() * 1000,
+                        isActive: false // Layers are inactive by default when initialized
+                    });
+                }
+                // Set a default pattern for the first layer of this table for immediate sound/visuals on load
+                // This makes the experience immediately interactive and audible.
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+                this.layers[0].isActive = true; // First layer is active for playback by default
+            }
+
+            // Updates the shader uniforms based on the currently selected layer's parameters
+            updateActiveLayerVisuals() {
+                const currentLayer = this.layers[this.activeLayerIndex];
+                if (this.fieldMesh && currentLayer) {
+                    this.fieldMesh.material.uniforms.intensity.value = currentLayer.fieldIntensity;
+                    this.fieldMesh.material.uniforms.flow.value = currentLayer.fieldFlow;
+                    this.fieldMesh.material.uniforms.seed.value = currentLayer.morphicSeed;
+                }
+            }
+
+            // Selects a layer for editing on THIS table
+            selectLayer(index) {
+                if (index < 0 || index >= this.numLayers) return;
+
+                if (this.activeLayerIndex === index) {
+                    // If clicking the currently selected layer, toggle its active (playback) state
+                    this.layers[index].isActive = !this.layers[index].isActive;
+                } else {
+                    // If selecting a different layer, make it the active editing layer
+                    this.activeLayerIndex = index;
+                    // Apply its visual parameters to the field
+                    this.updateActiveLayerVisuals(); 
+                    // Update node indicators to show its pattern
+                    this.updateShaderNodes(); // This will correctly update the table's shader
+                }
+                // The DJ class will handle updateLayerControlUI and updateStateInURL
+            }
+
+            // Toggles a node's state on the currently active layer of THIS table
+            toggleNode(nodeIndex) {
+                const currentLayer = this.layers[this.activeLayerIndex];
+                currentLayer.nodeStates[nodeIndex] = !currentLayer.nodeStates[nodeIndex];
+                
+                // Immediate audio feedback when toggling a node ON
+                if (currentLayer.nodeStates[nodeIndex] && this.audioContext && this.voices[nodeIndex] && this.audioContext.state === 'running') {
+                    const voice = this.voices[nodeIndex];
+                    const now = this.audioContext.currentTime;
+                    voice.gain.gain.cancelScheduledValues(now);
+                    voice.gain.gain.setValueAtTime(0, now);
+                    voice.gain.gain.linearRampToValueAtTime(0.05, now + 0.01);
+                    voice.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                }
+                // Visual ripple is also handled by DJ via triggerNodeEffect
+                // The DJ class will handle updateShaderNodes, updateNodeIndicators, and updateStateInURL
+            }
+
+            // Updates field parameters based on mouse UV for THIS table
+            updateFieldParameters(mouseUV) {
+                const currentLayer = this.layers[this.activeLayerIndex];
+                currentLayer.fieldIntensity = 0.3 + mouseUV.y * 0.7;
+                currentLayer.fieldFlow = 0.2 + mouseUV.x * 1.6;
+                currentLayer.morphicSeed += (mouseUV.x - 0.5) * 0.005;
+                currentLayer.morphicSeed += (mouseUV.y - 0.5) * 0.005;
+
+                this.updateActiveLayerVisuals(); // Update shader
+                // The DJ class will handle updateStateInURL
+            }
+            
+            // ==================== Table Specific Three.js ====================
+            setupThreeJS() {
+                const canvas = document.getElementById(this.canvasId);
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ 
+                    canvas: canvas,
+                    antialias: true,
+                    alpha: true
+                });
+                
+                this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 6;
+
+                // Handle table container resize (when window resizes, flexbox adjusts)
+                new ResizeObserver(() => {
+                    const width = canvas.clientWidth;
+                    const height = canvas.clientHeight;
+                    this.camera.aspect = width / height;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(width, height);
+                }).observe(document.getElementById(this.containerId));
+            }
+            
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(15, 15, 300, 300); 
+                
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform float seed;
+                    uniform vec2 nodes[8];
+                    uniform bool nodeStates[8];
+                    uniform int currentStep;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    varying float vNodeInfluence;
+                    
+                    float hash(float n) { return fract(sin(n) * 43758.5453123); }
+                    float perlinNoise(vec2 p) {
+                        vec2 ip = floor(p); vec2 fp = fract(p); fp = fp * fp * (3.0 - 2.0 * fp);
+                        float a = hash(ip.x + hash(ip.y)); float b = hash(ip.x + 1.0 + hash(ip.y));
+                        float c = hash(ip.x + hash(ip.y + 1.0)); float d = hash(ip.x + 1.0 + hash(ip.y + 1.0));
+                        return mix(mix(a, b, fp.x), mix(c, d, fp.x), fp.y);
+                    }
+                    
+                    void main() {
+                        vUv = uv; vec3 pos = position;
+                        float morphic = perlinNoise(pos.xy * 0.5 + time * flow * 0.1 + seed * 0.01) * intensity * 0.8;
+                        morphic += perlinNoise(pos.xy * 1.5 - time * flow * 0.05 + seed * 0.02) * intensity * 0.4;
+                        morphic += sin(length(pos.xy) * 8.0 - time * 2.0 + seed * 0.5) * 0.15 * intensity;
+                        
+                        vNodeInfluence = 0.0;
+                        for(int i = 0; i < 8; i++) {
+                            vec2 nodePos = (nodes[i] - 0.5) * 15.0; float dist = distance(pos.xy, nodePos);
+                            float influence = exp(-dist * 1.5) * 0.3; 
+                            if(nodeStates[i]) { influence *= 2.0; if(i == currentStep) { influence *= 3.0; } }
+                            vNodeInfluence += influence;
+                            morphic += influence * sin(time * 4.0 + float(i) * 0.5); 
+                        }
+                        float drift = sin(time * 0.1 + pos.x * 0.5) * 0.05;
+                        morphic += drift;
+                        pos.z += morphic; vDistortion = abs(morphic); vPosition = pos;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float audioLevel;
+                    uniform vec2 nodes[8];
+                    uniform bool nodeStates[8];
+                    uniform int currentStep;
+                    uniform vec2 mouse; 
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    varying float vNodeInfluence;
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5; float distFromCenter = length(center);
+                        float hue = time * 0.02 + distFromCenter * 1.5 + vDistortion * 3.0;
+                        float sat = 0.6 + vNodeInfluence * 0.4 + audioLevel * 0.2;
+                        float brightness = 0.2 + vDistortion * 1.5 + audioLevel * 0.5; 
+                        
+                        for(int i = 0; i < 8; i++) {
+                            float nodeDist = distance(vUv, nodes[i]); float nodeInfluenceVisual = smoothstep(0.1, 0.0, nodeDist); 
+                            if(nodeStates[i]) { 
+                                hue = mix(hue, 0.55, nodeInfluenceVisual); sat = mix(sat, 1.0, nodeInfluenceVisual);
+                                brightness = mix(brightness, 1.5, nodeInfluenceVisual); 
+                                if(i == currentStep) { brightness = mix(brightness, 2.5, nodeInfluenceVisual); }
+                            } else {
+                                sat = mix(sat, 0.3, nodeInfluenceVisual * 0.5);
+                                brightness = mix(brightness, 0.4, nodeInfluenceVisual * 0.5);
+                            }
+                        }
+                        vec3 color = hsv2rgb(vec3(mod(hue, 1.0), clamp(sat, 0.0, 1.0), clamp(brightness, 0.0, 1.5)));
+                        
+                        float cursorDist = distance(vUv, mouse);
+                        float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0);
+                        color += vec3(0.1, 0.2, 0.3) * cursorGlow;
+                        
+                        float alpha = 0.9 - distFromCenter * 0.6 + vDistortion + audioLevel * 0.2;
+                        alpha *= smoothstep(1.2, 0.0, distFromCenter);
+                        alpha += cursorGlow * 0.5;
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader,
+                    fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: 0.7 },
+                        flow: { value: 0.8 },
+                        seed: { value: Math.random() * 1000 },
+                        audioLevel: { value: 0 },
+                        nodes: { value: [] },
+                        nodeStates: { value: [] }, 
+                        currentStep: { value: 0 },
+                        mouse: { value: new THREE.Vector2(0.5, 0.5) }
+                    },
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    side: THREE.DoubleSide,
+                    depthWrite: false 
+                });
+                
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+                this.createParticleField();
+            }
+            
+            createParticleField() {
+                const particleCount = 1000;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                const sizes = new Float32Array(particleCount);
+                
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] = (Math.random() - 0.5) * 30;
+                    positions[i * 3 + 1] = (Math.random() - 0.5) * 30;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+                    
+                    colors[i * 3] = 0.1 + Math.random() * 0.2;
+                    colors[i * 3 + 1] = 0.5 + Math.random() * 0.5;
+                    colors[i * 3 + 2] = 0.8 + Math.random() * 0.2;
+                    sizes[i] = 0.1 + Math.random() * 0.4;
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+                
+                const particleVertexShader = `
+                    attribute float size; attribute vec3 color; varying vec3 vColor;
+                    void main() { vColor = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (300.0 / -mvPosition.z); gl_Position = projectionMatrix * mvPosition;
+                    }
+                `;
+
+                const particleFragmentShader = `
+                    varying vec3 vColor; uniform float audioLevel;
+                    void main() {
+                        float r = 0.0, delta = 0.0, alpha = 1.0; vec2 cxy = 2.0 * gl_PointCoord - 1.0;
+                        r = dot(cxy, cxy); delta = fwidth(r); alpha = 1.0 - smoothstep(0.0, 1.0 * delta, r);
+                        vec3 finalColor = vColor * (1.0 + audioLevel * 1.5);
+                        gl_FragColor = vec4(finalColor, alpha * (0.3 + audioLevel * 0.7));
+                    }
+                `;
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: { audioLevel: { value: 0 } },
+                    vertexShader: particleVertexShader,
+                    fragmentShader: particleFragmentShader,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false, transparent: true
+                });
+                
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+            
+            initializeNodes() {
+                this.nodes = [];
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const radius = 0.3 + Math.sin(i * 0.7) * 0.05 + Math.random() * 0.05; 
+                    this.nodes.push({
+                        baseAngle: angle, baseRadius: radius,
+                        x: 0.5 + Math.cos(angle) * radius, y: 0.5 + Math.sin(angle) * radius,
+                        phase: Math.random() * Math.PI * 2 
+                    });
+                }
+            }
+
+            findNearestNode(mouseUV) {
+                let nearest = -1;
+                let minDist = Infinity;
+                
+                this.nodes.forEach((node, i) => {
+                    const dist = Math.sqrt(
+                        Math.pow(node.x - mouseUV.x, 2) + 
+                        Math.pow(node.y - mouseUV.y, 2)
+                    );
+                    
+                    if (dist < 0.12) { 
+                        if (dist < minDist) { 
+                            minDist = dist;
+                            nearest = i;
+                        }
+                    }
+                });
+                return nearest;
+            }
+
+            // ==================== Table Specific Audio ====================
+            setupAudioNodes() {
+                this.masterGain = this.audioContext.createGain();
+                this.masterGain.gain.value = 1; // Controlled by DJ crossfader
+
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                this.analyser.connect(this.masterGain); // Analyser for this table's visuals
+
+                this.fuzzNode = this.audioContext.createWaveShaper();
+                this.fuzzWetGain = this.audioContext.createGain();
+                this.fuzzDryGain = this.audioContext.createGain();
+
+                // Fuzz is set by DJ's loadStateFromURL or mixer interaction
+                this.setFuzzAmount(0); // Initialize fuzz to 0
+
+                // Voices connect to fuzz dry/wet mixer
+                this.fuzzWetGain.connect(this.fuzzNode);
+                this.fuzzNode.connect(this.masterGain);
+                this.fuzzDryGain.connect(this.masterGain);
+
+                // Sampler setup
+                this.samplerGain = this.audioContext.createGain();
+                this.samplerGain.gain.value = 0; // Starts silent
+                this.samplerGain.connect(this.masterGain);
+
+                // Create common reverb for all voices
+                this.reverb = this.audioContext.createConvolver();
+                this.createReverbBuffer(); // Call this once to create the buffer
+
+                this.createVoices();
+                this.masterGain.connect(this.outputNode); // Connect to DJ's mixer output
+            }
+
+            async createReverbBuffer() {
+                const duration = 2; // seconds
+                const sampleRate = this.audioContext.sampleRate;
+                const reverbBuffer = this.audioContext.createBuffer(2, sampleRate * duration, sampleRate);
+                for (let channel = 0; channel < reverbBuffer.numberOfChannels; channel++) {
+                    const channelData = reverbBuffer.getChannelData(channel);
+                    for (let i = 0; i < channelData.length; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / channelData.length, 2); 
+                    }
+                }
+                this.reverb.buffer = reverbBuffer;
+                // Reverb output will be mixed with dry voice output within the voices loop
+            }
+            
+            createVoices() {
+                const baseFreqs = [55, 73.42, 98, 130.81, 174.61, 233.08, 311.13, 415.30];
+                this.voices = baseFreqs.map((freq, i) => {
+                    const voice = {
+                        osc: this.audioContext.createOscillator(),
+                        gain: this.audioContext.createGain(),
+                        filter: this.audioContext.createBiquadFilter(),
+                        modOsc: this.audioContext.createOscillator(),
+                        modGain: this.audioContext.createGain(),
+                        lfo: this.audioContext.createOscillator(),
+                        lfoGain: this.audioContext.createGain(),
+                        reverbSend: this.audioContext.createGain() // Individual reverb send
+                    };
+                    voice.osc.type = ['sine', 'triangle', 'sawtooth', 'square'][i % 4];
+                    voice.osc.frequency.value = freq;
+                    voice.modOsc.type = 'sine'; voice.modOsc.frequency.value = freq * 0.7 + i * 0.5;
+                    voice.modGain.gain.value = 5 + i * 2; voice.modOsc.connect(voice.modGain); voice.modGain.connect(voice.osc.frequency);
+                    voice.filter.type = 'lowpass'; voice.filter.frequency.value = freq * 3 + i * 100; voice.filter.Q.value = 1 + i * 0.3;
+                    voice.lfo.type = 'sine'; voice.lfo.frequency.value = 0.5 + i * 0.1;
+                    voice.lfoGain.gain.value = 0.5 + i * 0.2; voice.lfo.connect(voice.lfoGain); voice.lfoGain.connect(voice.osc.detune);
+                    voice.gain.gain.value = 0;
+                    
+                    voice.osc.connect(voice.filter);
+                    voice.filter.connect(voice.gain);
+                    // Dry signal path (to fuzz mixer)
+                    voice.gain.connect(this.fuzzDryGain);
+                    voice.gain.connect(this.fuzzWetGain); // Send to fuzz node
+                    // Wet signal path (to reverb)
+                    voice.gain.connect(voice.reverbSend);
+                    voice.reverbSend.connect(this.reverb);
+                    this.reverb.connect(this.masterGain); // Reverb directly to master gain
+
+                    voice.osc.start(); voice.modOsc.start(); voice.lfo.start();
+                    return voice;
+                });
+            }
+
+            setFuzzAmount(wetness) {
+                if (!this.fuzzNode) {
+                    console.warn(`Fuzz node not initialized for ${this.canvasId}.`);
+                    return;
+                }
+                // Creates a non-linear distortion curve (more "fuzz")
+                const curve = new Float32Array(2048);
+                const k = wetness * 100; // Multiplier for distortion intensity
+                for (let i = 0; i < 2048; ++i) {
+                    const x = (i * 2 / 2048 - 1); // Range from -1 to 1
+                    curve[i] = (x + k * x / (1 + k * Math.abs(x))) / 2;
+                }
+                this.fuzzNode.curve = curve;
+
+                this.fuzzDryGain.gain.value = 1 - wetness;
+                this.fuzzWetGain.gain.value = wetness;
+            }
+
+            playVoiceAtStep(step, time) {
+                const voice = this.voices[step];
+                const node = this.nodes[step];
+                const currentLayer = this.layers[this.activeLayerIndex]; // For visual/shader parameters
+
+                if (voice) {
+                    voice.gain.gain.cancelScheduledValues(time);
+                    voice.gain.gain.setValueAtTime(0, time);
+                    voice.gain.gain.linearRampToValueAtTime(0.3, time + 0.01);
+                    voice.gain.gain.exponentialRampToValueAtTime(0.001, time + this.secondsPerStep * 0.8);
+                    
+                    const cutoff = 500 + node.y * 3000 + node.x * 1000 + currentLayer.fieldIntensity * 1500;
+                    voice.filter.frequency.setTargetAtTime(cutoff, time, 0.05);
+                    const detuneAmount = (node.x - 0.5) * 50; 
+                    voice.osc.detune.setTargetAtTime(detuneAmount, time, 0.01);
+
+                    voice.reverbSend.gain.setTargetAtTime(0.5, time, 0.01); // Send some signal to reverb
+                    voice.reverbSend.gain.exponentialRampToValueAtTime(0.001, time + this.secondsPerStep * 1.5);
+                }
+            }
+
+            // ==================== Sampler / Loop Capture ====================
+            async captureAudioLoop() {
+                if (!this.audioContext || this.audioContext.state !== 'running') {
+                    console.warn("AudioContext not running, cannot capture.");
+                    return;
+                }
+                if (this.isSampling) {
+                    console.warn("Already sampling.");
+                    return;
+                }
+                
+                const destination = this.audioContext.createMediaStreamDestination();
+                // Connect this table's master output to the capturer
+                this.masterGain.connect(destination);
+
+                this.recorder = new MediaRecorder(destination.stream);
+                this.recordedChunks = [];
+                this.isSampling = true;
+
+                this.recorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        this.recordedChunks.push(event.data);
+                    }
+                };
+
+                this.recorder.onstop = async () => {
+                    const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+                    const audioURL = URL.createObjectURL(blob);
+                    
+                    const response = await fetch(audioURL);
+                    const arrayBuffer = await response.arrayBuffer();
+                    this.samplerBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    
+                    URL.revokeObjectURL(audioURL);
+                    this.isSampling = false;
+                    console.log("Sampler loop captured for", this.canvasId);
+                    this.masterGain.disconnect(destination); // Disconnect capturer
+                    // After capture, set sampler state to playing to immediately audition
+                    this.playCapturedLoop(); 
+                };
+
+                this.recorder.start();
+                console.log("Sampling started for", this.canvasId);
+                setTimeout(() => {
+                    if (this.recorder.state === 'recording') {
+                        this.recorder.stop();
+                    }
+                }, this.captureDuration * 1000); // Capture for a fixed duration
+            }
+
+            playCapturedLoop() {
+                if (!this.samplerBuffer) {
+                    console.warn("No audio loop captured for", this.canvasId);
+                    return;
+                }
+
+                if (this.samplerSource) {
+                    this.samplerSource.stop(); // Stop previous instance
+                    this.samplerSource.disconnect();
+                }
+
+                this.samplerSource = this.audioContext.createBufferSource();
+                this.samplerSource.buffer = this.samplerBuffer;
+                this.samplerSource.loop = true;
+                this.samplerSource.connect(this.samplerGain);
+                this.samplerSource.start(0);
+
+                this.samplerGain.gain.setTargetAtTime(1, this.audioContext.currentTime, 0.05); // Fade in
+                this.isSamplerPlaying = true;
+                console.log("Sampler loop playing for", this.canvasId);
+            }
+
+            stopCapturedLoop() {
+                if (this.samplerSource) {
+                    this.samplerGain.gain.setTargetAtTime(0, this.audioContext.currentTime, 0.05); // Fade out
+                    this.samplerSource.stop(this.audioContext.currentTime + 0.1); // Stop slightly after fade out
+                    this.isSamplerPlaying = false;
+                    console.log("Sampler loop stopped for", this.canvasId);
+                }
+            }
+            
+            // ==================== Visual Updates (Table specific) ====================
+            updateNodePositions() {
+                const driftAmount = 0.01;
+                const morphicInfluence = 0.02;
+                const currentMorphicSeed = this.layers[this.activeLayerIndex].morphicSeed;
+
+                this.nodes.forEach((node, i) => {
+                    const timeFactor = this.time * 0.005 + node.phase;
+                    const morphicDrift = Math.sin(this.time * 0.01 + i * 0.5 + currentMorphicSeed * 0.01) * morphicInfluence;
+                    
+                    const currentRadius = node.baseRadius + Math.sin(timeFactor * 1.5) * driftAmount + morphicDrift;
+                    const currentAngle = node.baseAngle + Math.cos(timeFactor * 0.8) * driftAmount;
+                    
+                    node.x = 0.5 + Math.cos(currentAngle) * currentRadius;
+                    node.y = 0.5 + Math.sin(currentAngle) * currentRadius;
+                });
+                this.updateShaderNodes();
+            }
+            
+            updateShaderNodes() {
+                if (!this.fieldMesh) return;
+                const nodePositions = this.nodes.map(node => new THREE.Vector2(node.x, node.y));
+                this.fieldMesh.material.uniforms.nodes.value = nodePositions;
+                this.fieldMesh.material.uniforms.nodeStates.value = this.layers[this.activeLayerIndex].nodeStates;
+                this.fieldMesh.material.uniforms.currentStep.value = this.currentStep;
+            }
+            
+            updateAudioLevel() {
+                if (!this.analyser || !this.frequencyData) return 0;
+                this.analyser.getByteFrequencyData(this.frequencyData);
+                let sum = 0;
+                for (let i = 0; i < this.frequencyData.length; i++) {
+                    sum += this.frequencyData[i];
+                }
+                this.audioLevel = (sum / this.frequencyData.length) / 255; 
+                return this.audioLevel;
+            }
+
+            // Called by DJ to render this table
+            render() {
+                this.time += 0.01;
+                
+                if (this.fieldMesh) {
+                    this.fieldMesh.material.uniforms.time.value = this.time;
+                    this.fieldMesh.material.uniforms.audioLevel.value = this.updateAudioLevel();
+                    // mouse uniform updated directly by DJ for active table
+                }
+
+                if (this.particles) {
+                    this.particles.rotation.z += 0.0005;
+                    this.particles.rotation.x += 0.0001;
+                    this.particles.material.uniforms.audioLevel.value = this.audioLevel;
+                }
+                this.updateNodePositions();
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        // ==========================================================
+        //  MorphicDJ Class: Orchestrates the dual turntables & mixer
+        // ==========================================================
+        class MorphicDJ {
+            constructor() {
+                this.audioContext = null; // Shared AudioContext
+                this.tableA = null;
+                this.tableB = null;
+
+                // Mixer audio nodes
+                this.gainA = null;
+                this.gainB = null;
+                this.crossfader = null; // Will be assigned the DOM element later
+
+                // UI elements for direct access
+                this.fuzzASlider = null;
+                this.fuzzBSlider = null;
+                this.playAButton = null;
+                this.playBButton = null;
+
+                // Global Sequencer
+                this.currentStep = 0;
+                this.bpm = 120;
+                this.secondsPerStep = (60/this.bpm)/2;
+                this.nextStepTime = 0;
+                this.schedulerInterval = null;
+                this.lookahead = 0.1;
+
+                // Interaction / UI state
+                this.activeTable = null; // Reference to the currently active MorphicTable object (A or B)
+                this.mouse = { x: 0, y: 0, down: false }; // Global mouse coordinates
+                this.bpmControlVisible = true; // BPM is always visible in the mixer panel
+                this.layerControlVisible = false;
+                this.longPressTimer = null;
+                this.touchCount = 0;
+                this.nodeIndicators = []; // Global DOM elements for nodes
+                this.layerIcons = ['𓊱', '𓋌', '𓏶', '𓋲', '𓋹', '𓋺', '𓌨', '𓌲']; 
+
+                this.init();
+            }
+
+            async init() {
+                // AudioContext needs to be created first for tables to use
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Setup mixer audio paths
+                this.gainA = this.audioContext.createGain();
+                this.gainB = this.audioContext.createGain();
+                this.gainA.connect(this.audioContext.destination);
+                this.gainB.connect(this.audioContext.destination);
+
+                // Initialize tables
+                this.tableA = new MorphicTable('canvas-a', 'table-a-container', this.audioContext, this.gainA);
+                this.tableB = new MorphicTable('canvas-b', 'table-b-container', this.audioContext, this.gainB);
+
+                // Set initial active table and update its border (no state update yet)
+                this.setActiveTable(this.tableA); 
+                document.getElementById('loading-a').style.display = 'none';
+                document.getElementById('loading-b').style.display = 'none';
+
+                this.setupMixerInteraction(); // <--- IMPORTANT: Setup DOM element references HERE
+                this.setupGlobalInteraction(); 
+                this.setupNodeIndicators();
+
+                // Load state from URL *after* all UI elements are referenced
+                this.loadStateFromURL(); 
+                
+                // Ensure initial state visuals are set after loading/defaults
+                this.updateActiveTableState(); // Sync active table's visuals and node indicators
+                this.updateLayerControlUI(); // Sync layer panel visuals
+
+                this.animate();
+            }
+
+            // ==================== Global Audio & Sequencer ====================
+            startGlobalSequencer() {
+                if (!this.audioContext || this.audioContext.state !== 'running') {
+                    console.warn("AudioContext not running, cannot start sequencer.");
+                    return;
+                }
+                if (this.schedulerInterval) {
+                    clearInterval(this.schedulerInterval);
+                }
+
+                this.nextStepTime = this.audioContext.currentTime;
+                this.schedulerInterval = setInterval(() => this.globalScheduler(), this.lookahead * 1000 * 0.5);
+                console.log('Global Sequencer started/restarted with BPM:', this.bpm);
+            }
+
+            globalScheduler() {
+                if (!this.audioContext || this.audioContext.state !== 'running') {
+                    clearInterval(this.schedulerInterval);
+                    this.schedulerInterval = null;
+                    return;
+                }
+
+                while (this.nextStepTime < this.audioContext.currentTime + this.lookahead) {
+                    this.globalPlayStep(this.currentStep, this.nextStepTime);
+                    this.nextStepTime += this.secondsPerStep;
+                    this.currentStep = (this.currentStep + 1) % 8;
+                }
+            }
+
+            globalPlayStep(step, time) {
+                // Sync step to tables for their local visual updates
+                this.tableA.currentStep = step; 
+                this.tableB.currentStep = step;
+                this.tableA.secondsPerStep = this.secondsPerStep; // Also sync tempo
+                this.tableB.secondsPerStep = this.secondsPerStep;
+
+                // Check all active layers across ALL TABLES for this step
+                const tableALayersActive = this.tableA.layers.some(layer => layer.isActive && layer.nodeStates[step]);
+                const tableBLayersActive = this.tableB.layers.some(layer => layer.isActive && layer.nodeStates[step]);
+
+                if (tableALayersActive) {
+                    this.tableA.playVoiceAtStep(step, time);
+                }
+                if (tableBLayersActive) {
+                    this.tableB.playVoiceAtStep(step, time);
+                }
+                
+                // Update global node indicators
+                this.updateNodeIndicators();
+            }
+
+            cycleBPM() {
+                const bpmValues = [90, 120, 140, 160, 180, 200, 60];
+                const currentIndex = bpmValues.indexOf(this.bpm);
+                const nextIndex = (currentIndex + 1) % bpmValues.length;
+                this.bpm = bpmValues[nextIndex];
+                this.secondsPerStep = (60/this.bpm)/2;
+                
+                document.getElementById('bpm-display').textContent = this.bpm;
+                this.updateStateInURL();
+                if (this.audioContext && this.audioContext.state === 'running') {
+                    this.startGlobalSequencer();
+                }
+            }
+
+            // ==================== Mixer & Sampler Controls ====================
+            setupMixerInteraction() {
+                this.crossfader = document.getElementById('crossfade-slider');
+                this.fuzzASlider = document.getElementById('fuzz-a-slider');
+                this.fuzzBSlider = document.getElementById('fuzz-b-slider');
+                this.playAButton = document.getElementById('play-a');
+                this.playBButton = document.getElementById('play-b');
+
+
+                this.crossfader.addEventListener('input', () => this.updateCrossfade());
+                this.updateCrossfade(0.5); // Initial mix
+
+                this.fuzzASlider.addEventListener('input', (e) => {
+                    this.tableA.setFuzzAmount(parseFloat(e.target.value));
+                    this.updateStateInURL();
+                });
+                this.fuzzBSlider.addEventListener('input', (e) => {
+                    this.tableB.setFuzzAmount(parseFloat(e.target.value));
+                    this.updateStateInURL();
+                });
+
+                document.getElementById('capture-a').addEventListener('click', () => {
+                    this.tableA.captureAudioLoop();
+                });
+                this.playAButton.addEventListener('click', () => { // Use the stored reference
+                    if (this.tableA.isSamplerPlaying) {
+                        this.tableA.stopCapturedLoop();
+                        this.playAButton.classList.remove('active');
+                    } else {
+                        this.tableA.playCapturedLoop();
+                        this.playAButton.classList.add('active');
+                    }
+                    this.updateStateInURL();
+                });
+                document.getElementById('capture-b').addEventListener('click', () => {
+                    this.tableB.captureAudioLoop();
+                });
+                this.playBButton.addEventListener('click', () => { // Use the stored reference
+                    if (this.tableB.isSamplerPlaying) {
+                        this.tableB.stopCapturedLoop();
+                        this.playBButton.classList.remove('active');
+                    } else {
+                        this.tableB.playCapturedLoop();
+                        this.playBButton.classList.add('active');
+                    }
+                    this.updateStateInURL();
+                });
+
+                document.getElementById('bpm-control').addEventListener('click', () => this.cycleBPM());
+            }
+
+            updateCrossfade(value = parseFloat(this.crossfader.value)) {
+                // 0.0 = Table A full, Table B silent
+                // 1.0 = Table A silent, Table B full
+                this.gainA.gain.value = 1 - value;
+                this.gainB.gain.value = value;
+                this.updateStateInURL();
+            }
+
+            // ==================== Global Interaction Management ====================
+            setupGlobalInteraction() {
+                const appContainer = document.getElementById('app-container');
+                const layerControlPanel = document.getElementById('layer-control-panel');
+
+                const getMouseUV = (e, targetCanvas) => {
+                    const rect = targetCanvas.getBoundingClientRect();
+                    return {
+                        x: (e.clientX - rect.left) / rect.width,
+                        y: 1 - (e.clientY - rect.top) / rect.height // Invert Y for UV coordinates
+                    };
+                };
+
+                const handleStart = (e) => {
+                    // Activate AudioContext on first interaction
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        this.audioContext.resume().then(() => {
+                            this.startGlobalSequencer();
+                        });
+                    } else if (this.audioContext && !this.schedulerInterval) {
+                        // If context is already running but scheduler stopped for some reason
+                        this.startGlobalSequencer(); 
+                    }
+
+                    const targetCanvas = e.target.closest('.morphic-canvas');
+                    if (targetCanvas) {
+                        // Set active table based on which canvas was clicked
+                        if (targetCanvas.id === 'canvas-a') {
+                            this.setActiveTable(this.tableA);
+                        } else if (targetCanvas.id === 'canvas-b') {
+                            this.setActiveTable(this.tableB);
+                        }
+                    }
+
+                    if (this.layerControlVisible) {
+                        // If layer panel is open, interaction goes to panel, not field/nodes
+                        return;
+                    }
+
+                    this.mouse.down = true;
+                    // Update mouse UV for the *active* table's shader
+                    if (this.activeTable) {
+                        const mouseUV = getMouseUV(e, document.getElementById(this.activeTable.canvasId));
+                        this.activeTable.fieldMesh.material.uniforms.mouse.value.set(mouseUV.x, mouseUV.y);
+                        
+                        // Check for node toggle on the active table
+                        const nearestNode = this.activeTable.findNearestNode(mouseUV);
+                        if (nearestNode !== -1) {
+                            this.activeTable.toggleNode(nearestNode); // This now lives in MorphicTable
+                            this.updateNodeIndicators(); // Reflect node state change
+                            this.updateLayerControlUI(); // Update active/selected state in layer panel
+                            this.updateStateInURL();
+                        } else {
+                            // If no node clicked, sculpt the active table's field
+                            this.activeTable.updateFieldParameters(mouseUV); // This now lives in MorphicTable
+                            this.updateStateInURL();
+                        }
+                    }
+                    
+                    // Long press timer remains for BPM (as it's global)
+                    this.longPressTimer = setTimeout(() => {
+                        this.showBPMControl();
+                    }, 800);
+                };
+                
+                const handleMove = (e) => {
+                    // Always update mouse uniform for visual feedback on active table
+                    if (this.activeTable) {
+                        const mouseUV = getMouseUV(e, document.getElementById(this.activeTable.canvasId));
+                        this.activeTable.fieldMesh.material.uniforms.mouse.value.set(mouseUV.x, mouseUV.y);
+                    }
+                    
+                    if (!this.mouse.down) return;
+                    
+                    if (this.activeTable && !this.bpmControlVisible && !this.layerControlVisible) {
+                        const mouseUV = getMouseUV(e, document.getElementById(this.activeTable.canvasId));
+                        this.activeTable.updateFieldParameters(mouseUV); // This now lives in MorphicTable
+                        this.updateStateInURL();
+                    }
+                };
+                
+                const handleEnd = () => {
+                    this.mouse.down = false;
+                    if (this.longPressTimer) {
+                        clearTimeout(this.longPressTimer);
+                        this.longPressTimer = null;
+                    }
+                };
+                
+                // Attach events to the app container to capture events over both canvases
+                appContainer.addEventListener('mousedown', handleStart);
+                appContainer.addEventListener('mousemove', handleMove);
+                appContainer.addEventListener('mouseup', handleEnd);
+                appContainer.addEventListener('mouseleave', handleEnd); 
+                
+                // Touch events
+                appContainer.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.touchCount = e.touches.length;
+                    
+                    if (e.touches.length === 2) { // Two-finger tap for BPM
+                        this.showBPMControl();
+                        if (this.longPressTimer) clearTimeout(this.longPressTimer);
+                        return;
+                    }
+                    if (e.touches.length === 3) { // Three-finger tap for Layer Control
+                        this.toggleLayerControl();
+                        if (this.longPressTimer) clearTimeout(this.longPressTimer);
+                        return;
+                    }
+                    
+                    if (e.touches.length === 1) {
+                        handleStart(e.touches[0]);
+                    }
+                }, { passive: false });
+
+                appContainer.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 1) {
+                        handleMove(e.touches[0]);
+                    }
+                }, { passive: false });
+
+                appContainer.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 0) {
+                        handleEnd();
+                    }
+                }, { passive: false });
+
+                // Keyboard event for desktop users
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'l' || e.key === 'L') { // 'L' key for Layer Control
+                        this.toggleLayerControl();
+                    } else if (e.key === 'q' || e.key === 'Q') { // Switch to Table A
+                        this.setActiveTable(this.tableA);
+                    } else if (e.key === 'p' || e.key === 'P') { // Switch to Table B
+                        this.setActiveTable(this.tableB);
+                    }
+                });
+                
+                // --- UI Hiding Logic ---
+                // BPM Control is now fixed in mixer, no auto-hide needed
+                let hideLayerControlTimer;
+                const scheduleHideLayerControl = () => {
+                    clearTimeout(hideLayerControlTimer);
+                    hideLayerControlTimer = setTimeout(() => {
+                        layerControlPanel.classList.remove('visible');
+                        this.layerControlVisible = false;
+                    }, 3000);
+                };
+                this.scheduleHideLayerControl = scheduleHideLayerControl;
+                
+                document.addEventListener('click', (e) => {
+                    if (this.layerControlVisible && !e.target.closest('#layer-control-panel')) {
+                        scheduleHideLayerControl();
+                    }
+                });
+                layerControlPanel.addEventListener('mouseenter', () => clearTimeout(hideLayerControlTimer));
+                layerControlPanel.addEventListener('mouseleave', () => scheduleHideLayerControl());
+
+                // Dynamically create layer icons (these are global but affect active table)
+                // Assuming both tables have same number of layers, use tableA.numLayers
+                for (let i = 0; i < this.tableA.numLayers; i++) { 
+                    const iconChar = this.layerIcons[i]; // Use this.layerIcons from DJ class
+                    const iconDiv = document.createElement('div');
+                    iconDiv.className = 'layer-icon';
+                    iconDiv.textContent = iconChar;
+                    iconDiv.dataset.layerIndex = i;
+                    iconDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.activeTable.selectLayer(i); // Delegate to active table
+                        this.updateLayerControlUI(); // Update global UI
+                        this.updateNodeIndicators(); // Also update node indicators when layer changes
+                        this.scheduleHideLayerControl();
+                        this.updateStateInURL();
+                    });
+                    layerControlPanel.appendChild(iconDiv);
+                }
+            }
+
+            setActiveTable(table) {
+                if (this.activeTable === table) return; // Already active
+
+                document.getElementById(this.tableA.containerId).classList.remove('active-table');
+                document.getElementById(this.tableB.containerId).classList.remove('active-table');
+                
+                this.activeTable = table;
+                document.getElementById(this.activeTable.containerId).classList.add('active-table');
+                
+                // Update visuals to reflect the newly active table's parameters
+                this.activeTable.updateActiveLayerVisuals();
+                this.activeTable.updateShaderNodes(); // Refresh node positions and states
+                this.updateNodeIndicators(); // Refresh global DOM node indicators
+                this.updateLayerControlUI(); // Refresh layer icons based on new active table
+                this.updateStateInURL();
+            }
+
+            setupNodeIndicators() {
+                // Node indicators are global DOM elements, but their positions are taken from activeTable's nodes
+                this.nodeIndicators = [];
+                for (let i = 0; i < 8; i++) {
+                    const indicator = document.createElement('div');
+                    indicator.className = 'node-indicator';
+                    document.body.appendChild(indicator);
+                    this.nodeIndicators.push(indicator);
+                }
+            }
+
+            // Updates global DOM node indicators based on active table's state
+            updateNodeIndicators() {
+                if (!this.activeTable) return;
+                const activeLayerNodeStates = this.activeTable.layers[this.activeTable.activeLayerIndex].nodeStates;
+                const activeCanvasRect = document.getElementById(this.activeTable.canvasId).getBoundingClientRect();
+
+                this.nodeIndicators.forEach((indicator, i) => {
+                    const node = this.activeTable.nodes[i];
+                    
+                    // Convert UV (0-1) relative to active canvas to absolute screen pixels
+                    const screenX = activeCanvasRect.left + node.x * activeCanvasRect.width;
+                    const screenY = activeCanvasRect.top + (1 - node.y) * activeCanvasRect.height;
+                    
+                    indicator.style.left = (screenX - 4) + 'px';
+                    indicator.style.top = (screenY - 4) + 'px';
+                    
+                    indicator.className = `node-indicator ${activeLayerNodeStates[i] ? 'active' : 'inactive'}`;
+                    if (i === this.currentStep) { // Global sequencer step
+                        indicator.classList.add('playing');
+                    }
+                });
+            }
+            
+            showBPMControl() {
+                // BPM control is always visible in the mixer panel, this function is mostly for consistency.
+                // It might trigger a pulse animation or highlight if we want.
+                // For now, it just ensures the display is correct.
+                document.getElementById('bpm-display').textContent = this.bpm;
+            }
+
+            toggleLayerControl() {
+                const panel = document.getElementById('layer-control-panel');
+                this.layerControlVisible = !this.layerControlVisible;
+                if (this.layerControlVisible) {
+                    panel.classList.add('visible');
+                    this.updateLayerControlUI();
+                    this.scheduleHideLayerControl();
+                } else {
+                    panel.classList.remove('visible');
+                }
+            }
+
+            updateLayerControlUI() {
+                const layerIcons = document.querySelectorAll('#layer-control-panel .layer-icon');
+                if (!this.activeTable) return; // Guard against no active table
+
+                layerIcons.forEach((icon, i) => {
+                    const layer = this.activeTable.layers[i];
+                    icon.classList.toggle('active', layer.isActive);
+                    icon.classList.toggle('selected', i === this.activeTable.activeLayerIndex);
+                });
+            }
+
+            // ==================== State Serialization ====================
+            updateStateInURL() {
+                // Ensure all UI elements are referenced before trying to read their values
+                // These are now guaranteed to exist because setupMixerInteraction is called first.
+                const state = {
+                    bpm: this.bpm,
+                    crossfade: parseFloat(this.crossfader.value),
+                    fuzzA: parseFloat(this.fuzzASlider.value),
+                    fuzzB: parseFloat(this.fuzzBSlider.value),
+                    tableA: {
+                        layers: this.tableA.layers,
+                        activeLayerIndex: this.tableA.activeLayerIndex,
+                        isSamplerPlaying: this.tableA.isSamplerPlaying // Track sampler state
+                    },
+                    tableB: {
+                        layers: this.tableB.layers,
+                        activeLayerIndex: this.tableB.activeLayerIndex,
+                        isSamplerPlaying: this.tableB.isSamplerPlaying
+                    }
+                    // Note: samplerBuffer data is NOT stored in URL due to size.
+                    // If you need persistent samples, you'd need a server or IndexedDB.
+                };
+                try {
+                    const encoded = btoa(JSON.stringify(state));
+                    window.location.hash = encoded;
+                } catch (error) {
+                    console.warn('Failed to update URL state (too large?), error:', error);
+                }
+            }
+            
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        
+                        if (typeof state.bpm === 'number') {
+                            const bpmValues = [90, 120, 140, 160, 180, 200, 60];
+                            if (bpmValues.includes(state.bpm)) this.bpm = state.bpm;
+                        }
+                        if (typeof state.crossfade === 'number') {
+                            this.crossfader.value = state.crossfade;
+                            this.updateCrossfade();
+                        }
+                        if (typeof state.fuzzA === 'number') this.fuzzASlider.value = state.fuzzA;
+                        if (typeof state.fuzzB === 'number') this.fuzzBSlider.value = state.fuzzB;
+                        
+                        // Load table-specific states (this will also initialize layers if necessary)
+                        if (state.tableA) this.loadTableState(this.tableA, state.tableA);
+                        else this.tableA.initializeLayers(); // Ensure table A has default layers
+                        
+                        if (state.tableB) this.loadTableState(this.tableB, state.tableB);
+                        else this.tableB.initializeLayers(); // Ensure table B has default layers
+
+                        // Re-set initial fuzz amounts after tables are loaded and audio nodes created
+                        // These are called here to ensure they are applied from URL hash
+                        if (this.audioContext && this.tableA.fuzzNode && this.tableB.fuzzNode) {
+                            this.tableA.setFuzzAmount(parseFloat(this.fuzzASlider.value));
+                            this.tableB.setFuzzAmount(parseFloat(this.fuzzBSlider.value));
+                        }
+
+                        // Set active table after loading
+                        if (typeof state.activeLayerIndex === 'number' && state.activeLayerIndex === 1) { // Assuming 0 for A, 1 for B
+                            this.setActiveTable(this.tableB);
+                        } else {
+                            this.setActiveTable(this.tableA); // Default to tableA or if activeLayerIndex was 0
+                        }
+
+                        // Re-play samplers if they were playing (sampler data itself isn't saved)
+                        // Trigger a click to activate the play/stop logic and button styling
+                        if (state.tableA?.isSamplerPlaying) {
+                            if (!this.tableA.isSamplerPlaying) this.playAButton.click(); // Only click if not already playing
+                            else this.playAButton.classList.add('active'); // Just set class if already playing
+                        }
+                        if (state.tableB?.isSamplerPlaying) {
+                            if (!this.tableB.isSamplerPlaying) this.playBButton.click();
+                            else this.playBButton.classList.add('active');
+                        }
+
+                    }
+                } catch (error) {
+                    console.warn('Failed to load state from URL:', error);
+                    // Fallback to fresh state if loading fails completely
+                    this.tableA.initializeLayers();
+                    this.tableB.initializeLayers();
+                    this.bpm = 120;
+                    this.secondsPerStep = (60/this.bpm)/2;
+                    this.crossfader.value = 0.5;
+                    this.updateCrossfade();
+                    this.fuzzASlider.value = 0;
+                    this.fuzzBSlider.value = 0;
+                    this.tableA.setFuzzAmount(0);
+                    this.tableB.setFuzzAmount(0);
+                    this.setActiveTable(this.tableA);
+                    this.playAButton.classList.remove('active');
+                    this.playBButton.classList.remove('active');
+                }
+                // Ensure all UIs reflect loaded/default state
+                document.getElementById('bpm-display').textContent = this.bpm;
+                this.updateActiveTableState(); // Final sync after all loads
+            }
+
+            loadTableState(table, tableState) {
+                if (tableState.layers && Array.isArray(tableState.layers) && tableState.layers.length === table.numLayers) {
+                    table.layers = tableState.layers.map(layerData => ({
+                        id: layerData.id !== undefined ? layerData.id : 0, // Ensure ID is present
+                        nodeStates: layerData.nodeStates || Array(8).fill(false),
+                        fieldIntensity: layerData.fieldIntensity !== undefined ? layerData.fieldIntensity : 0.7,
+                        fieldFlow: layerData.fieldFlow !== undefined ? layerData.fieldFlow : 0.8,
+                        morphicSeed: layerData.morphicSeed !== undefined ? layerData.morphicSeed : Math.random() * 1000,
+                        isActive: layerData.isActive !== undefined ? layerData.isActive : false
+                    }));
+                } else {
+                    table.initializeLayers(); // Fallback to default for this table
+                    console.warn(`Invalid layers data for ${table.canvasId}, reverting to default.`);
+                }
+                if (typeof tableState.activeLayerIndex === 'number' && tableState.activeLayerIndex >= 0 && tableState.activeLayerIndex < table.numLayers) {
+                    table.activeLayerIndex = tableState.activeLayerIndex;
+                } else {
+                    table.activeLayerIndex = 0; // Default active layer
+                }
+            }
+
+            // ==================== Animation Loop ====================
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.tableA.render();
+                this.tableB.render();
+            }
+        }
+        
+        // Initialize the DJ portal
+        window.addEventListener('load', () => {
+            new MorphicDJ();
+        });
+    </script>
+</body>
+</html>

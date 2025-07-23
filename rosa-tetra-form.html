@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resonance Lattice Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: grab;
+        }
+
+        #canvas:active {
+            cursor: grabbing;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dimension-label {
+            font-size: 14px;
+            margin: 5px 0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .connection { background: rgba(255, 87, 51, 0.3); border-left: 3px solid #ff5733; }
+        .craft { background: rgba(76, 175, 80, 0.3); border-left: 3px solid #4caf50; }
+        .meaning { background: rgba(33, 150, 243, 0.3); border-left: 3px solid #2196f3; }
+        .body { background: rgba(156, 39, 176, 0.3); border-left: 3px solid #9c27b0; }
+
+        .dimension-label:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
+        }
+
+        .timeline {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .timeline-node {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .timeline-node:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        .insight-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 400px;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .insight-panel.active {
+            opacity: 1;
+        }
+
+        .ripple-indicator {
+            position: absolute;
+            border: 2px solid;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: ripple 2s ease-out forwards;
+        }
+
+        @keyframes ripple {
+            0% {
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                width: 200px;
+                height: 200px;
+                opacity: 0;
+            }
+        }
+
+        .save-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(45deg, #ff5733, #4caf50);
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .save-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .haptic-feedback {
+            animation: pulse 0.3s ease;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+        
+        <div class="ui-overlay">
+            <h3>Resonance Lattice</h3>
+            <div class="dimension-label connection" data-dimension="0">Connection - Whose touch moves you?</div>
+            <div class="dimension-label craft" data-dimension="1">Craft - What work sings through your hands?</div>
+            <div class="dimension-label meaning" data-dimension="2">Meaning - Where does the world whisper?</div>
+            <div class="dimension-label body" data-dimension="3">Body - When did you last feel at home in your skin?</div>
+        </div>
+
+        <div class="timeline" id="timeline">
+            <h4>Memory Timeline</h4>
+            <div id="timeline-nodes"></div>
+        </div>
+
+        <div class="insight-panel" id="insight-panel">
+            <p id="insight-text">Move the lattice to begin your resonance journey...</p>
+        </div>
+
+        <button class="save-button" onclick="saveState()">Save Resonance</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global variables
+        let scene, camera, renderer, raycaster, mouse;
+        let latticeNodes = [];
+        let latticeConnections = [];
+        let oscillators = [];
+        let savedStates = [];
+        let currentState = {
+            connection: 0.5,
+            craft: 0.5,
+            meaning: 0.5,
+            body: 0.5
+        };
+        let draggedNode = null;
+        let baseTime = 0;
+
+        // Initialize Three.js scene
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x1a1a2e, 50, 200);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 30);
+
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('canvas'),
+                antialias: true,
+                alpha: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Create lattice structure
+            createLattice();
+            
+            // Initialize oscillators
+            initializeOscillators();
+
+            // Add event listeners
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('dblclick', onDoubleClick);
+
+            // Start animation loop
+            animate();
+        }
+
+        function createLattice() {
+            const colors = [
+                0xff5733, // Connection - Terra cotta
+                0x4caf50, // Craft - Sage
+                0x2196f3, // Meaning - Deep aqua
+                0x9c27b0  // Body - Amethyst
+            ];
+
+            // Create nodes for each dimension
+            for (let i = 0; i < 4; i++) {
+                const geometry = new THREE.SphereGeometry(1, 32, 32);
+                const material = new THREE.MeshPhongMaterial({ 
+                    color: colors[i],
+                    emissive: colors[i],
+                    emissiveIntensity: 0.3,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const node = new THREE.Mesh(geometry, material);
+                
+                // Position nodes in a square formation
+                const angle = (i / 4) * Math.PI * 2;
+                node.position.x = Math.cos(angle) * 8;
+                node.position.y = Math.sin(angle) * 8;
+                node.userData = { 
+                    dimension: i,
+                    baseIntensity: 0.5,
+                    currentIntensity: 0.5
+                };
+                
+                latticeNodes.push(node);
+                scene.add(node);
+
+                // Add glow effect
+                const glowGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: colors[i],
+                    transparent: true,
+                    opacity: 0.2
+                });
+                const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                node.add(glow);
+            }
+
+            // Create connections between nodes
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 0], // Square
+                [0, 2], [1, 3] // Diagonals
+            ];
+
+            connections.forEach(([from, to]) => {
+                const points = [];
+                points.push(latticeNodes[from].position);
+                points.push(latticeNodes[to].position);
+
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({ 
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const line = new THREE.Line(geometry, material);
+                scene.add(line);
+                latticeConnections.push({ line, from, to });
+            });
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+        }
+
+        function initializeOscillators() {
+            for (let i = 0; i < 4; i++) {
+                oscillators.push({
+                    amplitude: 0.5,
+                    naturalFreq: 0.2 + Math.random() * 0.1,
+                    damping: 0.05,
+                    connections: [0, 1, 2, 3].filter(j => j !== i)
+                });
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            if (draggedNode) {
+                const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
+                vector.unproject(camera);
+                const dir = vector.sub(camera.position).normalize();
+                const distance = -camera.position.z / dir.z;
+                const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+                draggedNode.position.x = pos.x;
+                draggedNode.position.y = pos.y;
+
+                // Update oscillator based on position
+                const distanceFromCenter = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
+                const newAmplitude = Math.max(0, Math.min(1, distanceFromCenter / 10));
+                
+                const dimension = draggedNode.userData.dimension;
+                oscillators[dimension].amplitude = newAmplitude;
+                currentState[['connection', 'craft', 'meaning', 'body'][dimension]] = newAmplitude;
+
+                // Propagate changes
+                propagateResonance(dimension, newAmplitude);
+
+                // Update visual feedback
+                updateLatticeVisuals();
+            }
+        }
+
+        function onMouseDown(event) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(latticeNodes);
+
+            if (intersects.length > 0) {
+                draggedNode = intersects[0].object;
+                document.getElementById('canvas').style.cursor = 'grabbing';
+                
+                // Haptic feedback simulation
+                document.body.classList.add('haptic-feedback');
+                setTimeout(() => document.body.classList.remove('haptic-feedback'), 300);
+            }
+        }
+
+        function onMouseUp() {
+            draggedNode = null;
+            document.getElementById('canvas').style.cursor = 'grab';
+        }
+
+        function onDoubleClick() {
+            saveState();
+        }
+
+        function propagateResonance(source, amplitude) {
+            const influence = (amplitude - 0.5) * 0.3;
+            
+            oscillators.forEach((osc, index) => {
+                if (index !== source && oscillators[source].connections.includes(index)) {
+                    const newAmplitude = osc.amplitude + influence * (1 - osc.damping);
+                    osc.amplitude = Math.max(0, Math.min(1, newAmplitude));
+                }
+            });
+
+            // Create ripple effect
+            createRipple(latticeNodes[source].position, latticeNodes[source].material.color);
+        }
+
+        function createRipple(position, color) {
+            const ripple = document.createElement('div');
+            ripple.className = 'ripple-indicator';
+            ripple.style.left = (position.x * 50 + window.innerWidth / 2) + 'px';
+            ripple.style.top = (-position.y * 50 + window.innerHeight / 2) + 'px';
+            ripple.style.borderColor = '#' + color.getHexString();
+            document.body.appendChild(ripple);
+            
+            setTimeout(() => ripple.remove(), 2000);
+        }
+
+        function updateLatticeVisuals() {
+            latticeNodes.forEach((node, index) => {
+                const intensity = oscillators[index].amplitude;
+                node.scale.setScalar(1 + intensity * 0.5);
+                node.material.emissiveIntensity = 0.3 + intensity * 0.7;
+                
+                // Update current state
+                currentState[['connection', 'craft', 'meaning', 'body'][index]] = intensity;
+            });
+
+            // Update connection lines
+            latticeConnections.forEach(({ line, from, to }) => {
+                const intensity = (oscillators[from].amplitude + oscillators[to].amplitude) / 2;
+                line.material.opacity = 0.3 + intensity * 0.4;
+            });
+        }
+
+        function saveState() {
+            const state = {
+                connection: currentState.connection,
+                craft: currentState.craft,
+                meaning: currentState.meaning,
+                body: currentState.body,
+                timestamp: Date.now()
+            };
+            
+            savedStates.push(state);
+            updateTimeline();
+            
+            // Show insight
+            const insightPanel = document.getElementById('insight-panel');
+            const insightText = document.getElementById('insight-text');
+            
+            const insights = [
+                "A new resonance pattern emerges...",
+                "The lattice remembers this configuration...",
+                "Connection and meaning dance together...",
+                "Craft finds its rhythm in the body..."
+            ];
+            
+            insightText.textContent = insights[Math.floor(Math.random() * insights.length)];
+            insightPanel.classList.add('active');
+            setTimeout(() => insightPanel.classList.remove('active'), 3000);
+        }
+
+        function updateTimeline() {
+            const timeline = document.getElementById('timeline-nodes');
+            timeline.innerHTML = '';
+            
+            savedStates.forEach((state, index) => {
+                const node = document.createElement('div');
+                node.className = 'timeline-node';
+                node.style.background = `linear-gradient(45deg, 
+                    rgba(255, 87, 51, ${state.connection}), 
+                    rgba(76, 175, 80, ${state.craft}), 
+                    rgba(33, 150, 243, ${state.meaning}), 
+                    rgba(156, 39, 176, ${state.body}))`;
+                
+                node.addEventListener('click', () => loadState(index));
+                timeline.appendChild(node);
+            });
+        }
+
+        function loadState(index) {
+            const state = savedStates[index];
+            oscillators[0].amplitude = state.connection;
+            oscillators[1].amplitude = state.craft;
+            oscillators[2].amplitude = state.meaning;
+            oscillators[3].amplitude = state.body;
+            
+            updateLatticeVisuals();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            baseTime += 0.01;
+            
+            // Apply base oscillation
+            oscillators.forEach((osc, index) => {
+                const baseOscillation = 0.5 + Math.sin(baseTime * osc.naturalFreq) * 0.05;
+                if (!draggedNode || draggedNode.userData.dimension !== index) {
+                    osc.amplitude = osc.amplitude * 0.99 + baseOscillation * 0.01;
+                }
+            });
+            
+            updateLatticeVisuals();
+            
+            // Subtle rotation
+            latticeNodes.forEach((node, index) => {
+                node.rotation.y += 0.005 * (index + 1);
+            });
+            
+            renderer.render(scene, camera);
+        }
+
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html>

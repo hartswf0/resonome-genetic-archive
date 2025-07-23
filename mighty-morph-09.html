@@ -1,0 +1,1936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Morphic Resonance Deck</title>
+    <style>
+        /* General Reset and Body Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* Prevent text selection by default */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden; /* Prevent body scroll */
+            cursor: none; /* Hide default cursor to emphasize custom interaction */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh, zoom */
+            font-family: 'Courier New', monospace; /* Classic monospace font */
+            color: #E0FFFF; /* Light cyan text color */
+        }
+
+        /* Main Deck Container */
+        #portal-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex; /* Arrange canvases side-by-side */
+        }
+        
+        .canvas-container {
+            flex: 1; /* Each container takes equal width */
+            height: 100%;
+            position: relative; /* For absolute positioning of inner canvas */
+        }
+
+        .morphic-canvas { /* Shared style for both canvases */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.5s ease; /* For fading when UI is shown */
+        }
+        
+        /* Loading Indicator */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(224, 255, 255, 0.5); /* Semi-transparent cyan */
+            font-size: 1.2em;
+            z-index: 100;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Unified Master Control Panel */
+        #master-control-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px; /* Spacing between control groups */
+            z-index: 50;
+            opacity: 1; /* Initially visible */
+            transition: opacity 0.4s ease, transform 0.4s ease; /* Smooth show/hide and scale */
+            backdrop-filter: blur(5px);
+            background: rgba(0, 0, 0, 0.4);
+            padding: min(5vw, 25px); /* Responsive padding: 5vw or max 25px */
+            border-radius: 15px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            pointer-events: auto; /* Active when visible */
+            
+            /* Mobile Responsiveness for Panel */
+            max-width: 95vw; /* Limit width on small screens */
+            max-height: 95vh; /* Limit height on small screens */
+            overflow-y: auto; /* Allow scrolling if content overflows vertically */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+
+            /* Morphic Glow */
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.2);
+            animation: panel-glow 3s infinite alternate ease-in-out;
+        }
+
+        #master-control-panel.hidden {
+            opacity: 0;
+            pointer-events: none; /* Make non-interactive when hidden */
+            transform: translate(-50%, -50%) scale(0.95); /* Slight scale down on hide */
+        }
+
+        @keyframes panel-glow {
+            from { box-shadow: 0 0 15px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.2); }
+            to { box-shadow: 0 0 25px rgba(0, 255, 255, 0.8), inset 0 0 15px rgba(0, 255, 255, 0.4); }
+        }
+        
+        /* Control Group Layout */
+        .control-group {
+            display: flex;
+            flex-direction: column; /* Stack label and control */
+            align-items: center;
+            gap: 8px;
+            width: 100%; /* Take full width of panel */
+        }
+
+        .control-group label {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(224, 255, 255, 0.8);
+        }
+
+        /* BPM Display and Buttons - Make them cell-like */
+        .bpm-display {
+            font-size: 2.2em; /* Large BPM number */
+            font-weight: bold;
+            color: #00FFFF;
+            padding: 10px 15px; /* More padding */
+            min-width: 80px; /* Ensure consistent width */
+            text-align: center;
+            background: rgba(224, 255, 255, 0.1); /* Cell background */
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border */
+            border-radius: 8px; /* Consistent border radius */
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6); /* Inner shadow for depth */
+        }
+        
+        .bpm-btns {
+            display: flex;
+            gap: 12px; /* Spacing between BPM buttons */
+        }
+
+        .bpm-btn {
+            width: clamp(45px, 12vw, 55px); /* Responsive sizing, matches step cells */
+            height: clamp(45px, 12vw, 55px); /* Responsive sizing, matches step cells */
+            background: rgba(224, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border */
+            color: #E0FFFF;
+            font-size: 2.5em; /* Larger symbols */
+            line-height: 1; /* Center symbol */
+            cursor: pointer;
+            border-radius: 8px; /* Consistent with cells */
+            transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+            display: flex; /* For centering unicode symbols */
+            align-items: center;
+            justify-content: center;
+        }
+        .bpm-btn:hover {
+            background: rgba(224, 255, 255, 0.2);
+            border-color: #E0FFFF;
+        }
+        .bpm-btn:active {
+            background: #E0FFFF;
+            color: #000;
+            box-shadow: 0 0 10px #E0FFFF;
+            transform: scale(0.98); /* Slight press effect */
+        }
+
+        /* Slider Styles (Chunkier, Dot Grid Matrix-like) */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 200px; /* Wider slider */
+            max-width: 100%; /* Ensure it fits within parent on smaller screens */
+            height: 24px; /* Much thicker slider track */
+            background: rgba(0, 255, 255, 0.15); /* Themed background */
+            border-radius: 8px; /* Consistent with cells */
+            outline: none;
+            cursor: grab;
+            margin: 0;
+            padding: 0;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6); /* Inner shadow for depth */
+            border: 2px solid rgba(0, 255, 255, 0.3); /* Themed border for track */
+            transition: background 0.1s ease, border-color 0.1s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px; /* Cell-like thumb */
+            height: 28px; /* Cell-like thumb */
+            border-radius: 4px; /* Slightly rounded square for pixel-art feel */
+            background: #00FFFF; /* Cyan thumb */
+            cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; /* Strong glow */
+            border: 2px solid #00FFFF; /* Matching border */
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+            margin-top: -6px; /* Adjust to center vertically on thicker track */
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            cursor: grabbing;
+            background: #E0FFFF; /* White on active grab */
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1); /* Slight pulse on grab */
+        }
+
+        /* Firefox specific slider styles */
+        input[type="range"]::-moz-range-track { 
+            height: 24px;
+            background: rgba(0, 255, 255, 0.15);
+            border-radius: 8px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px; /* Slightly rounded square */
+            background: #00FFFF;
+            cursor: grab;
+            box-shadow: 0 0 10px #00FFFF;
+            border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        input[type="range"]:active::-moz-range-thumb {
+            cursor: grabbing;
+            background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5);
+            transform: scale(1.1);
+        }
+        
+        /* Color Palette for Sequencer Steps - Make swatches cell-like */
+        #color-palette {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on small screens */
+            gap: 8px;
+            justify-content: center;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(0,255,255,0.2); /* Themed border */
+            background: rgba(0,0,0,0.2);
+        }
+        .color-swatch {
+            width: 35px; /* Slightly larger for easier tap */
+            height: 35px; /* Slightly larger for easier tap */
+            border-radius: 8px; /* Consistent with other cells */
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.1s ease, transform 0.1s ease;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .color-swatch.selected {
+            border-color: #E0FFFF;
+            transform: scale(1.1); 
+            box-shadow: 0 0 10px #E0FFFF;
+        }
+
+        /* Crossfader (bottom center) - Always Visible */
+        #crossfader-container {
+            position: fixed;
+            bottom: min(3vh, 30px); /* Responsive position */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60; /* Above canvases, below main panel */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+            /* No hidden class, always visible */
+        }
+
+        #crossfader-slider {
+            width: min(70vw, 400px); /* Responsive width */
+        }
+        #crossfader-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            font-size: 0.75em;
+            color: rgba(224, 255, 255, 0.7);
+            user-select: text; /* Allow selection for labels */
+        }
+
+        /* Vertical Sliders (Side controls) - Always Visible */
+        .vertical-slider-container {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 60px; /* Wider container for better touch */
+            height: min(80vh, 300px); /* Responsive height */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 60;
+            background: rgba(0,0,0,0.4);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 10px 0;
+            /* No hidden class, always visible */
+        }
+
+        #fuzz-slider-container { left: min(2vw, 20px); } /* Responsive position */
+        #influence-slider-container { right: min(2vw, 20px); } /* Responsive position */
+
+        .vertical-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: min(70vh, 250px); /* Responsive length */
+            height: 24px; /* Chunkier track */
+            background: rgba(0, 255, 255, 0.15);
+            border-radius: 8px;
+            outline: none;
+            transform: rotate(-90deg); /* Vertical orientation */
+            transform-origin: center; /* Rotate around center */
+            cursor: grab;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.6);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            transition: background 0.1s ease, border-color 0.1s ease;
+        }
+        /* Thumb styles for vertical sliders, consistent with horizontal */
+        .vertical-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 28px; height: 28px; border-radius: 4px;
+            background: #00FFFF; cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        .vertical-slider:active::-webkit-slider-thumb {
+            cursor: grabbing; background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5); transform: scale(1.1);
+        }
+        .vertical-slider::-moz-range-thumb {
+            width: 28px; height: 28px; border-radius: 4px;
+            background: #00FFFF; cursor: grab;
+            box-shadow: 0 0 10px #00FFFF; border: 2px solid #00FFFF;
+            transition: background 0.1s ease, box-shadow 0.1s ease, transform 0.1s ease;
+        }
+        .vertical-slider:active::-moz-range-thumb {
+            cursor: grabbing; background: #E0FFFF;
+            box-shadow: 0 0 15px #E0FFFF, 0 0 30px rgba(224,255,255,0.5); transform: scale(1.1);
+        }
+
+        .vertical-label {
+            color: #E0FFFF;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: absolute;
+            bottom: -20px; 
+            white-space: nowrap; /* Prevent wrapping */
+            user-select: text; /* Allow selection for labels */
+        }
+        #fuzz-label { color: #FF00FF; } /* Magenta for Fuzz */
+        #influence-label { color: #00FF00; } /* Green for Influence */
+
+        /* Play/Pause Button */
+        #play-pause-button {
+            position: fixed;
+            bottom: min(10vh, 100px); /* Position it above crossfader */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 55px; /* Consistent with other buttons */
+            height: 55px; /* Consistent with other buttons */
+            background: rgba(224, 255, 255, 0.1);
+            color: #E0FFFF;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 8px; /* Consistent with other buttons */
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 60; /* Above canvases, below main panel */
+            font-size: 2.5em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        #play-pause-button:hover { background: rgba(224, 255, 255, 0.2); border-color: #E0FFFF; }
+        #play-pause-button:active { background: #E0FFFF; color: #000; box-shadow: 0 0 10px #E0FFFF; transform: scale(0.98); }
+        #play-pause-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-50%) translateY(20px);
+        }
+
+
+        /* Start Button (initial screen) */
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+        }
+
+        #start-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+        #start-button.hidden { 
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.9); /* Subtle scale down on hide */
+        }
+
+        /* Info Text */
+        .info-text {
+            font-size: 0.75em;
+            text-align: center;
+            color: rgba(224, 255, 255, 0.6);
+            margin-top: 10px;
+            line-height: 1.4;
+            user-select: text; /* Allow selection for info text */
+        }
+
+        /* --- NEW SEQUENCER VISUALS FROM OLD CODE --- */
+        /* Hidden BPM Control */
+        #bpm-control {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(0,255,255,0.1) 0%, transparent 70%);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(0,255,255,0.8);
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            cursor: pointer;
+            z-index: 5;
+            user-select: none;
+            backdrop-filter: blur(2px);
+        }
+        
+        #bpm-control.visible {
+            opacity: 1;
+        }
+        
+        #bpm-control:hover {
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: rgba(0,255,255,0.6);
+        }
+
+        /* Hidden Layer Control Panel */
+        #layer-control-panel {
+            position: fixed;
+            top: 50%;
+            left: min(2vw, 20px); /* Position it near left vertical slider */
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            opacity: 0;
+            pointer-events: none; /* Initially non-interactive */
+            transition: opacity 0.3s ease;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+
+        #layer-control-panel.visible {
+            opacity: 1;
+            pointer-events: auto; /* Interactive when visible */
+        }
+
+        .layer-icon {
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.6);
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .layer-icon:hover {
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border-color: rgba(255,255,255,0.3);
+            color: rgba(255,255,255,0.8);
+        }
+
+        .layer-icon.active { /* Currently playing */
+            background: radial-gradient(circle, rgba(0,255,255,0.2) 0%, transparent 70%);
+            border-color: #0ff;
+            box-shadow: 0 0 10px #0ff;
+            color: #0ff;
+        }
+
+        .layer-icon.selected { /* Currently being edited */
+            border-color: #fff;
+            box-shadow: 0 0 15px #fff;
+            transform: scale(1.1);
+        }
+        
+        /* Node visualization helpers (DOM overlay for hit detection and basic visual feedback) */
+        .node-indicator {
+            position: fixed;
+            width: 8px; /* Small for just a 'dot' */
+            height: 8px;
+            border-radius: 50%;
+            pointer-events: none; /* Allows clicks to pass through */
+            transition: all 0.2s ease, transform 0.1s ease-out; /* Smooth transitions */
+            z-index: 3; /* Below canvas, but still visible */
+            opacity: 0.5;
+            background: rgba(255, 255, 255, 0.3); /* Default background, will be overridden */
+            box-shadow: 0 0 5px rgba(255,255,255,0.2);
+        }
+        
+        .node-indicator.active { /* Node is enabled in currently selected layer (visuals from JS) */
+            /* Background and box-shadow set by JS based on layer color */
+            transform: scale(1.5);
+            opacity: 0.9;
+            border: none; /* No border when active */
+        }
+        
+        .node-indicator.inactive {
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border: 1px solid rgba(255,255,255,0.1);
+            opacity: 0.4;
+        }
+        
+        .node-indicator.playing { /* Node is playing on current step (global) */
+            animation: node-pulse 0.2s ease-out; /* Use a distinct pulse animation */
+            background: radial-gradient(circle, #fff 0%, transparent 70%); /* White pulse for global step */
+            box-shadow: 0 0 20px #fff;
+        }
+        
+        @keyframes node-pulse {
+            0% { transform: scale(1.5); opacity: 1; }
+            50% { transform: scale(2.0); opacity: 0.8; }
+            100% { transform: scale(1.5); opacity: 1; }
+        }
+
+    </style>
+</head>
+<body>
+    <div id="portal-container">
+        <div id="deck-a-container" class="canvas-container">
+            <canvas id="canvas-a" class="morphic-canvas"></canvas>
+        </div>
+        <div id="deck-b-container" class="canvas-container">
+            <canvas id="canvas-b" class="morphic-canvas"></canvas>
+        </div>
+    </div>
+
+    <div class="loading" id="loading">Initializing Morphic Field...</div>
+    
+    <div id="master-control-panel" class="hidden">
+        <div class="control-group">
+            <label>BPM</label>
+            <div class="bpm-display" id="bpm-display-panel">120</div> <!-- Changed ID to avoid conflict -->
+            <div class="bpm-btns">
+                <button class="bpm-btn" id="bpm-down-btn">𓃑</button>
+                <button class="bpm-btn" id="bpm-up-btn">𓉗</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>DRONE VOLUME</label>
+            <input type="range" id="drone-volume-slider" min="0" max="1" step="0.01" value="0.7">
+        </div>
+
+        <div class="control-group">
+            <label>SEQUENCER VOLUME</label>
+            <input type="range" id="seq-volume-slider" min="0" max="1" step="0.01" value="0.7">
+        </div>
+        
+        <div class="control-group">
+            <label>MASTER OUTPUT VOLUME</label>
+            <input type="range" id="master-output-volume-slider" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>STEP COLOR</label>
+            <div id="color-palette"></div>
+        </div>
+
+        <div class="info-text">
+            Left Deck: Drone (Mouse X/Y sculpts).<br>
+            Right Deck: Sequencer (Click grid to toggle notes).<br><br>
+            SHIFT+CLICK / 2-Finger Tap: Toggle UI.
+        </div>
+    </div>
+
+    <div id="crossfader-container"> <!-- Always visible -->
+        <div id="crossfader-labels">
+            <span>DRONE</span>
+            <span>SEQUENCER</span>
+        </div>
+        <input type="range" id="crossfader-slider" min="0" max="1" step="0.01" value="0.5">
+    </div>
+
+    <div id="fuzz-slider-container" class="vertical-slider-container"> <!-- Always visible -->
+        <input type="range" id="fuzz-slider" class="vertical-slider" min="0" max="1" step="0.01" value="0">
+        <span id="fuzz-label" class="vertical-label">GLOBAL FUZZ</span>
+    </div>
+    <div id="influence-slider-container" class="vertical-slider-container"> <!-- Always visible -->
+        <input type="range" id="influence-slider" class="vertical-slider" min="0" max="1" step="0.01" value="1.0">
+        <span id="influence-label" class="vertical-label">INFLUENCE</span>
+    </div>
+
+    <button id="start-button">Enter Morphic Field</button>
+    <button id="play-pause-button" class="hidden">►</button>
+
+    <!-- NEW UI ELEMENTS for the single canvas concept -->
+    <div id="bpm-control">
+        <div id="bpm-display">120</div>
+    </div>
+
+    <div id="layer-control-panel"></div> <!-- Layer icons will be injected here -->
+    <!-- Node indicators will be appended to body by JS -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global portal application object
+        const portalApp = {};
+        window.portalApp = portalApp; // Make accessible globally for colorPalette, etc.
+
+        // Utility function to convert HSV to RGB for JS
+        function hsvToRgb(h, s, v) {
+            let r, g, b;
+            const i = Math.floor(h * 6);
+            const f = h * 6 - i;
+            const p = v * (1 - s);
+            const q = v * (1 - f * s);
+            const t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+        }
+        portalApp.hsvToRgb = hsvToRgb; // Expose for UI updates
+
+        // Utility for distortion curve
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50; 
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; i++) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        // Shaders for Drone Deck (canvas-a)
+        const droneConfig = {
+            type: 'drone',
+            vertexShader: `
+                uniform float time;
+                uniform float intensity;
+                uniform float flow;
+                uniform vec2 mouse;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    
+                    float dist = distance(uv, mouse);
+                    float wave = sin(dist * 15.0 - time * 2.0) * 0.1;
+                    float ripple = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                    
+                    float morphic = sin(pos.x * 4.0 + time * flow) * 
+                                   cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                    
+                    pos.z += wave + ripple + morphic;
+                    vDistortion = abs(wave + ripple + morphic);
+                    vPosition = pos;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float bloom;
+                uniform float harmonic;
+                uniform vec2 mouse;
+                uniform float audioLevel;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+                
+                void main() {
+                    vec2 center = vUv - 0.5;
+                    float dist = length(center);
+                    
+                    float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                    float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                    float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4); 
+                    brightness = max(0.1, brightness); // Ensure minimum brightness
+                    
+                    vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                    
+                    // Add visual cursor glow
+                    float cursorDist = distance(vUv, mouse);
+                    float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0); 
+                    color += vec3(0.1, 0.2, 0.3) * cursorGlow; 
+                    
+                    float alpha = 0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2;
+                    alpha *= smoothstep(1.5, 0.0, dist);
+                    alpha += cursorGlow * 0.5;
+                    
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            uniforms: {
+                time: { value: 0 },
+                intensity: { value: 0.5 },
+                flow: { value: 0.6 },
+                bloom: { value: 0.8 },
+                harmonic: { value: 0.4 }, // Currently not used in shader but available
+                mouse: { value: new THREE.Vector2(0.5, 0.5) },
+                audioLevel: { value: 0 }
+            }
+        };
+
+        // Shaders for Sequencer Deck (canvas-b)
+        const sequencerConfig = {
+            type: 'sequencer',
+            vertexShader: `
+                uniform float time;
+                uniform float intensity;
+                uniform float flow;
+                uniform float beatPulse; // For overall pulse from sequencer hits
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    
+                    float morphic = sin(pos.x * 2.0 + time * flow * 0.2) * 
+                                    cos(pos.y * 2.0 - time * flow * 0.1) * intensity * 0.5;
+                    
+                    pos.z += morphic + beatPulse * 0.5; // Apply beat pulse to distortion
+                    vDistortion = abs(morphic + beatPulse * 0.5);
+                    vPosition = pos;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float audioLevel;
+                uniform float beatPulse;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+                
+                void main() {
+                    vec2 center = vUv - 0.5;
+                    float dist = length(center);
+                    
+                    float hue = 0.55 + time * 0.02 + vDistortion * 2.0 + audioLevel * 0.3; // Cyan to Purple hues
+                    float sat = 0.7 + vDistortion * 0.3;
+                    float brightness = 0.15 + vDistortion * 1.5 + audioLevel * 0.8 + beatPulse * 0.5; // Stronger beat pulse
+
+                    // Pulsating grid lines
+                    vec2 grid = fract(vUv * 8.0); // 8x4 grid based on original sequencer
+                    float gridLineX = (1.0 - step(0.02, grid.x)); // Thin vertical lines
+                    float gridLineY = (1.0 - step(0.02, grid.y)); // Thin horizontal lines
+                    float gridIntensity = max(gridLineX, gridLineY) * (0.1 + beatPulse * 0.2); // Glow with pulse
+                    brightness += gridIntensity;
+
+                    vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                    
+                    float alpha = 0.9 - length(center) * 0.5 + vDistortion + audioLevel * 0.1;
+                    alpha = clamp(alpha, 0.0, 1.0); // Ensure alpha is valid
+                    
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            uniforms: {
+                time: { value: 0 },
+                intensity: { value: 0.7 },
+                flow: { value: 0.8 },
+                audioLevel: { value: 0 },
+                beatPulse: { value: 0.0 } // For visual pulse based on sequencer steps
+            }
+        };
+
+        // Main Class for a Morphic Deck (either Drone or Sequencer)
+        class MorphicDeck {
+            constructor(containerId, canvasId, config) {
+                this.container = document.getElementById(containerId);
+                this.canvas = document.getElementById(canvasId);
+                this.config = config; // { type: 'drone'/'sequencer', ... }
+
+                // Basic validation
+                if (!this.canvas) {
+                    console.error(`MorphicDeck: Canvas element not found with ID ${canvasId}.`);
+                    return; // Prevent further errors if canvas is missing
+                }
+                if (!this.container) {
+                    console.error(`MorphicDeck: Container element not found with ID ${containerId}.`);
+                    return; // Prevent further errors if container is missing
+                }
+
+
+                // Three.js
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000); // Aspect will be set on resize
+                this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+                this.mesh = null; // Main plane mesh
+                this.particles = null; // Optional particle system
+                this.time = 0;
+                this.mouse = new THREE.Vector2(0.5, 0.5); // Normalized mouse coords
+                this.audioLevel = 0; // Global audio level from common analyser
+                this.beatPulse = 0; // For sequencer visual pulse (decays over time)
+
+                // Audio (specific to this deck)
+                this.audioContext = null; // Global context will be passed
+                this.outputGain = null; // This deck's output gain, before global crossfader
+                this.mainVoice = []; // Array of oscillators/audio sources (for drone)
+                this.filters = []; // Array of filters (for drone)
+                
+                // Deck parameters (UI controlled)
+                // Use default values from config uniforms if they exist, otherwise sensible defaults
+                this.visualIntensity = config.uniforms.intensity ? config.uniforms.intensity.value : 0.5;
+                this.visualFlow = config.uniforms.flow ? config.uniforms.flow.value : 0.6;
+                this.visualBloom = config.uniforms.bloom ? config.uniforms.bloom.value : 0.8; // Only drone has bloom
+                
+                this.audioFrequency = 220; // For drone
+                this.audioResonance = 0.7; // For drone
+                this.deckVolume = 0.7; // From drone/seq volume sliders
+                
+                // Sequencer specific properties
+                if (this.config.type === 'sequencer') {
+                    this.bpm = 120; // Will be set by global BPM control
+                    this.layers = []; // { nodeStates: [], colorIndex: 0 } for visual steps
+                    this.sequencerVoices = []; // Audio voices for sequencer
+                    this.currentSequencerStep = 0;
+                    this.nextSequencerStepTime = 0;
+                    this.sequencerInterval = null;
+                    this.isPlaying = true; // Sequencer starts playing by default
+                    this.influence = 1.0; // Slider controlled, affects visual pulse and voice gain
+                    this.sequencerVisualNodes = []; // THREE.Mesh objects for sequencer steps
+                    this.activeColorIndex = 0; // Selected color for new/toggled steps
+                    // Define layer colors for sequencer
+                    this.layerColors = [
+                        [0.0, 1.0, 1.0],   // Red
+                        [0.16, 1.0, 1.0],  // Yellow-Green
+                        [0.33, 1.0, 1.0],  // Green
+                        [0.5, 1.0, 1.0],   // Cyan
+                        [0.66, 1.0, 1.0],  // Blue
+                        [0.83, 1.0, 1.0],  // Magenta
+                        [0.0, 0.0, 1.0],   // White
+                        [0.0, 0.0, 0.5]    // Grey
+                    ];
+                }
+
+                this.initVisuals();
+            }
+
+            initVisuals() {
+                if (!this.canvas) return; // Skip if canvas wasn't found in constructor
+
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.camera.position.z = 5;
+
+                const vertexShader = this.config.vertexShader;
+                const fragmentShader = this.config.fragmentShader;
+                // Clone uniforms to avoid shared references, and ensure all expected uniforms exist
+                const uniforms = {
+                    time: { value: 0 },
+                    mouse: { value: this.mouse },
+                    audioLevel: { value: 0 },
+                    intensity: { value: this.visualIntensity },
+                    flow: { value: this.visualFlow },
+                    beatPulse: { value: this.beatPulse },
+                    // Specific uniforms that might only be in one config but used in shared update logic
+                    // Add them with default values if they are missing
+                    bloom: { value: this.visualBloom }, 
+                    harmonic: { value: (this.config.uniforms && typeof this.config.uniforms.harmonic !== 'undefined') ? this.config.uniforms.harmonic.value : 0.4 } // Robust access
+                };
+
+                // Override defaults with config-specific values
+                // This ensures that values from this.config.uniforms take precedence
+                Object.assign(uniforms, this.config.uniforms);
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader, uniforms, transparent: true, blending: THREE.AdditiveBlending
+                });
+
+                const geometry = new THREE.PlaneGeometry(20, 20, 128, 128); // Generous size for the field
+                this.mesh = new THREE.Mesh(geometry, this.material);
+                this.scene.add(this.mesh);
+
+                this.createParticleField();
+
+                if (this.config.type === 'sequencer') {
+                    this.initSequencerLayers();
+                    this.createSequencerVisualNodes(); // Create Three.js meshes for sequencer steps
+                    // Sequencer interaction always active
+                    this.canvas.addEventListener('mousedown', (e) => this.handleCanvasClick(e));
+                    this.canvas.addEventListener('touchstart', (e) => { e.preventDefault(); this.handleCanvasClick(e.touches[0]); }, { passive: false });
+                }
+
+                // Initial resize
+                this.resize();
+            }
+
+            createParticleField() {
+                const particleCount = 500;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 20;
+                    positions[i + 1] = (Math.random() - 0.5) * 20;
+                    positions[i + 2] = (Math.random() - 0.5) * 10;
+                    colors[i] = 0.1 + Math.random() * 0.2;
+                    colors[i + 1] = 0.5 + Math.random() * 0.5;
+                    colors[i + 2] = 0.8 + Math.random() * 0.2;
+                }
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                const material = new THREE.PointsMaterial({ size: 0.05, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+
+            initAudio(audioContext, commonAnalyser) {
+                this.audioContext = audioContext;
+                this.outputGain = this.audioContext.createGain();
+                this.outputGain.gain.value = this.deckVolume; // Initial volume, will be multiplied by crossfader
+                this.outputGain.connect(commonAnalyser); // Connect to global analyser
+
+                if (this.config.type === 'drone') {
+                    this.createDroneAudio();
+                } else if (this.config.type === 'sequencer') {
+                    this.createSequencerAudio();
+                    this.startSequencerScheduler();
+                }
+            }
+
+            createDroneAudio() {
+                const baseFreq = this.audioFrequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                
+                frequencies.forEach((freq, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    const filter = this.audioContext.createBiquadFilter();
+                    
+                    osc.type = i === 0 ? 'sine' : ['sawtooth', 'triangle', 'square'][i % 3];
+                    osc.frequency.value = freq;
+                    gain.gain.value = 0.1 / frequencies.length;
+                    
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 800 + i * 400;
+                    filter.Q.value = this.audioResonance * 10;
+                    
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.outputGain);
+                    osc.start();
+                    this.mainVoice.push(osc);
+                    this.filters.push(filter);
+                });
+            }
+
+            createSequencerAudio() {
+                this.sequencerVoices = [];
+                for (let i = 0; i < 8; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = 110 + i * 55;
+                    gain.gain.value = 0; // Starts silent
+                    osc.connect(gain);
+                    gain.connect(this.outputGain); // Connect to deck's output gain
+                    osc.start();
+                    this.sequencerVoices.push({ osc, gain });
+                }
+            }
+
+            startSequencerScheduler() {
+                if (this.sequencerInterval) clearInterval(this.sequencerInterval);
+                this.nextSequencerStepTime = this.audioContext.currentTime;
+                this.sequencerInterval = setInterval(() => this.scheduler(), 25); // Faster interval for more precise scheduling
+            }
+
+            scheduler() {
+                if (!this.isPlaying) return;
+
+                const now = this.audioContext.currentTime;
+                const secondsPerStep = (60 / this.bpm) / 4; // 16th notes
+                const lookahead = 0.1; // Schedule 100ms in advance
+
+                while (this.nextSequencerStepTime < now + lookahead) {
+                    this.scheduleStep(this.currentSequencerStep, this.nextSequencerStepTime);
+                    this.nextSequencerStepTime += secondsPerStep;
+                    this.currentSequencerStep = (this.currentSequencerStep + 1) % 8;
+                }
+            }
+
+            scheduleStep(step, time) {
+                this.beatPulse = 1.0 * this.influence; // Trigger visual pulse
+
+                // Update current step for visual nodes
+                if (this.config.type === 'sequencer') {
+                    this.updateSequencerVisualNodes();
+                }
+
+                for (let y = 0; y < 4; y++) {
+                    const layerState = this.layers[y]; // y is now the layer index
+                    if (layerState.nodeStates[step]) { // Check if this step is active in this layer
+                        // Trigger audio for this step
+                        const voice = this.sequencerVoices[step];
+                        voice.gain.gain.cancelScheduledValues(time);
+                        voice.gain.gain.setValueAtTime(0, time);
+                        voice.gain.gain.linearRampToValueAtTime(0.5 * this.influence, time + 0.01);
+                        voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+                        // Trigger effects based on layer (y)
+                        switch(y) {
+                            case 0: this.triggerPulse(); break;
+                            case 1: this.bumpIntensity(); break;
+                            case 2: this.shiftBloom(); break;
+                            case 3: this.grainGlitch(); break;
+                        }
+                    }
+                }
+            }
+            
+            // UI Interaction for Sequencer (maps click to 3D grid)
+            handleCanvasClick(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+                // Calculate UV coordinates relative to the entire canvas, THEN map to right half
+                const mouseX_total = clientX / window.innerWidth;
+                const mouseY_total = 1.0 - clientY / window.innerHeight; // Invert Y for UV coordinates
+
+                // Only allow sequencer interaction on the right half of the screen (Deck B's area)
+                if (mouseX_total < 0.5) return; 
+
+                // Normalize mouseX for the sequencer grid (0.5 to 1.0 of screen width -> 0.0 to 1.0 for sequencer grid)
+                const clickX_sequencer = (mouseX_total - 0.5) * 2;
+                const clickY_sequencer = mouseY_total; // Y is already 0 to 1
+
+                // Determine which step (column) and layer (row) was clicked
+                const step = Math.floor(clickX_sequencer * 8); // 0-7
+                const layer = Math.floor(clickY_sequencer * 4); // 0-3
+
+                if (step >= 0 && step < 8 && layer >= 0 && layer < 4) {
+                    // Toggle node state
+                    const currentState = this.layers[layer].nodeStates[step];
+                    // The color for the node is determined by the selected layer's color
+                    if (currentState) { // If currently active, toggle OFF
+                        this.layers[layer].nodeStates[step] = false;
+                    } else { // If inactive, toggle ON
+                        this.layers[layer].nodeStates[step] = true;
+                    }
+                    this.updateSequencerVisualNodes(); // Update visual representation
+                    portalApp.updateStateInURL(); // Save state
+                }
+            }
+
+            // Visuals for Sequencer Nodes
+            initSequencerLayers() {
+                // Initial state for 4 layers (rows) of 8 steps (columns)
+                for (let i = 0; i < 4; i++) {
+                    this.layers.push({ 
+                        nodeStates: Array(8).fill(false),
+                        // Each layer has its own color index now
+                        colorIndex: i % this.layerColors.length 
+                    });
+                }
+                // Example: pre-set a basic pattern for the first layer
+                this.layers[0].nodeStates = [true, false, true, false, true, false, true, false];
+            }
+
+            createSequencerVisualNodes() {
+                this.sequencerVisualNodes = [];
+                const nodeSize = 1.8; // Size of each visual node in Three.js units
+
+                for (let y = 0; y < 4; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        // Position nodes in a grid in 3D space, relative to the Deck B plane
+                        // Deck B is the right half, so its X goes from 0 to 20 in world units.
+                        // Grid for sequencer occupies roughly 80% of Deck B's width, and 80% of its height, centered.
+                        const gridWidth = 20 * 0.8; // 80% of 20 units
+                        const gridHeight = 20 * 0.8;
+                        const startX = 20 * 0.1; // 10% padding on left of Deck B
+                        const startY = 10 * 0.8 - 0.5 * gridHeight; // Center vertically on 20 unit plane
+
+                        const posX = startX + (x + 0.5) * (gridWidth / 8); 
+                        const posY = startY - (y + 0.5) * (gridHeight / 4); 
+                        
+                        const geometry = new THREE.PlaneGeometry(nodeSize, nodeSize);
+                        const material = new THREE.MeshBasicMaterial({ 
+                            color: 0xcccccc, 
+                            transparent: true, 
+                            opacity: 0.5, 
+                            depthTest: false, // Ensures nodes draw over the field mesh
+                            blending: THREE.AdditiveBlending // Blends nicely with glowing effects
+                        });
+                        const nodeMesh = new THREE.Mesh(geometry, material);
+                        nodeMesh.position.set(posX, posY, 0.1); // Slightly above the plane
+                        this.scene.add(nodeMesh);
+                        this.sequencerVisualNodes.push(nodeMesh);
+                    }
+                }
+                this.updateSequencerVisualNodes(); // Set initial colors/states
+            }
+
+            updateSequencerVisualNodes() {
+                if (this.config.type !== 'sequencer' || !this.sequencerVisualNodes || this.sequencerVisualNodes.length === 0) return;
+
+                let nodeIndex = 0;
+                for (let y = 0; y < 4; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const mesh = this.sequencerVisualNodes[nodeIndex];
+                        if (!mesh) { nodeIndex++; continue; }
+
+                        const layerState = this.layers[y]; // Node state from its own layer
+                        const nodeIsActive = layerState.nodeStates[x];
+                        const isPlayingStep = (this.currentSequencerStep === x && this.isPlaying);
+                        
+                        // Robustly get color from palette, fall back to default if index is invalid
+                        // Use the color of the *current layer being edited* for visual display
+                        const hsvColor = this.layerColors[portalApp.activeColorIndex] || this.layerColors[0]; 
+                        const baseColor = new THREE.Color().setHSL(hsvColor[0], hsvColor[1], hsvColor[2]);
+
+                        if (nodeIsActive) {
+                            mesh.material.color.copy(baseColor);
+                            mesh.material.opacity = 1.0;
+                        } else {
+                            mesh.material.color.setHex(0x444444); // Inactive color (dark grey)
+                            mesh.material.opacity = 0.2;
+                        }
+
+                        if (isPlayingStep) {
+                            // Current playing step, apply glow effect
+                            mesh.material.color.setHex(0xFFFFFF); // White glow
+                            mesh.material.opacity = 1.0;
+                            mesh.scale.set(1.15 * (1 + this.beatPulse * 0.1), 1.15 * (1 + this.beatPulse * 0.1), 1.15); // Pulse effect
+                        } else {
+                            mesh.scale.set(1.0, 1.0, 1.0); // Reset scale
+                        }
+                        nodeIndex++;
+                    }
+                }
+            }
+
+            // Audio Effect Triggers for Sequencer (adapted from old code)
+            triggerPulse() {
+                if (this.audioContext && this.sequencerVoices.length > 0) {
+                    const now = this.audioContext.currentTime;
+                    this.sequencerVoices.forEach(voice => {
+                         // Briefly boost and then return to influence-based level
+                        const currentGain = voice.gain.gain.value;
+                        voice.gain.gain.setTargetAtTime(currentGain * 1.5, now, 0.01);
+                        voice.gain.gain.setTargetAtTime(0.5 * this.influence, now + 0.05, 0.05);
+                    });
+                }
+            }
+            
+            bumpIntensity() {
+                this.visualIntensity = Math.min(1, this.visualIntensity + 0.2);
+            }
+            
+            shiftBloom() {
+                this.visualBloom = 0.3 + Math.random() * 0.7; 
+            }
+            
+            grainGlitch() {
+                const oldFlow = this.visualFlow;
+                this.visualFlow = oldFlow * 2; 
+                setTimeout(() => { this.visualFlow = oldFlow; }, 100);
+
+                if (this.audioContext && portalApp.globalFuzzNode) {
+                    const now = this.audioContext.currentTime;
+                    const currentFuzzAmount = portalApp.globalFuzzAmount;
+
+                    portalApp.globalFuzzWetGain.gain.cancelScheduledValues(now);
+                    portalApp.globalFuzzWetGain.gain.setValueAtTime(currentFuzzAmount, now);
+                    portalApp.globalFuzzWetGain.gain.linearRampToValueAtTime(1.0, now + 0.005); 
+                    portalApp.globalFuzzWetGain.gain.linearRampToValueAtTime(currentFuzzAmount, now + 0.15); 
+                }
+            }
+
+            updateAudioParameters() {
+                if (!this.audioContext || !this.outputGain) return; // Ensure audio context and gain node exist
+                
+                if (this.config.type === 'drone') {
+                    const baseFreq = this.audioFrequency;
+                    const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                    this.mainVoice.forEach((osc, i) => {
+                        osc.frequency.setTargetAtTime(frequencies[i], this.audioContext.currentTime, 0.1);
+                    });
+                    this.filters.forEach(filter => {
+                        filter.frequency.setTargetAtTime(
+                            200 + this.visualIntensity * 1000, 
+                            this.audioContext.currentTime,
+                            0.1
+                        );
+                        filter.Q.setTargetAtTime(
+                            this.audioResonance * 15 + 1,
+                            this.audioContext.currentTime,
+                            0.1
+                        );
+                    });
+                } else if (this.config.type === 'sequencer') {
+                    // Update sequencer voices if needed (e.g., pitch changes based on some parameter)
+                }
+            }
+
+            setDeckVolume(value) {
+                this.deckVolume = value;
+                // Actual gain update handled by updateCrossfader
+            }
+
+            setBPM(bpm) {
+                this.bpm = bpm;
+            }
+
+            setInfluence(val) {
+                this.influence = val;
+            }
+
+            update(globalAudioLevel) {
+                if (!this.renderer || !this.scene || !this.camera || !this.material) return; // Prevent errors if not fully initialized
+
+                this.time += 0.016; 
+                this.audioLevel = globalAudioLevel;
+
+                // Update common uniforms (check if uniform exists before setting)
+                if (this.material.uniforms.time) this.material.uniforms.time.value = this.time;
+                if (this.material.uniforms.mouse) this.material.uniforms.mouse.value.copy(this.mouse);
+                if (this.material.uniforms.audioLevel) this.material.uniforms.audioLevel.value = this.audioLevel;
+
+                if (this.config.type === 'drone') {
+                    if (this.material.uniforms.intensity) this.material.uniforms.intensity.value = this.visualIntensity;
+                    if (this.material.uniforms.flow) this.material.uniforms.flow.value = this.visualFlow;
+                    if (this.material.uniforms.bloom) this.material.uniforms.bloom.value = this.visualBloom; 
+                    if (this.material.uniforms.harmonic) this.material.uniforms.harmonic.value = this.harmonic; // assuming harmonic is added to config
+                    this.updateAudioParameters(); // Update drone audio based on visual parameters
+                } else if (this.config.type === 'sequencer') {
+                    if (this.material.uniforms.beatPulse) this.material.uniforms.beatPulse.value = this.beatPulse;
+                    if (this.material.uniforms.intensity) this.material.uniforms.intensity.value = this.visualIntensity;
+                    if (this.material.uniforms.flow) this.material.uniforms.flow.value = this.visualFlow;
+                    
+                    if (this.beatPulse > 0.001) { // Decay only if significant
+                        this.beatPulse *= 0.9; // Decay the pulse
+                    } else {
+                        this.beatPulse = 0; // Snap to zero
+                    }
+                }
+                
+                // Update particles
+                if (this.particles) {
+                    const positions = this.particles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i + 2] += Math.sin(this.time * 0.01 + i) * 0.01;
+                        positions[i] += Math.cos(this.time * 0.005 + i) * 0.005;
+                    }
+                    this.particles.geometry.attributes.position.needsUpdate = true;
+                    this.particles.rotation.y = this.time * 0.005;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            resize() {
+                if (!this.canvas || !this.container) return; // Ensure elements exist
+                const rect = this.container.getBoundingClientRect(); // Use container for size
+                this.camera.aspect = rect.width / rect.height;
+                this.camera.updateProjectionMatrix(); 
+                this.renderer.setSize(rect.width, rect.height);
+            }
+
+            // External control setters
+            setMousePosition(x, y) {
+                this.mouse.set(x, y);
+            }
+
+            setCanvasOpacity(value) {
+                if (this.canvas) {
+                    this.canvas.style.opacity = value;
+                }
+            }
+
+            // State management for individual decks (for URL hash)
+            getState() {
+                const state = {
+                    visuals: {
+                        intensity: this.visualIntensity,
+                        flow: this.visualFlow,
+                        bloom: this.visualBloom,
+                    },
+                    audio: {
+                        frequency: this.audioFrequency,
+                        resonance: this.audioResonance,
+                        deckVolume: this.deckVolume
+                    }
+                };
+                if (this.config.type === 'sequencer') {
+                    state.sequencer = {
+                        layers: this.layers,
+                        isPlaying: this.isPlaying,
+                        influence: this.influence,
+                        bpm: this.bpm // Storing BPM on sequencer deck
+                    };
+                }
+                return state;
+            }
+
+            setState(state) {
+                if (state.visuals) {
+                    this.visualIntensity = state.visuals.intensity !== undefined ? state.visuals.intensity : this.visualIntensity;
+                    this.visualFlow = state.visuals.flow !== undefined ? state.visuals.flow : this.visualFlow;
+                    this.visualBloom = state.visuals.bloom !== undefined ? state.visuals.bloom : this.visualBloom;
+                }
+                if (state.audio) {
+                    this.audioFrequency = state.audio.frequency !== undefined ? state.audio.frequency : this.audioFrequency;
+                    this.audioResonance = state.audio.resonance !== undefined ? state.audio.resonance : this.audioResonance;
+                    this.deckVolume = state.audio.deckVolume !== undefined ? state.audio.deckVolume : this.deckVolume;
+                    // outputGain updated by updateCrossfader or directly if not yet connected
+                    if (this.outputGain) this.outputGain.gain.value = this.deckVolume; 
+                    if (this.config.type === 'drone') this.updateAudioParameters(); // Apply loaded params to drone audio
+                }
+                if (this.config.type === 'sequencer' && state.sequencer) {
+                    // Deep copy layers to ensure no reference issues and validate structure
+                    this.layers = state.sequencer.layers && Array.isArray(state.sequencer.layers) ? 
+                        state.sequencer.layers.map(layer => ({
+                            nodeStates: Array.isArray(layer.nodeStates) && layer.nodeStates.length === 8 ? 
+                                layer.nodeStates.map(ns => typeof ns === 'boolean' ? ns : false) : Array(8).fill(false),
+                            colorIndex: typeof layer.colorIndex === 'number' && !isNaN(layer.colorIndex) && layer.colorIndex >= 0 && layer.colorIndex < this.layerColors.length ? 
+                                layer.colorIndex : 0
+                        })) : Array(4).fill().map(() => ({ nodeStates: Array(8).fill(false), colorIndex: 0 }));
+
+                    this.isPlaying = state.sequencer.isPlaying !== undefined ? state.sequencer.isPlaying : this.isPlaying;
+                    this.influence = state.sequencer.influence !== undefined ? state.sequencer.influence : this.influence;
+                    this.bpm = state.sequencer.bpm !== undefined ? state.sequencer.bpm : this.bpm;
+                    if (this.sequencerVisualNodes.length > 0) { // Only update if nodes are created
+                         this.updateSequencerVisualNodes(); // Make sure visuals reflect loaded state
+                    }
+                }
+            }
+        }
+
+        // =========================================================
+        // Global Application Setup and UI Management
+        // =========================================================
+
+        portalApp.audioContext = null;
+        portalApp.masterGain = null;
+        portalApp.globalAnalyser = null;
+        portalApp.globalFrequencyData = null;
+        portalApp.globalAudioLevel = 0;
+
+        portalApp.globalFuzzNode = null;
+        portalApp.globalFuzzWetGain = null;
+        portalApp.globalFuzzDryGain = null;
+        portalApp.globalFuzzAmount = 0.0; // Slider controlled
+
+        portalApp.leftDeck = null;
+        portalApp.rightDeck = null;
+
+        portalApp.uiVisible = true; // Overall UI visibility (for main panel)
+        portalApp.crossfaderValue = 0.5; // Stored value for crossfader
+        portalApp.masterOutputVolume = 0.5; // Stored master output volume
+
+        // Color palette for sequencer steps (HSV values) - This is now redundant since layerColors are defined on the Deck
+        // portalApp.colorPalette = [ ... ] 
+        portalApp.activeColorIndex = 0; // Index of the currently selected color for steps (relates to the layer selection panel)
+
+        // UI Hide timers
+        portalApp.hideBpmTimer = null;
+        portalApp.hideLayerControlTimer = null;
+
+
+        // --- Core Initialization ---
+        window.addEventListener('load', () => {
+            const startButton = document.getElementById('start-button');
+            startButton.addEventListener('click', portalApp.initApplication);
+
+            portalApp.loadStateFromURL(); // Load state on initial load (sets initial values for portalApp vars)
+            // No need for portalApp.setupColorPaletteUI() here anymore, it's tied to deck's layer colors
+            portalApp.updateControlsUI();    // Apply loaded state to UI controls (just DOM values, no audio interaction yet)
+            portalApp.createLayerControlIcons(); // Create icons for the layer control panel
+            
+            document.getElementById('loading').style.display = 'none'; // Hide loading
+        });
+
+        portalApp.initApplication = async () => {
+            if (portalApp.audioContext) return; // Already initialized
+
+            try {
+                portalApp.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await portalApp.audioContext.resume();
+
+                portalApp.masterGain = portalApp.audioContext.createGain();
+                
+                // Global Analyser
+                portalApp.globalAnalyser = portalApp.audioContext.createAnalyser();
+                portalApp.globalAnalyser.fftSize = 256;
+                portalApp.globalAnalyser.connect(portalApp.masterGain);
+                portalApp.globalFrequencyData = new Uint8Array(portalApp.globalAnalyser.frequencyBinCount);
+
+                // Global Fuzz setup
+                portalApp.globalFuzzNode = portalApp.audioContext.createWaveShaper();
+                portalApp.globalFuzzNode.curve = makeDistortionCurve(portalApp.globalFuzzAmount * 100);
+                portalApp.globalFuzzNode.oversample = '4x';
+                portalApp.globalFuzzWetGain = portalApp.audioContext.createGain();
+                portalApp.globalFuzzDryGain = portalApp.audioContext.createGain();
+                portalApp.globalFuzzWetGain.gain.value = portalApp.globalFuzzAmount;
+                portalApp.globalFuzzDryGain.gain.value = 1 - portalApp.globalFuzzAmount;
+                
+                portalApp.masterGain.connect(portalApp.globalFuzzDryGain);
+                portalApp.masterGain.connect(portalApp.globalFuzzWetGain);
+                portalApp.globalFuzzWetGain.connect(portalApp.globalFuzzNode);
+                portalApp.globalFuzzNode.connect(portalApp.audioContext.destination);
+                portalApp.globalFuzzDryGain.connect(portalApp.audioContext.destination);
+
+
+                // Initialize Decks (visuals + initial audio nodes)
+                portalApp.leftDeck = new MorphicDeck('deck-a-container', 'canvas-a', droneConfig);
+                portalApp.rightDeck = new MorphicDeck('deck-b-container', 'canvas-b', sequencerConfig);
+
+                // Initialize Audio for each deck (this creates their outputGain nodes and voices)
+                portalApp.leftDeck.initAudio(portalApp.audioContext, portalApp.globalAnalyser);
+                portalApp.rightDeck.initAudio(portalApp.audioContext, portalApp.globalAnalyser);
+
+                // Apply loaded deck states (now safe to update audio params on decks and their internal states)
+                portalApp.applyDeferredDeckState();
+
+                // Setup UI Listeners (handlers will now reference initialized decks and audio nodes)
+                portalApp.setupUILeseners();
+
+                // Hide start button (this should work now with the added CSS rule)
+                document.getElementById('start-button').classList.add('hidden');
+                
+                // Toggle UI to initial state (loaded from URL or default)
+                // This must be called AFTER all UI elements are created and their initial values set.
+                portalApp.toggleUI(portalApp.uiVisible); 
+
+                // Set initial crossfader, fuzz, master volume (values from loaded state or defaults)
+                // These must be called AFTER audio nodes are initialized and state applied
+                portalApp.updateCrossfader(portalApp.crossfaderValue);
+                portalApp.updateGlobalFuzz(portalApp.globalFuzzAmount);
+                portalApp.updateMasterVolume(portalApp.masterOutputVolume);
+                
+                portalApp.animate();
+                window.dispatchEvent(new Event('resize')); // Trigger initial resize for canvases
+
+                console.log("Morphic Resonance Deck Initialized.");
+
+            } catch (error) {
+                console.error('Failed to initialize AudioContext:', error);
+                alert('Audio cannot be started. Please ensure your browser allows autoplay or try refreshing. Error: ' + error.message);
+            }
+        };
+
+        portalApp.animate = () => {
+            requestAnimationFrame(portalApp.animate);
+
+            if (portalApp.globalAnalyser && portalApp.globalFrequencyData) {
+                portalApp.globalAnalyser.getByteFrequencyData(portalApp.globalFrequencyData);
+                const sum = portalApp.globalFrequencyData.reduce((a, b) => a + b, 0);
+                portalApp.globalAudioLevel = sum / (portalApp.globalFrequencyData.length * 255);
+            }
+
+            // Ensure decks exist and are properly initialized before updating
+            if (portalApp.leftDeck && portalApp.leftDeck.renderer) portalApp.leftDeck.update(portalApp.globalAudioLevel);
+            if (portalApp.rightDeck && portalApp.rightDeck.renderer) portalApp.rightDeck.update(portalApp.globalAudioLevel);
+        };
+
+        // --- UI Control Functions ---
+        portalApp.setupUILeseners = () => {
+            // BPM Controls
+            document.getElementById('bpm-up-btn').onclick = () => portalApp.changeBPM(5);
+            document.getElementById('bpm-down-btn').onclick = () => portalApp.changeBPM(-5);
+
+            // Volume Sliders
+            document.getElementById('drone-volume-slider').oninput = (e) => {
+                if (!portalApp.leftDeck) return;
+                portalApp.leftDeck.setDeckVolume(parseFloat(e.target.value));
+                portalApp.updateCrossfader(portalApp.crossfaderValue); // Re-apply crossfader for instant volume update
+                portalApp.updateStateInURL();
+            };
+            document.getElementById('seq-volume-slider').oninput = (e) => {
+                if (!portalApp.rightDeck) return;
+                portalApp.rightDeck.setDeckVolume(parseFloat(e.target.value));
+                portalApp.updateCrossfader(portalApp.crossfaderValue); // Re-apply crossfader for instant volume update
+                portalApp.updateStateInURL();
+            };
+            document.getElementById('master-output-volume-slider').oninput = (e) => {
+                portalApp.updateMasterVolume(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Crossfader
+            document.getElementById('crossfader-slider').oninput = (e) => {
+                portalApp.updateCrossfader(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Global Fuzz
+            document.getElementById('fuzz-slider').oninput = (e) => {
+                portalApp.updateGlobalFuzz(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Sequencer Influence
+            const influenceSlider = document.getElementById('influence-slider');
+            influenceSlider.oninput = (e) => {
+                if (!portalApp.rightDeck) return;
+                portalApp.rightDeck.setInfluence(parseFloat(e.target.value));
+                portalApp.updateStateInURL();
+            };
+
+            // Mouse Scroll Wheel for Influence Slider
+            window.addEventListener('wheel', (e) => {
+                if (!portalApp.rightDeck) return;
+
+                e.preventDefault(); // Prevent page scrolling
+
+                let currentValue = parseFloat(influenceSlider.value);
+                const step = 0.02; // Adjust sensitivity here
+
+                if (e.deltaY < 0) { // Scroll up
+                    currentValue = Math.min(1.0, currentValue + step);
+                } else { // Scroll down
+                    currentValue = Math.max(0.0, currentValue - step);
+                }
+
+                influenceSlider.value = currentValue;
+                portalApp.rightDeck.setInfluence(currentValue);
+                portalApp.updateStateInURL();
+            }, { passive: false }); // Use passive: false to allow preventDefault
+
+            // Play/Pause Button
+            document.getElementById('play-pause-button').onclick = () => {
+                if (!portalApp.rightDeck) return;
+                portalApp.rightDeck.isPlaying = !portalApp.rightDeck.isPlaying;
+                document.getElementById('play-pause-button').textContent = portalApp.rightDeck.isPlaying ? '❚❚' : '►';
+                portalApp.updateStateInURL();
+            };
+            
+            // Mouse/Touch Interaction for Canvas A (Drone)
+            const canvasA = document.getElementById('canvas-a');
+            canvasA.addEventListener('mousemove', (e) => {
+                // Drone interaction is global if UI is hidden (main panel)
+                if (!portalApp.uiVisible && portalApp.leftDeck) { 
+                    const rect = canvasA.getBoundingClientRect();
+                    const x = (e.clientX - rect.left) / rect.width;
+                    const y = 1.0 - (e.clientY - rect.top) / rect.height; // Invert Y
+                    portalApp.leftDeck.setMousePosition(x, y);
+                    // Update drone audio parameters dynamically based on mouse position
+                    portalApp.leftDeck.audioFrequency = 100 + x * 400; 
+                    portalApp.leftDeck.audioResonance = Math.sin(portalApp.leftDeck.time * 0.01 + x * Math.PI) * 0.5 + 0.5;
+                    portalApp.leftDeck.visualBloom = 0.3 + y * 0.7;
+                    portalApp.leftDeck.visualFlow = x * 2;
+                    portalApp.leftDeck.visualIntensity = 0.5 + y * 0.5; // Y controls intensity as well
+                    portalApp.leftDeck.updateAudioParameters();
+                    portalApp.updateStateInURL(); // Save state
+                }
+            });
+            canvasA.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (!portalApp.uiVisible && portalApp.leftDeck && e.touches.length > 0) {
+                    const rect = canvasA.getBoundingClientRect();
+                    const x = (e.touches[0].clientX - rect.left) / rect.width;
+                    const y = 1.0 - (e.touches[0].clientY - rect.top) / rect.innerHeight; // Use innerHeight for consistency
+                    portalApp.leftDeck.setMousePosition(x, y);
+                    portalApp.leftDeck.audioFrequency = 100 + x * 400; 
+                    portalApp.leftDeck.audioResonance = Math.sin(portalApp.leftDeck.time * 0.01 + x * Math.PI) * 0.5 + 0.5;
+                    portalApp.leftDeck.visualBloom = 0.3 + y * 0.7;
+                    portalApp.leftDeck.visualFlow = x * 2;
+                    portalApp.leftDeck.visualIntensity = 0.5 + y * 0.5;
+                    portalApp.leftDeck.updateAudioParameters();
+                    portalApp.updateStateInURL();
+                }
+            }, { passive: false });
+
+            // UI Toggle (Shift+Click / 2-Finger Tap)
+            document.addEventListener('mousedown', (e) => {
+                if (e.shiftKey) {
+                    portalApp.toggleUI();
+                    e.preventDefault(); // Prevent text selection etc.
+                }
+            });
+            document.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    portalApp.toggleUI();
+                    e.preventDefault(); // Prevent browser gestures
+                }
+            }, { passive: false });
+
+            // Keyboard event for Layer Control
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'l' || e.key === 'L') { // 'L' key for Layer Control
+                    portalApp.toggleLayerControl();
+                }
+            });
+
+            // BPM Control click handler (for the small circle)
+            document.getElementById('bpm-control').addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent canvas interaction
+                portalApp.cycleBPM();
+                portalApp.scheduleHideBPMControl(); // Keep it visible for a bit after click
+            });
+            
+            // Layer Control Panel click handler (for any area outside icons)
+            document.getElementById('layer-control-panel').addEventListener('click', (e) => {
+                // If the click target itself is the panel (not an icon), just reschedule hide
+                if (e.target === document.getElementById('layer-control-panel')) {
+                    portalApp.scheduleHideLayerControl();
+                }
+            });
+
+
+            // General click to hide any visible controls
+            document.addEventListener('click', (e) => {
+                // If BPM control is visible and click is outside it
+                if (portalApp.bpmControlVisible && !e.target.closest('#bpm-control')) {
+                    portalApp.scheduleHideBPMControl();
+                }
+                // If Layer control is visible and click is outside it
+                if (portalApp.layerControlVisible && !e.target.closest('#layer-control-panel')) {
+                    portalApp.scheduleHideLayerControl();
+                }
+            });
+
+            // Prevent immediate hide on hover (desktop only)
+            document.getElementById('bpm-control').addEventListener('mouseenter', () => clearTimeout(portalApp.hideBpmTimer));
+            document.getElementById('bpm-control').addEventListener('mouseleave', () => portalApp.scheduleHideBPMControl());
+            document.getElementById('layer-control-panel').addEventListener('mouseenter', () => clearTimeout(portalApp.hideLayerControlTimer));
+            document.getElementById('layer-control-panel').addEventListener('mouseleave', () => portalApp.scheduleHideLayerControl());
+
+
+            // Window Resize Listener
+            window.addEventListener('resize', () => {
+                if (portalApp.leftDeck) portalApp.leftDeck.resize();
+                if (portalApp.rightDeck) portalApp.rightDeck.resize();
+            });
+        };
+
+        // --- Global UI Logic ---
+
+        // Schedule hide for BPM control
+        portalApp.scheduleHideBPMControl = () => {
+            clearTimeout(portalApp.hideBpmTimer);
+            portalApp.hideBpmTimer = setTimeout(() => {
+                document.getElementById('bpm-control').classList.remove('visible');
+                portalApp.bpmControlVisible = false;
+            }, 3000);
+        };
+
+        // Schedule hide for Layer control
+        portalApp.scheduleHideLayerControl = () => {
+            clearTimeout(portalApp.hideLayerControlTimer);
+            portalApp.hideLayerControlTimer = setTimeout(() => {
+                document.getElementById('layer-control-panel').classList.remove('visible');
+                portalApp.layerControlVisible = false;
+            }, 3000);
+        };
+
+        portalApp.updateControlsUI = () => {
+            // Update values on DOM elements for the main control panel
+            if (portalApp.rightDeck) {
+                document.getElementById('bpm-display-panel').textContent = portalApp.rightDeck.bpm;
+                document.getElementById('seq-volume-slider').value = portalApp.rightDeck.deckVolume;
+                document.getElementById('influence-slider').value = portalApp.rightDeck.influence;
+                document.getElementById('bpm-display').textContent = portalApp.rightDeck.bpm; // For the circular BPM display
+            }
+            if (portalApp.leftDeck) {
+                 document.getElementById('drone-volume-slider').value = portalApp.leftDeck.deckVolume;
+            }
+            
+            document.getElementById('master-output-volume-slider').value = portalApp.masterOutputVolume;
+            document.getElementById('crossfader-slider').value = portalApp.crossfaderValue;
+            document.getElementById('fuzz-slider').value = portalApp.globalFuzzAmount;
+
+            // Update color palette selection (relates to layer color for new nodes)
+            portalApp.updateLayerControlUI(); // Ensure layer selection is updated
+        };
+
+        portalApp.changeBPM = (delta) => {
+            if (!portalApp.rightDeck) return;
+            portalApp.rightDeck.setBPM(Math.max(60, Math.min(240, portalApp.rightDeck.bpm + delta))); 
+            document.getElementById('bpm-display-panel').textContent = portalApp.rightDeck.bpm; // Update panel BPM
+            document.getElementById('bpm-display').textContent = portalApp.rightDeck.bpm; // Update circular BPM
+            portalApp.updateStateInURL(); 
+        };
+
+        portalApp.updateMasterVolume = (value) => {
+            portalApp.masterOutputVolume = value;
+            if (portalApp.masterGain && portalApp.audioContext && !isNaN(value)) {
+                portalApp.masterGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.05);
+            }
+        };
+
+        portalApp.updateCrossfader = (value) => {
+            portalApp.crossfaderValue = value;
+            if (portalApp.leftDeck && portalApp.rightDeck && portalApp.audioContext) {
+                // Equal-power crossfading for audio
+                const gainL = Math.cos(value * 0.5 * Math.PI);
+                const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+                
+                // Ensure outputGain nodes exist before setting gain
+                if (portalApp.leftDeck.outputGain && !isNaN(gainL) && !isNaN(portalApp.leftDeck.deckVolume)) {
+                    portalApp.leftDeck.outputGain.gain.setTargetAtTime(gainL * portalApp.leftDeck.deckVolume, portalApp.audioContext.currentTime, 0.01);
+                }
+                if (portalApp.rightDeck.outputGain && !isNaN(gainR) && !isNaN(portalApp.rightDeck.deckVolume)) {
+                    portalApp.rightDeck.outputGain.gain.setTargetAtTime(gainR * portalApp.rightDeck.deckVolume, portalApp.audioContext.currentTime, 0.01);
+                }
+
+                // Visual crossfading of the canvases
+                const baseOpacity = portalApp.uiVisible ? 0.2 : 1.0;
+                portalApp.leftDeck.setCanvasOpacity(baseOpacity * gainL); 
+                portalApp.rightDeck.setCanvasOpacity(baseOpacity * gainR);
+            }
+        };
+
+        portalApp.updateGlobalFuzz = (value) => {
+            portalApp.globalFuzzAmount = value;
+            if (portalApp.globalFuzzNode && portalApp.audioContext && !isNaN(value)) {
+                portalApp.globalFuzzNode.curve = makeDistortionCurve(value * 100);
+                portalApp.globalFuzzDryGain.gain.setTargetAtTime(1 - value, portalApp.audioContext.currentTime, 0.01);
+                portalApp.globalFuzzWetGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.01);
+            }
+        };
+
+        portalApp.createLayerControlIcons = () => {
+            const layerControlPanel = document.getElementById('layer-control-panel');
+            if (!portalApp.rightDeck) return; // Need rightDeck to get layer info
+
+            portalApp.rightDeck.layers.forEach((layer, index) => {
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'layer-icon';
+                // Using generic symbols for layers if actual layerIcons are not defined on a deck
+                iconDiv.textContent = String.fromCharCode(0x2460 + index); // Circled numbers ➀ ➁ ➂ etc.
+                iconDiv.dataset.layerIndex = index;
+                iconDiv.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent global click listener from hiding panel
+                    portalApp.selectLayer(index);
+                    portalApp.scheduleHideLayerControl(); // Reschedule hide
+                });
+                layerControlPanel.appendChild(iconDiv);
+            });
+        };
+
+        portalApp.selectLayer = (index) => {
+            if (!portalApp.rightDeck || index < 0 || index >= portalApp.rightDeck.layers.length) return;
+
+            if (portalApp.rightDeck.activeColorIndex === index) { // Using activeColorIndex to denote selected layer for editing
+                // If clicking the currently selected layer, toggle its active (playback) state
+                portalApp.rightDeck.layers[index].isPlaying = !portalApp.rightDeck.layers[index].isPlaying;
+            } else {
+                // If selecting a different layer, make it the active editing layer
+                portalApp.rightDeck.activeColorIndex = index;
+                // Apply its visual parameters to the field (if layers had unique field params)
+                // For now, only nodeStates are tied to layer selection
+            }
+            portalApp.rightDeck.updateSequencerVisualNodes(); // Update nodes based on new activeColorIndex
+            portalApp.updateLayerControlUI(); // Update UI to reflect changes
+            portalApp.updateStateInURL(); // Persist changes
+        };
+
+        portalApp.updateLayerControlUI = () => {
+            const layerIcons = document.querySelectorAll('#layer-control-panel .layer-icon');
+            layerIcons.forEach((icon, i) => {
+                if (!portalApp.rightDeck) return; // Ensure deck exists
+
+                const layer = portalApp.rightDeck.layers[i];
+                // Toggle 'active' class based on layer's isPlaying state
+                icon.classList.toggle('active', layer.isPlaying);
+                // Toggle 'selected' class based on activeColorIndex
+                icon.classList.toggle('selected', i === portalApp.activeColorIndex);
+
+                // Set background color of icon based on its layer's assigned color
+                const layerColor = portalApp.rightDeck.layerColors[layer.colorIndex] || portalApp.rightDeck.layerColors[0];
+                icon.style.background = `radial-gradient(circle, ${portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2], 0.2)} 0%, transparent 70%)`;
+                if(icon.classList.contains('active')) {
+                    icon.style.borderColor = portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2]);
+                } else {
+                    icon.style.borderColor = `rgba(255,255,255,0.1)`;
+                }
+
+                if (icon.classList.contains('selected')) {
+                    icon.style.borderColor = '#fff';
+                    icon.style.boxShadow = '0 0 15px #fff';
+                } else if (icon.classList.contains('active')) {
+                     icon.style.boxShadow = `0 0 10px ${portalApp.hsvToRgb(layerColor[0], layerColor[1], layerColor[2])}`;
+                } else {
+                    icon.style.boxShadow = 'none';
+                }
+            });
+        };
+
+        portalApp.toggleLayerControl = () => {
+            const panel = document.getElementById('layer-control-panel');
+            portalApp.layerControlVisible = !portalApp.layerControlVisible;
+            if (portalApp.layerControlVisible) {
+                panel.classList.add('visible');
+                portalApp.updateLayerControlUI(); // Ensure UI state is correct
+                portalApp.scheduleHideLayerControl();
+            } else {
+                panel.classList.remove('visible');
+            }
+        };
+
+        portalApp.toggleUI = (forceVisibility = null) => {
+            portalApp.uiVisible = (forceVisibility !== null) ? forceVisibility : !portalApp.uiVisible;
+            
+            // Only toggle the main master control panel and play/pause button
+            const elementsToToggle = [
+                document.getElementById('master-control-panel'),
+                document.getElementById('play-pause-button')
+            ];
+            
+            if (portalApp.uiVisible) {
+                elementsToToggle.forEach(el => el.classList.remove('hidden'));
+            } else {
+                elementsToToggle.forEach(el => el.classList.add('hidden'));
+            }
+            
+            // Update canvas opacity based on UI visibility AND crossfader
+            // This needs to be called after other UI elements' visibility is set
+            portalApp.updateCrossfader(portalApp.crossfaderValue);
+
+            portalApp.updateStateInURL(); // Save UI visibility state
+        };
+
+        // --- State Serialization ---
+        portalApp.updateStateInURL = () => {
+            const state = {
+                leftDeck: portalApp.leftDeck ? portalApp.leftDeck.getState() : null,
+                rightDeck: portalApp.rightDeck ? portalApp.rightDeck.getState() : null,
+                crossfaderValue: portalApp.crossfaderValue,
+                globalFuzzAmount: portalApp.globalFuzzAmount,
+                masterOutputVolume: portalApp.masterOutputVolume,
+                uiVisible: portalApp.uiVisible,
+                activeColorIndex: portalApp.activeColorIndex
+            };
+            try {
+                const encoded = btoa(JSON.stringify(state));
+                window.location.hash = encoded;
+            } catch (error) {
+                console.warn('Failed to update URL state (likely too large or malformed):', error);
+            }
+        };
+        
+        portalApp.loadStateFromURL = () => {
+            try {
+                if (window.location.hash) {
+                    const state = JSON.parse(atob(window.location.hash.slice(1)));
+                    
+                    // Robustly load numeric values
+                    portalApp.crossfaderValue = (typeof state.crossfaderValue === 'number' && !isNaN(state.crossfaderValue)) ? state.crossfaderValue : 0.5;
+                    portalApp.globalFuzzAmount = (typeof state.globalFuzzAmount === 'number' && !isNaN(state.globalFuzzAmount)) ? state.globalFuzzAmount : 0.0;
+                    portalApp.masterOutputVolume = (typeof state.masterOutputVolume === 'number' && !isNaN(state.masterOutputVolume)) ? state.masterOutputVolume : 0.5;
+                    
+                    portalApp.uiVisible = state.uiVisible !== undefined ? state.uiVisible : true;
+                    portalApp.activeColorIndex = (typeof state.activeColorIndex === 'number' && !isNaN(state.activeColorIndex)) ? state.activeColorIndex : 0;
+
+                    portalApp.deferredDeckState = state; 
+                    
+                }
+            } catch (error) {
+                console.warn('Failed to load state from URL:', error);
+                // Default values are already set initially, so no need to reset here, just warn.
+            }
+        };
+
+        // Apply deferred deck state after decks are fully initialized
+        portalApp.applyDeferredDeckState = () => {
+            if (portalApp.deferredDeckState) {
+                if (portalApp.leftDeck && portalApp.deferredDeckState.leftDeck) {
+                    portalApp.leftDeck.setState(portalApp.deferredDeckState.leftDeck);
+                }
+                if (portalApp.rightDeck && portalApp.deferredDeckState.rightDeck) {
+                    portalApp.rightDeck.setState(portalApp.deferredDeckState.rightDeck);
+                    // Update play/pause button text based on loaded state
+                    document.getElementById('play-pause-button').textContent = portalApp.rightDeck.isPlaying ? '❚❚' : '►';
+                }
+                portalApp.deferredDeckState = null; // Clear deferred state
+            }
+        };
+    </script>
+</body>
+</html>

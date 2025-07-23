@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hypnotic Resonance Sculptor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #0ff; font-family: monospace; user-select: none; }
+        canvas { display: block; position: fixed; top: 0; left: 0; z-index: -1; }
+        #ui-wrapper { position: fixed; bottom: 0; left: 0; right: 0; color: #0ff; transition: transform 0.4s ease-in-out; }
+        #ui-wrapper.hidden { transform: translateY(calc(100% - 30px)); }
+        #ui-toggle-bar { background: #022; padding: 5px; text-align: center; cursor: pointer; border-top: 1px solid #055; }
+        .panel { background: rgba(0,10,15,0.9); padding: 15px; border-top: 1px solid #055; }
+        #layers-container { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .layer { padding: 8px; border: 1px solid #055; border-radius: 5px; cursor: grab; transition: background 0.2s; }
+        .layer.dragging { background: #055; opacity: 0.7; }
+        .layer-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .layer-controls { margin-top: 8px; display: grid; grid-template-columns: 100px 1fr; gap: 8px; max-height: 200px; overflow: hidden; transition: max-height 0.3s ease, margin-top 0.3s ease, opacity 0.3s ease; }
+        .layer.collapsed .layer-controls { max-height: 0; margin-top: 0; opacity: 0; }
+        .control-group { display: contents; }
+        .control-group label { text-align: right; padding-right: 10px; }
+        .layer button, .panel button, #global-controls button { background: #044; color: #0ff; border: 1px solid #0ff; padding: 5px 10px; cursor: pointer; }
+        .layer button.active, .panel button:hover, #global-controls button:hover { background: #0ff; color: #000; }
+        #add-layer-btn { width: 100%; padding: 10px; margin-top: 10px; }
+        #global-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .panel h3 { margin: 0 0 10px 0; text-align: center; border-bottom: 1px solid #055; padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <canvas id="gl-canvas"></canvas>
+    <div id="ui-wrapper">
+        <div id="ui-toggle-bar">Show Controls</div>
+        <div id="global-controls" class="panel">
+            <div>
+                <h3>Global Modifiers</h3>
+                <div class="control-group">
+                    <label>Master Opacity</label>
+                    <input id="master-opacity" type="range" min="0" max="1" step="0.01" value="1">
+                </div>
+                 <div class="control-group">
+                    <label>Time Speed</label>
+                    <input id="time-speed" type="range" min="0" max="3" step="0.01" value="1">
+                </div>
+            </div>
+            <div>
+                <h3>Global LFO</h3>
+                <div class="control-group">
+                    <label>Target</label>
+                    <select id="lfo-target"><option>depth</option><option>bloom</option><option>transparency</option></select>
+                </div>
+                <div class="control-group">
+                    <label>Speed</label>
+                    <input id="lfo-speed" type="range" min="0" max="5" step="0.01" value="0.5">
+                </div>
+                <div class="control-group">
+                    <label>Amount</label>
+                    <input id="lfo-amount" type="range" min="0" max="1" step="0.01" value="0">
+                </div>
+            </div>
+        </div>
+        <div id="layers-panel" class="panel">
+            <div id="layers-container"></div>
+            <button id="add-layer-btn">Add Another Layer</button>
+            <button id="fullscreen-btn" style="width:100%; margin-top:5px;">Toggle Fullscreen</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- SHADER SETUP -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); vUv = uv; }
+    </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform float u_time;
+        uniform float u_depth;
+        uniform float u_fft;
+        uniform sampler2D u_prev_layer;
+        uniform float u_bloom;
+        uniform float u_transparency;
+        uniform float u_visual_seed;
+        uniform int u_blend_mode;
+        varying vec2 vUv;
+
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        void main() {
+            vec2 p = vUv * 2.0 - 1.0;
+            float t = u_time * 0.1 + u_visual_seed;
+            float recursion_depth = 2.0 + u_depth * 8.0;
+            float amplitude = 0.5 + u_depth * 1.5 + u_fft * 2.0;
+
+            for(float i = 1.0; i < 9.0; i++) {
+                if (i > recursion_depth) break;
+                p.x += 0.5 / i * sin(i * 2.0 * p.y + t + cos(t * 0.5));
+                p.y += 0.5 / i * cos(i * 3.0 * p.x + t + sin(t * 0.4));
+            }
+
+            float color_val = length(p);
+            float hue = 0.6 + u_depth * 0.3 + t * 0.1;
+            vec3 color = hsv2rgb(vec3(hue, 0.8, 0.9));
+            float final_val = pow(sin(color_val * 3.0) * 0.5 + 0.5, 2.0);
+            float bloom = smoothstep(0.8, 1.0, final_val) * u_bloom;
+            vec4 new_color = vec4(color * final_val + bloom, 1.0);
+
+            vec4 prev_color = texture2D(u_prev_layer, vUv);
+
+            vec4 blended_color;
+            if (u_blend_mode == 0) { // Screen
+                blended_color = 1.0 - (1.0 - prev_color) * (1.0 - new_color);
+            } else if (u_blend_mode == 1) { // Add
+                blended_color = prev_color + new_color;
+            } else if (u_blend_mode == 2) { // Multiply
+                blended_color = prev_color * new_color;
+            } else { // Subtract
+                blended_color = max(vec4(0.0), prev_color - new_color);
+            }
+
+            gl_FragColor = mix(prev_color, blended_color, u_transparency);
+        }
+    </script>
+
+    <script>
+        let audioCtx;
+        const layers = [];
+        let layerIdCounter = 0;
+        const layersContainerEl = document.getElementById('layers-container');
+        const globals = {
+            masterOpacity: 1,
+            timeSpeed: 1,
+            lfo: { target: 'depth', speed: 0.5, amount: 0 }
+        };
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl-canvas'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        const clock = new THREE.Clock();
+
+        const baseMaterial = new THREE.ShaderMaterial({
+            vertexShader: document.getElementById('vertexShader').textContent,
+            fragmentShader: document.getElementById('fragmentShader').textContent,
+            uniforms: {
+                u_time: { value: 0.0 },
+                u_depth: { value: 0.5 },
+                u_fft: { value: 0.0 },
+                u_prev_layer: { value: null },
+                u_bloom: { value: 1.0 },
+                u_transparency: { value: 1.0 },
+                u_visual_seed: { value: 0.0 },
+                u_blend_mode: { value: 0 }
+            },
+            transparent: true,
+            blending: THREE.CustomBlending
+        });
+
+        const plane = new THREE.PlaneGeometry(2, 2);
+        const quad = new THREE.Mesh(plane, baseMaterial);
+        scene.add(quad);
+
+        let readBuffer = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+        let writeBuffer = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+
+        // --- AUDIO & LAYER CLASS ---
+        class AudioLayer {
+            constructor(id) {
+                this.id = id;
+                this.depth = 0.5;
+                this.muted = false;
+                this.bloom = 1.0;
+                this.transparency = 1.0;
+                this.blendMode = 0; // 0: Screen, 1: Add, 2: Multiply, 3: Subtract
+                this.visualSeed = Math.random() * 100;
+
+                if (!audioCtx) return;
+                this.masterGain = audioCtx.createGain();
+                this.masterGain.connect(audioCtx.destination);
+                
+                this.analyser = audioCtx.createAnalyser();
+                this.analyser.fftSize = 128;
+                this.fftData = new Uint8Array(this.analyser.frequencyBinCount);
+                this.masterGain.connect(this.analyser);
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.connect(this.masterGain);
+                this.filter = filter;
+
+                const fmOsc = audioCtx.createOscillator();
+                const modulator = audioCtx.createOscillator();
+                const fmGain = audioCtx.createGain();
+                fmOsc.connect(filter); modulator.connect(fmGain); fmGain.connect(fmOsc.frequency);
+                fmOsc.start(); modulator.start();
+                this.fmOsc = fmOsc; this.fmGain = fmGain;
+
+                this.update();
+            }
+
+            update() {
+                if (!audioCtx) return;
+                const d2 = this.depth * this.depth;
+                this.fmOsc.frequency.setTargetAtTime(60 + d2 * 120, audioCtx.currentTime, 0.02);
+                this.fmGain.gain.setTargetAtTime(d2 * 100, audioCtx.currentTime, 0.02);
+                this.filter.frequency.setTargetAtTime(200 + (1 - d2) * 4000, audioCtx.currentTime, 0.02);
+                this.filter.Q.setTargetAtTime(1 + d2 * 15, audioCtx.currentTime, 0.02);
+                this.masterGain.gain.setTargetAtTime(this.muted ? 0 : 0.5, audioCtx.currentTime, 0.01);
+            }
+
+            getFFT() {
+                if (!this.analyser) return 0;
+                this.analyser.getByteFrequencyData(this.fftData);
+                return this.fftData.reduce((a, b) => a + b, 0) / this.fftData.length / 255;
+            }
+
+            destroy() {
+                if (!audioCtx) return;
+                this.fmOsc.stop();
+                this.modulator.stop();
+                this.masterGain.disconnect();
+            }
+        }
+
+        // --- UI & CONTROLS ---
+        document.getElementById('add-layer-btn').addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                document.getElementById('add-layer-btn').textContent = 'Add Another Layer';
+            }
+            const id = layerIdCounter++;
+            const layer = new AudioLayer(id);
+            layers.push(layer);
+
+            const layerEl = document.createElement('div');
+            layerEl.className = 'layer';
+            layerEl.dataset.id = id;
+            layerEl.innerHTML = `
+                <div class="layer-header">
+                    <span>Layer ${id}</span>
+                    <div>
+                        <button class="collapse-btn">Collapse</button>
+                        <button class="delete-btn">Delete</button>
+                    </div>
+                </div>
+                <div class="layer-controls">
+                    <div class="control-group"><label>Depth</label><input class="depth-slider" type="range" min="0" max="1" step="0.001" value="0.5"></div>
+                    <div class="control-group"><label>Bloom</label><input class="bloom-slider" type="range" min="0" max="3" step="0.01" value="1.0"></div>
+                    <div class="control-group"><label>Opacity</label><input class="transparency-slider" type="range" min="0" max="1" step="0.01" value="1.0"></div>
+                    <div class="control-group"><label>Blend</label><div>
+                        <button class="blend-btn active" data-mode="0">Screen</button> <button class="blend-btn" data-mode="1">Add</button> 
+                        <button class="blend-btn" data-mode="2">Multiply</button> <button class="blend-btn" data-mode="3">Subtract</button>
+                    </div></div>
+                    <div class="control-group"><label>Audio</label><button class="mute-btn active">Mute</button></div>
+                </div>
+            `;
+            layersContainerEl.appendChild(layerEl);
+
+            layerEl.querySelector('.depth-slider').addEventListener('input', (e) => { layer.depth = parseFloat(e.target.value); layer.update(); });
+            layerEl.querySelector('.bloom-slider').addEventListener('input', (e) => { layer.bloom = parseFloat(e.target.value); });
+            layerEl.querySelector('.transparency-slider').addEventListener('input', (e) => { layer.transparency = parseFloat(e.target.value); });
+            layerEl.querySelector('.mute-btn').addEventListener('click', (e) => {
+                layer.muted = !layer.muted;
+                e.target.textContent = layer.muted ? 'Unmuted' : 'Mute';
+                e.target.classList.toggle('active', !layer.muted);
+                layer.update();
+            });
+            layerEl.querySelectorAll('.blend-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    layer.blendMode = parseInt(e.target.dataset.mode);
+                    layerEl.querySelectorAll('.blend-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                });
+            });
+            layerEl.querySelector('.delete-btn').addEventListener('click', () => deleteLayer(id));
+            layerEl.querySelector('.collapse-btn').addEventListener('click', (e) => {
+                layerEl.classList.toggle('collapsed');
+                e.target.textContent = layerEl.classList.contains('collapsed') ? 'Expand' : 'Collapse';
+            });
+            layerEl.draggable = true;
+            layerEl.addEventListener('dragstart', e => e.target.classList.add('dragging'));
+            layerEl.addEventListener('dragend', e => e.target.classList.remove('dragging'));
+        });
+
+        // --- RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now() * 0.001 * globals.timeSpeed;
+            baseMaterial.uniforms.u_time.value = time;
+
+            const lfoValue = (Math.sin(time * globals.lfo.speed * 2) * 0.5 + 0.5) * globals.lfo.amount;
+
+            renderer.setRenderTarget(writeBuffer);
+            renderer.clear();
+
+            for (const layer of layers) {
+                // Set base values
+                baseMaterial.uniforms.u_depth.value = layer.depth;
+                baseMaterial.uniforms.u_bloom.value = layer.bloom;
+                baseMaterial.uniforms.u_transparency.value = layer.transparency;
+
+                // Apply LFO modulation
+                if (globals.lfo.amount > 0) {
+                    const currentVal = baseMaterial.uniforms[globals.lfo.target].value;
+                    baseMaterial.uniforms[globals.lfo.target].value = Math.max(0, currentVal + lfoValue - globals.lfo.amount / 2);
+                }
+
+                // Apply visual mute by setting transparency to 0
+                if (layer.muted) {
+                    baseMaterial.uniforms.u_transparency.value = 0;
+                }
+
+                // Set remaining uniforms
+                baseMaterial.uniforms.u_fft.value = layer.getFFT();
+                baseMaterial.uniforms.u_prev_layer.value = readBuffer.texture;
+                baseMaterial.uniforms.u_visual_seed.value = layer.visualSeed;
+                baseMaterial.uniforms.u_blend_mode.value = layer.blendMode;
+                
+                renderer.setRenderTarget(writeBuffer);
+                renderer.render(scene, camera);
+
+                // Ping-pong buffers
+                let temp = readBuffer;
+                readBuffer = writeBuffer;
+                writeBuffer = temp;
+            }
+
+            // Final render to screen
+            renderer.setRenderTarget(null);
+            quad.material = new THREE.MeshBasicMaterial({ map: readBuffer.texture, transparent: true, opacity: globals.masterOpacity });
+            renderer.render(scene, camera);
+            quad.material = baseMaterial; // Swap back for next frame's layer processing
+        }
+
+        // --- INITIALIZATION ---
+        function deleteLayer(id) {
+            const index = layers.findIndex(l => l.id === id);
+            if (index > -1) {
+                layers[index].destroy();
+                layers.splice(index, 1);
+                document.querySelector(`.layer[data-id='${id}']`).remove();
+            }
+        }
+
+        layersContainerEl.addEventListener('dragover', e => {
+            e.preventDefault();
+            const draggingEl = document.querySelector('.dragging');
+            const afterElement = getDragAfterElement(layersContainerEl, e.clientY);
+            if (afterElement == null) {
+                layersContainerEl.appendChild(draggingEl);
+            } else {
+                layersContainerEl.insertBefore(draggingEl, afterElement);
+            }
+        });
+
+        layersContainerEl.addEventListener('drop', e => {
+            e.preventDefault();
+            const id = parseInt(document.querySelector('.dragging').dataset.id);
+            const layer = layers.find(l => l.id === id);
+            const newIndex = Array.from(layersContainerEl.children).indexOf(document.querySelector('.dragging'));
+            const oldIndex = layers.indexOf(layer);
+            layers.splice(oldIndex, 1);
+            layers.splice(newIndex, 0, layer);
+        });
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.layer:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        document.getElementById('master-opacity').addEventListener('input', e => { globals.masterOpacity = parseFloat(e.target.value); });
+        document.getElementById('time-speed').addEventListener('input', e => { globals.timeSpeed = parseFloat(e.target.value); });
+        document.getElementById('lfo-target').addEventListener('change', e => { globals.lfo.target = e.target.value; });
+        document.getElementById('lfo-speed').addEventListener('input', e => { globals.lfo.speed = parseFloat(e.target.value); });
+        document.getElementById('lfo-amount').addEventListener('input', e => { globals.lfo.amount = parseFloat(e.target.value); });
+
+        document.getElementById('fullscreen-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else if (document.exitFullscreen) document.exitFullscreen();
+        });
+
+        const uiWrapper = document.getElementById('ui-wrapper');
+        document.getElementById('ui-toggle-bar').addEventListener('click', () => {
+            uiWrapper.classList.toggle('hidden');
+            document.getElementById('ui-toggle-bar').textContent = uiWrapper.classList.contains('hidden') ? 'Show Controls' : 'Hide Controls';
+        });
+        uiWrapper.classList.add('hidden');
+
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth; const h = window.innerHeight;
+            renderer.setSize(w, h);
+            readBuffer.setSize(w, h);
+            writeBuffer.setSize(w, h);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

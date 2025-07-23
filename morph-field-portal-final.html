@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living Morphic Field Resonance Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            overflow: hidden;
+            cursor: none;
+            touch-action: none;
+        }
+
+        #start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            font-family: monospace;
+            font-size: 18px;
+            color: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 100;
+            transition: opacity 0.5s ease;
+        }
+
+        #start-button.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        #seq {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: repeat(8, 30px);
+            grid-gap: 4px;
+            z-index: 5;
+            opacity: 0.9;
+            transition: opacity 0.3s ease;
+        }
+        
+        .step {
+            width: 30px; 
+            height: 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            user-select: none;
+        }
+        
+        .step[data-y="0"] { background: rgba(255, 0, 150, 0.1); }
+        .step[data-y="1"] { background: rgba(0, 255, 255, 0.1); }
+        .step[data-y="2"] { background: rgba(255, 255, 0, 0.1); }
+        .step[data-y="3"] { background: rgba(150, 255, 0, 0.1); }
+        
+        .step.active[data-y="0"] { background: rgba(255, 0, 150, 0.8); color: #fff; }
+        .step.active[data-y="1"] { background: rgba(0, 255, 255, 0.8); color: #000; }
+        .step.active[data-y="2"] { background: rgba(255, 255, 0, 0.8); color: #000; }
+        .step.active[data-y="3"] { background: rgba(150, 255, 0, 0.8); color: #000; }
+        
+        .step.playing { 
+            box-shadow: 0 0 15px currentColor;
+            transform: scale(1.1);
+        }
+        
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 5;
+            color: rgba(255,255,255,0.6);
+            font-family: monospace;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        
+        .bpm-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .bpm-btn {
+            width: 20px;
+            height: 20px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <button id="start-button">Enter Portal</button>
+    <canvas id="canvas"></canvas>
+    
+    <div id="seq"></div>
+    
+    <div id="controls">
+        <div class="bpm-control">
+            <button class="bpm-btn" onclick="portal.changeBPM(-5)">-</button>
+            <span id="bpm-display">90</span>
+            <button class="bpm-btn" onclick="portal.changeBPM(5)">+</button>
+            <span>BPM</span>
+        </div>
+        <div>SHIFT+CLICK: Hide/Show</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class MorphicFieldPortal {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.audioContext = null;
+                this.masterGain = null;
+                this.reverb = null;
+                this.oscillators = [];
+                this.filters = [];
+                this.analyser = null;
+                this.frequencyData = null;
+                
+                this.mouse = { x: 0, y: 0, down: false };
+                this.morphicState = {
+                    intensity: 0.5,
+                    frequency: 220,
+                    resonance: 0.7,
+                    bloom: 0.8,
+                    flow: 0.6,
+                    harmonic: 0.4
+                };
+                
+                this.fieldMesh = null;
+                this.time = 0;
+                
+                // Sequencer properties
+                this.steps = Array(8).fill().map(() => Array(4).fill(false));
+                this.currentStep = 0;
+                this.bpm = 90;
+                this.schedulerInterval = null;
+                this.nextStepTime = 0;
+                this.sequencerVisible = true;
+                
+                this.isInitialized = false;
+
+                this.setupThreeJS();
+                this.setupSequencerUI();
+                this.animate();
+            }
+            
+            async init() {
+                if (this.isInitialized) return;
+                
+                await this.setupAudio();
+                this.createMorphicField();
+                this.setupInteraction();
+                this.loadStateFromURL();
+                this.startSequencer();
+                
+                document.getElementById('start-button').classList.add('hidden');
+                document.getElementById('controls').style.opacity = '1';
+                this.isInitialized = true;
+            }
+            
+            setupThreeJS() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ 
+                    canvas: document.getElementById('canvas'),
+                    antialias: true,
+                    alpha: true
+                });
+                
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                this.camera.position.z = 5;
+                
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            async setupAudio() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Master gain
+                this.masterGain = this.audioContext.createGain();
+                this.masterGain.gain.value = 0.3;
+                
+                // Analyser for visual feedback
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+                
+                // Create reverb
+                await this.createReverb();
+
+                // Connect audio graph
+                this.masterGain.connect(this.analyser);
+                this.analyser.connect(this.audioContext.destination);
+                
+                // Create oscillator bank
+                this.createOscillatorBank();
+            }
+            
+            async createReverb() {
+                const reverbBuffer = this.audioContext.createBuffer(2, this.audioContext.sampleRate * 2, this.audioContext.sampleRate);
+                
+                for (let channel = 0; channel < reverbBuffer.numberOfChannels; channel++) {
+                    const channelData = reverbBuffer.getChannelData(channel);
+                    for (let i = 0; i < channelData.length; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / channelData.length, 2.5);
+                    }
+                }
+                
+                this.reverb = this.audioContext.createConvolver();
+                this.reverb.buffer = reverbBuffer;
+                
+                const reverbGain = this.audioContext.createGain();
+                reverbGain.gain.value = 0.4;
+                this.reverb.connect(reverbGain);
+                reverbGain.connect(this.masterGain);
+            }
+            
+            createOscillatorBank() {
+                const baseFreq = this.morphicState.frequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                
+                frequencies.forEach((freq, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    const filter = this.audioContext.createBiquadFilter();
+                    
+                    osc.type = i === 0 ? 'sine' : ['sawtooth', 'triangle', 'square'][i % 3];
+                    osc.frequency.value = freq;
+                    
+                    gain.gain.value = 0.1 / frequencies.length;
+                    
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 800 + i * 400;
+                    filter.Q.value = this.morphicState.resonance * 10;
+                    
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.masterGain); // Connect dry signal to master
+                    gain.connect(this.reverb); // Also send to reverb
+                    
+                    osc.start();
+                    
+                    this.oscillators.push(osc);
+                    this.filters.push(filter);
+                });
+            }
+            
+            createMorphicField() {
+                const geometry = new THREE.PlaneGeometry(20, 20, 128, 128);
+                
+                const vertexShader = `
+                    uniform float time;
+                    uniform float intensity;
+                    uniform float flow;
+                    uniform vec2 mouse;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        
+                        float dist = distance(uv, mouse);
+                        float wave = sin(dist * 15.0 - time * 2.0) * 0.1;
+                        float ripple = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                        
+                        float morphic = sin(pos.x * 4.0 + time * flow) * 
+                                       cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                        
+                        pos.z += wave + ripple + morphic;
+                        vDistortion = abs(wave + ripple + morphic);
+                        vPosition = pos;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `;
+                
+                const fragmentShader = `
+                    uniform float time;
+                    uniform float bloom;
+                    uniform float harmonic;
+                    uniform vec2 mouse;
+                    uniform float audioLevel;
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying float vDistortion;
+                    
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                    
+                    void main() {
+                        vec2 center = vUv - 0.5;
+                        float dist = length(center);
+                        
+                        float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                        float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                        float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4);
+                        
+                        vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                        
+                        float alpha = 0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2;
+                        alpha *= smoothstep(1.5, 0.0, dist);
+                        
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `;
+                
+                const material = new THREE.ShaderMaterial({
+                    vertexShader,
+                    fragmentShader,
+                    uniforms: {
+                        time: { value: 0 },
+                        intensity: { value: this.morphicState.intensity },
+                        flow: { value: this.morphicState.flow },
+                        bloom: { value: this.morphicState.bloom },
+                        harmonic: { value: this.morphicState.harmonic },
+                        mouse: { value: new THREE.Vector2(0.5, 0.5) },
+                        audioLevel: { value: 0 }
+                    },
+                    transparent: true,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.fieldMesh = new THREE.Mesh(geometry, material);
+                this.scene.add(this.fieldMesh);
+                
+                this.createParticleField();
+            }
+            
+            createParticleField() {
+                const particleCount = 1000;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 20;
+                    positions[i + 1] = (Math.random() - 0.5) * 20;
+                    positions[i + 2] = (Math.random() - 0.5) * 10;
+                    
+                    const c = new THREE.Color();
+                    c.setHSL(Math.random(), 0.7, 0.7);
+                    colors[i] = c.r;
+                    colors[i+1] = c.g;
+                    colors[i+2] = c.b;
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                
+                const material = new THREE.PointsMaterial({
+                    size: 0.05,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.6,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+            
+            setupSequencerUI() {
+                const seq = document.getElementById('seq');
+                seq.innerHTML = ''; // Clear previous
+                for (let y = 0; y < 4; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const div = document.createElement('div');
+                        div.classList.add('step');
+                        div.dataset.x = x;
+                        div.dataset.y = y;
+                        div.textContent = '•';
+                        div.onclick = () => {
+                            this.steps[x][y] = !this.steps[x][y];
+                            div.classList.toggle('active', this.steps[x][y]);
+                            div.textContent = this.steps[x][y] ? '●' : '•';
+                        };
+                        seq.appendChild(div);
+                    }
+                }
+            }
+            
+            startSequencer() {
+                if (this.schedulerInterval) clearInterval(this.schedulerInterval);
+
+                this.nextStepTime = this.audioContext.currentTime;
+                
+                const schedule = () => {
+                    const now = this.audioContext.currentTime;
+                    const lookahead = 0.1; // 100ms
+
+                    while(this.nextStepTime < now + lookahead) {
+                        this.playStep(this.currentStep, this.nextStepTime);
+                        const secondsPerStep = (60 / this.bpm) / 4; // 16th notes
+                        this.nextStepTime += secondsPerStep;
+                        this.currentStep = (this.currentStep + 1) % 8;
+                    }
+                };
+
+                this.schedulerInterval = setInterval(schedule, 25); // Check every 25ms
+            }
+            
+            playStep(step, time) {
+                // Visual feedback in animate() loop for perfect sync
+
+                for (let y = 0; y < 4; y++) {
+                    if (this.steps[step][y]) {
+                        switch(y) {
+                            case 0: this.triggerPulse(time); break;
+                            case 1: this.bumpIntensity(time); break;
+                            case 2: this.shiftBloom(time); break;
+                            case 3: this.grainGlitch(time); break;
+                        }
+                    }
+                }
+            }
+
+            triggerPulse(time) {
+                // This now triggers a percussive sound
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(880, time);
+                osc.frequency.exponentialRampToValueAtTime(220, time + 0.2);
+                
+                gain.gain.setValueAtTime(0.4, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(time);
+                osc.stop(time + 0.25);
+            }
+            
+            bumpIntensity(time) {
+                this.morphicState.intensity = Math.min(1, this.morphicState.intensity + 0.1);
+                this.updateAudio();
+            }
+            
+            shiftBloom(time) {
+                this.morphicState.bloom = 0.3 + Math.random() * 0.7;
+            }
+            
+            grainGlitch(time) {
+                if (!this.masterGain) return;
+                this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, time);
+                this.masterGain.gain.linearRampToValueAtTime(0.0, time + 0.01);
+                this.masterGain.gain.linearRampToValueAtTime(0.3, time + 0.1);
+            }
+            
+            changeBPM(delta) {
+                this.bpm = Math.max(60, Math.min(180, this.bpm + delta));
+                document.getElementById('bpm-display').textContent = this.bpm;
+            }
+            
+            toggleSequencer() {
+                this.sequencerVisible = !this.sequencerVisible;
+                const seq = document.getElementById('seq');
+                const controls = document.getElementById('controls');
+                seq.style.opacity = this.sequencerVisible ? '0.9' : '0';
+                controls.style.opacity = this.sequencerVisible ? '1' : '0';
+            }
+            
+            setupInteraction() {
+                const canvas = document.getElementById('canvas');
+                
+                const handleStart = (e) => {
+                    if (e.shiftKey) {
+                        this.toggleSequencer();
+                        return;
+                    }
+                    this.mouse.down = true;
+                    this.updateMouse(e);
+                };
+                
+                const handleMove = (e) => {
+                    this.updateMouse(e);
+                    if (this.mouse.down) {
+                        this.updateMorphicState(e);
+                    }
+                };
+                
+                const handleEnd = () => {
+                    this.mouse.down = false;
+                };
+                
+                canvas.addEventListener('mousedown', handleStart);
+                canvas.addEventListener('mousemove', handleMove);
+                canvas.addEventListener('mouseup', handleEnd);
+                canvas.addEventListener('mouseleave', handleEnd);
+                
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 2) {
+                        this.toggleSequencer();
+                        return;
+                    }
+                    handleStart(e.touches[0]);
+                }, { passive: false });
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    handleMove(e.touches[0]);
+                }, { passive: false });
+                canvas.addEventListener('touchend', handleEnd);
+            }
+            
+            updateMouse(e) {
+                this.mouse.x = e.clientX / window.innerWidth;
+                this.mouse.y = 1 - e.clientY / window.innerHeight;
+            }
+            
+            updateMorphicState(e) {
+                const x = e.clientX / window.innerWidth;
+                const y = 1 - e.clientY / window.innerHeight;
+                
+                this.morphicState.intensity = y;
+                this.morphicState.frequency = 100 + x * 400;
+                this.morphicState.resonance = Math.sin(this.time * 0.01 + x * Math.PI) * 0.5 + 0.5;
+                this.morphicState.bloom = 0.3 + y * 0.7;
+                this.morphicState.flow = x * 2;
+                this.morphicState.harmonic = Math.cos(this.time * 0.005 + y * Math.PI) * 0.5 + 0.5;
+                
+                this.updateAudio();
+                this.updateStateInURL();
+            }
+            
+            updateAudio() {
+                if (!this.audioContext || this.oscillators.length === 0) return;
+                
+                const baseFreq = this.morphicState.frequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                
+                this.oscillators.forEach((osc, i) => {
+                    osc.frequency.setTargetAtTime(frequencies[i], this.audioContext.currentTime, 0.1);
+                });
+                
+                this.filters.forEach(filter => {
+                    filter.frequency.setTargetAtTime(
+                        200 + this.morphicState.intensity * 1000,
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                    filter.Q.setTargetAtTime(
+                        this.morphicState.resonance * 15 + 1,
+                        this.audioContext.currentTime,
+                        0.1
+                    );
+                });
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.time += 0.016;
+                
+                let audioLevel = 0;
+                if (this.analyser) {
+                    this.analyser.getByteFrequencyData(this.frequencyData);
+                    audioLevel = this.frequencyData.reduce((sum, value) => sum + value, 0) / (this.frequencyData.length * 255);
+                }
+                
+                if (this.fieldMesh) {
+                    const uniforms = this.fieldMesh.material.uniforms;
+                    uniforms.time.value = this.time;
+                    uniforms.intensity.value = this.morphicState.intensity;
+                    uniforms.flow.value = this.morphicState.flow;
+                    uniforms.bloom.value = this.morphicState.bloom;
+                    uniforms.harmonic.value = this.morphicState.harmonic;
+                    uniforms.mouse.value.set(this.mouse.x, this.mouse.y);
+                    uniforms.audioLevel.value = audioLevel;
+                    
+                    this.fieldMesh.rotation.z = this.time * 0.01;
+                }
+                
+                if (this.particles) {
+                    this.particles.rotation.y = this.time * 0.005;
+                }
+
+                // Visual step indicator
+                if (this.isInitialized) {
+                    const visualStep = Math.floor(this.currentStep - 1 + 8) % 8;
+                    document.querySelectorAll('.step.playing').forEach(el => el.classList.remove('playing'));
+                    document.querySelectorAll(`.step[data-x="${visualStep}"]`).forEach(el => el.classList.add('playing'));
+                }
+                
+                if (!this.mouse.down) {
+                    this.morphicState.flow = 0.6 + Math.sin(this.time * 0.003) * 0.4;
+                    this.morphicState.harmonic = 0.4 + Math.cos(this.time * 0.002) * 0.3;
+                }
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            updateStateInURL() {
+                const state = btoa(JSON.stringify(this.morphicState));
+                history.replaceState(null, '', '#' + state);
+            }
+            
+            loadStateFromURL() {
+                try {
+                    if (window.location.hash) {
+                        const state = JSON.parse(atob(window.location.hash.slice(1)));
+                        Object.assign(this.morphicState, state);
+                        this.updateAudio();
+                    }
+                } catch (error) {
+                    console.warn('Failed to load state from URL');
+                }
+            }
+        }
+        
+        let portal;
+        window.addEventListener('load', () => {
+            portal = new MorphicFieldPortal();
+            document.getElementById('start-button').addEventListener('click', () => portal.init());
+        });
+    </script>
+</body>
+</html>

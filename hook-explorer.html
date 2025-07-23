@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hooke's Resonant Sand Pattern Explorer (1680)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Crimson Text', serif;
+            background: #1a1410;
+            color: #d4af37;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .panel {
+            position: absolute;
+            background: linear-gradient(135deg, rgba(20, 15, 10, 0.9), rgba(30, 25, 20, 0.85));
+            border: 2px solid #b8860b;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 0 10px rgba(212, 175, 55, 0.2);
+            font-size: 14px;
+        }
+        
+        .panel h3 {
+            font-family: 'Cinzel', serif;
+            color: #d4af37;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 16px;
+            letter-spacing: 1px;
+        }
+        
+        #controls {
+            top: 20px;
+            left: 20px;
+            width: 280px;
+        }
+        
+        #info {
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        #equation {
+            bottom: 20px;
+            left: 20px;
+            width: 400px;
+            font-family: 'Crimson Text', serif;
+            font-style: italic;
+            background: rgba(20, 15, 10, 0.95);
+            border: 1px solid #8b7355;
+        }
+        
+        #time-machine {
+            bottom: 20px;
+            right: 20px;
+            width: 250px;
+        }
+        
+        .control-group {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(139, 115, 85, 0.1);
+            border-radius: 5px;
+            border-left: 3px solid #b8860b;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #d4af37;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #2a1f1a;
+            outline: none;
+            border-radius: 3px;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: linear-gradient(135deg, #d4af37, #b8860b);
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #8b4513, #654321);
+            color: #d4af37;
+            border: 1px solid #b8860b;
+            padding: 8px 16px;
+            margin: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Cinzel', serif;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: linear-gradient(135deg, #a0522d, #8b4513);
+            box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .value-display {
+            display: inline-block;
+            background: rgba(212, 175, 55, 0.1);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: monospace;
+            margin-left: 5px;
+        }
+        
+        #historical-sketch {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 200px;
+            background: rgba(245, 222, 179, 0.9);
+            border: 2px solid #8b4513;
+            border-radius: 5px;
+            display: none;
+            font-family: 'Crimson Text', serif;
+            color: #2f1b14;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        .sketch-lines {
+            stroke: #2f1b14;
+            stroke-width: 1;
+            fill: none;
+        }
+        
+        .annotation {
+            position: absolute;
+            font-size: 11px;
+            font-style: italic;
+            color: #654321;
+        }
+        
+        #frequency-analysis {
+            position: absolute;
+            top: 50%;
+            left: 10%;
+            width: 200px;
+            height: 100px;
+            background: rgba(20, 15, 10, 0.8);
+            border: 1px solid #b8860b;
+            display: none;
+        }
+        
+        .waveform {
+            width: 100%;
+            height: 60px;
+            background: rgba(212, 175, 55, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .wave-path {
+            fill: none;
+            stroke: #d4af37;
+            stroke-width: 2;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        
+        <div id="controls" class="panel">
+            <h3>Experimental Controls</h3>
+            
+            <div class="control-group">
+                <label>Frequency: <span class="value-display" id="freq-display">440 Hz</span></label>
+                <input type="range" id="frequency" min="10" max="5000" value="440" step="1">
+            </div>
+            
+            <div class="control-group">
+                <label>Amplitude: <span class="value-display" id="amp-display">0.5</span></label>
+                <input type="range" id="amplitude" min="0" max="1" value="0.5" step="0.01">
+            </div>
+            
+            <div class="control-group">
+                <label>Mode (n,m): <span class="value-display" id="mode-display">2,3</span></label>
+                <input type="range" id="mode-n" min="1" max="5" value="2" step="1">
+                <input type="range" id="mode-m" min="1" max="5" value="3" step="1">
+            </div>
+            
+            <div class="control-group">
+                <label>Grain Size: <span class="value-display" id="grain-display">1.0</span></label>
+                <input type="range" id="grain-size" min="0.1" max="3" value="1" step="0.1">
+            </div>
+            
+            <div class="control-group">
+                <label>Plate Material:</label>
+                <select id="material" style="width: 100%; background: #2a1f1a; color: #d4af37; border: 1px solid #b8860b; padding: 5px;">
+                    <option value="brass">Brass (1680)</option>
+                    <option value="glass">Glass</option>
+                    <option value="steel">Steel</option>
+                </select>
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="toggleSimulation()">⏯ Play/Pause</button>
+                <button onclick="resetExperiment()">↺ Reset</button>
+                <button onclick="recordMoment()">📷 Record</button>
+            </div>
+        </div>
+        
+        <div id="info" class="panel">
+            <h3>Observations</h3>
+            <div id="observations">
+                <p><strong>Current Pattern:</strong> <span id="pattern-name">Nodal Lines</span></p>
+                <p><strong>Frequency Analysis:</strong></p>
+                <div id="frequency-display" style="height: 60px; background: rgba(212, 175, 55, 0.1); margin: 5px 0;"></div>
+                <p><strong>Physical Properties:</strong></p>
+                <ul style="margin-left: 20px; font-size: 12px;">
+                    <li>Plate Dimensions: 30cm × 20cm</li>
+                    <li>Wave Speed: <span id="wave-speed">340 m/s</span></li>
+                    <li>Wavelength: <span id="wavelength">0.77 m</span></li>
+                </ul>
+                <p><strong>Historical Note:</strong></p>
+                <p style="font-style: italic; font-size: 12px; color: #b8860b;">
+                    "I did with a Violin bow cause a Brass Plate to sound,
+                    and by strewing Sand upon it, saw the Sand dance into curious figures."
+                    - Robert Hooke, 1680
+                </p>
+            </div>
+        </div>
+        
+        <div id="equation" class="panel">
+            <h3>Mathematical Description</h3>
+            <div style="font-family: 'Times New Roman', serif; font-size: 16px; text-align: center;">
+                A(x,y,t) = A₀ sin(<span id="math-n">n</span>πx/L) sin(<span id="math-m">m</span>πy/W) cos(2πft)
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #b8860b;">
+                Where nodal lines occur when A(x,y,t) = 0 for all t
+            </div>
+        </div>
+        
+        <div id="time-machine" class="panel">
+            <h3>Time Machine</h3>
+            <label>Historical Perspective: <span class="value-display" id="time-display">1680</span></label>
+            <input type="range" id="time-slider" min="1680" max="2024" value="1680" step="1">
+            <div style="margin-top: 10px;">
+                <button onclick="loadPreset('hooke')">Hooke's Setup</button>
+                <button onclick="loadPreset('chladni')">Chladni 1787</button>
+                <button onclick="loadPreset('modern')">Modern Lab</button>
+            </div>
+            <div id="historical-moments" style="margin-top: 10px; font-size: 11px;">
+                <strong>Saved Moments:</strong>
+                <div id="saved-moments"></div>
+            </div>
+        </div>
+        
+        <div id="historical-sketch">
+            <svg width="260" height="160">
+                <rect x="10" y="50" width="240" height="60" fill="none" stroke="#2f1b14" stroke-width="2"/>
+                <circle cx="130" cy="80" r="3" fill="#2f1b14"/>
+                <path d="M 40 80 Q 130 70 220 80" class="sketch-lines" stroke-dasharray="2,2"/>
+                <path d="M 40 85 Q 130 75 220 85" class="sketch-lines" stroke-dasharray="2,2"/>
+                <text x="130" y="30" text-anchor="middle" font-size="14" fill="#2f1b14">Fig. 1. Vibrating Plate</text>
+                <text x="130" y="140" text-anchor="middle" font-size="10" fill="#2f1b14">Nodal Lines of Sand</text>
+            </svg>
+            <div class="annotation" style="top: 60px; left: 30px;">Node</div>
+            <div class="annotation" style="top: 60px; right: 30px;">Antinode</div>
+        </div>
+        
+        <div id="frequency-analysis">
+            <div class="waveform">
+                <svg width="100%" height="100%">
+                    <path class="wave-path" d=""></path>
+                </svg>
+            </div>
+            <div style="text-align: center; font-size: 10px;">Frequency Domain</div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let plate, sand, waveField;
+        let animationId;
+        let isPlaying = true;
+        let time = 0;
+        let config = {
+            frequency: 440,
+            amplitude: 0.5,
+            modeN: 2,
+            modeM: 3,
+            grainSize: 1.0,
+            material: 'brass',
+            historicalYear: 1680
+        };
+        
+        const savedMoments = [];
+        
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1410);
+            scene.fog = new THREE.Fog(0x1a1410, 10, 50);
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 10);
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xd4af37, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            const pointLight = new THREE.PointLight(0xb8860b, 0.5);
+            pointLight.position.set(-5, 5, 5);
+            scene.add(pointLight);
+            
+            createPlate();
+            createSand();
+            createWaveField();
+            
+            // Event listeners
+            setupEventListeners();
+            
+            animate();
+        }
+        
+        function createPlate() {
+            const plateGeometry = new THREE.PlaneGeometry(6, 4, 50, 50);
+            const plateMaterial = new THREE.MeshPhongMaterial({
+                color: 0xb8860b,
+                metalness: 0.8,
+                roughness: 0.2,
+                side: THREE.DoubleSide
+            });
+            
+            plate = new THREE.Mesh(plateGeometry, plateMaterial);
+            plate.rotation.x = -Math.PI / 2;
+            plate.position.y = 0;
+            plate.receiveShadow = true;
+            scene.add(plate);
+            
+            // Add brass frame
+            const frameGeometry = new THREE.BoxGeometry(6.2, 0.1, 4.2);
+            const frameMaterial = new THREE.MeshPhongMaterial({
+                color: 0x8b4513,
+                metalness: 0.9,
+                roughness: 0.1
+            });
+            const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+            frame.position.y = -0.05;
+            scene.add(frame);
+        }
+        
+        function createSand() {
+            const sandGeometry = new THREE.BufferGeometry();
+            const sandCount = 5000;
+            const positions = new Float32Array(sandCount * 3);
+            const colors = new Float32Array(sandCount * 3);
+            
+            for (let i = 0; i < sandCount; i++) {
+                const x = (Math.random() - 0.5) * 6;
+                const z = (Math.random() - 0.5) * 4;
+                const y = 0.01 + Math.random() * 0.1;
+                
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                
+                // Sand color gradient
+                const sandColor = new THREE.Color();
+                sandColor.setHSL(0.1, 0.2, 0.7 + Math.random() * 0.3);
+                colors[i * 3] = sandColor.r;
+                colors[i * 3 + 1] = sandColor.g;
+                colors[i * 3 + 2] = sandColor.b;
+            }
+            
+            sandGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            sandGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const sandMaterial = new THREE.PointsMaterial({
+                size: 0.05,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            sand = new THREE.Points(sandGeometry, sandMaterial);
+            scene.add(sand);
+        }
+        
+        function createWaveField() {
+            const waveGeometry = new THREE.PlaneGeometry(6, 4, 100, 100);
+            const waveMaterial = new THREE.MeshBasicMaterial({
+                color: 0xd4af37,
+                transparent: true,
+                opacity: 0.2,
+                wireframe: true,
+                side: THREE.DoubleSide
+            });
+            
+            waveField = new THREE.Mesh(waveGeometry, waveMaterial);
+            waveField.rotation.x = -Math.PI / 2;
+            waveField.position.y = 0.5;
+            scene.add(waveField);
+        }
+        
+        function updateSandPattern() {
+            const positions = sand.geometry.attributes.position.array;
+            const L = 6; // Plate length
+            const W = 4;  // Plate width
+            const n = config.modeN;
+            const m = config.modeM;
+            const f = config.frequency;
+            const A0 = config.amplitude;
+            
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const z = positions[i + 2];
+                
+                // Normalized coordinates
+                const xNorm = (x + L/2) / L;
+                const zNorm = (z + W/2) / W;
+                
+                // Standing wave calculation
+                const amplitude = A0 * Math.sin(n * Math.PI * xNorm) * Math.sin(m * Math.PI * zNorm);
+                
+                // Move sand to nodes (where amplitude is minimal)
+                const threshold = 0.05;
+                if (Math.abs(amplitude) < threshold) {
+                    positions[i + 1] = 0.01;
+                } else {
+                    positions[i + 1] = Math.abs(amplitude) * 0.5;
+                }
+                
+                // Add some randomness for natural look
+                positions[i + 1] += (Math.random() - 0.5) * 0.02;
+            }
+            
+            sand.geometry.attributes.position.needsUpdate = true;
+            
+            // Update plate deformation
+            const platePositions = plate.geometry.attributes.position.array;
+            for (let i = 0; i < platePositions.length; i += 3) {
+                const x = platePositions[i];
+                const z = platePositions[i + 2];
+                const xNorm = (x + 3) / 6;
+                const zNorm = (z + 2) / 4;
+                
+                const deformation = A0 * Math.sin(n * Math.PI * xNorm) * 
+                                  Math.sin(m * Math.PI * zNorm) * 
+                                  Math.cos(2 * Math.PI * f * time);
+                
+                platePositions[i + 1] = deformation;
+            }
+            plate.geometry.attributes.position.needsUpdate = true;
+            
+            // Update wave field
+            const wavePositions = waveField.geometry.attributes.position.array;
+            for (let i = 0; i < wavePositions.length; i += 3) {
+                const x = wavePositions[i];
+                const z = wavePositions[i + 2];
+                const xNorm = (x + 3) / 6;
+                const zNorm = (z + 2) / 4;
+                
+                const waveHeight = A0 * Math.sin(n * Math.PI * xNorm) * 
+                                 Math.sin(m * Math.PI * zNorm) * 
+                                 Math.cos(2 * Math.PI * f * time);
+                
+                wavePositions[i + 1] = waveHeight + 0.5;
+            }
+            waveField.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        function setupEventListeners() {
+            const frequencySlider = document.getElementById('frequency');
+            const amplitudeSlider = document.getElementById('amplitude');
+            const modeNSlider = document.getElementById('mode-n');
+            const modeMSlider = document.getElementById('mode-m');
+            const grainSlider = document.getElementById('grain-size');
+            const materialSelect = document.getElementById('material');
+            const timeSlider = document.getElementById('time-slider');
+            
+            frequencySlider.addEventListener('input', (e) => {
+                config.frequency = parseFloat(e.target.value);
+                document.getElementById('freq-display').textContent = config.frequency + ' Hz';
+                updateWavelength();
+            });
+            
+            amplitudeSlider.addEventListener('input', (e) => {
+                config.amplitude = parseFloat(e.target.value);
+                document.getElementById('amp-display').textContent = config.amplitude.toFixed(2);
+            });
+            
+            modeNSlider.addEventListener('input', (e) => {
+                config.modeN = parseInt(e.target.value);
+                document.getElementById('mode-display').textContent = config.modeN + ',' + config.modeM;
+                document.getElementById('math-n').textContent = config.modeN;
+            });
+            
+            modeMSlider.addEventListener('input', (e) => {
+                config.modeM = parseInt(e.target.value);
+                document.getElementById('mode-display').textContent = config.modeN + ',' + config.modeM;
+                document.getElementById('math-m').textContent = config.modeM;
+            });
+            
+            grainSlider.addEventListener('input', (e) => {
+                config.grainSize = parseFloat(e.target.value);
+                document.getElementById('grain-display').textContent = config.grainSize.toFixed(1);
+                sand.material.size = 0.05 * config.grainSize;
+            });
+            
+            materialSelect.addEventListener('change', (e) => {
+                config.material = e.target.value;
+                updateMaterialProperties();
+            });
+            
+            timeSlider.addEventListener('input', (e) => {
+                config.historicalYear = parseInt(e.target.value);
+                document.getElementById('time-display').textContent = config.historicalYear;
+                updateHistoricalPerspective();
+            });
+            
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        function updateWavelength() {
+            const waveSpeed = config.material === 'brass' ? 340 : 
+                             config.material === 'glass' ? 450 : 500;
+            const wavelength = waveSpeed / config.frequency;
+            document.getElementById('wave-speed').textContent = waveSpeed + ' m/s';
+            document.getElementById('wavelength').textContent = wavelength.toFixed(2) + ' m';
+        }
+        
+        function updateMaterialProperties() {
+            updateWavelength();
+            const colors = {
+                brass: 0xb8860b,
+                glass: 0xcccccc,
+                steel: 0x888888
+            };
+            plate.material.color.setHex(colors[config.material]);
+        }
+        
+        function updateHistoricalPerspective() {
+            if (config.historicalYear <= 1685) {
+                // Hooke's original view
+                renderer.setPixelRatio(0.5); // Lower resolution
+                scene.fog.density = 0.02;
+            } else if (config.historicalYear <= 1790) {
+                // Chladni era
+                renderer.setPixelRatio(1);
+                scene.fog.density = 0.01;
+            } else {
+                // Modern view
+                renderer.setPixelRatio(window.devicePixelRatio);
+                scene.fog.density = 0.005;
+            }
+        }
+        
+        function toggleSimulation() {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                animate();
+            } else {
+                cancelAnimationFrame(animationId);
+            }
+        }
+        
+        function resetExperiment() {
+            time = 0;
+            const positions = sand.geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 1] = 0.01 + Math.random() * 0.1;
+            }
+            sand.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        function recordMoment() {
+            const moment = {
+                frequency: config.frequency,
+                amplitude: config.amplitude,
+                modeN: config.modeN,
+                modeM: config.modeM,
+                grainSize: config.grainSize,
+                material: config.material,
+                timestamp: new Date().toLocaleTimeString()
+            };
+            savedMoments.push(moment);
+            updateSavedMoments();
+        }
+        
+        function updateSavedMoments() {
+            const container = document.getElementById('saved-moments');
+            container.innerHTML = '';
+            savedMoments.forEach((moment, index) => {
+                const div = document.createElement('div');
+                div.style.margin = '2px 0';
+                div.style.padding = '2px 5px';
+                div.style.background = 'rgba(212, 175, 55, 0.1)';
+                div.style.borderRadius = '3px';
+                div.style.fontSize = '10px';
+                div.innerHTML = `${index + 1}. ${moment.frequency}Hz (${moment.modeN},${moment.modeM})`;
+                div.addEventListener('click', () => loadMoment(moment));
+                container.appendChild(div);
+            });
+        }
+        
+        function loadMoment(moment) {
+            config = { ...moment };
+            updateUIFromConfig();
+        }
+        
+        function loadPreset(preset) {
+            switch(preset) {
+                case 'hooke':
+                    config = { frequency: 220, amplitude: 0.3, modeN: 2, modeM: 1, grainSize: 1.2, material: 'brass' };
+                    break;
+                case 'chladni':
+                    config = { frequency: 880, amplitude: 0.7, modeN: 3, modeM: 2, grainSize: 0.8, material: 'glass' };
+                    break;
+                case 'modern':
+                    config = { frequency: 1000, amplitude: 0.5, modeN: 4, modeM: 3, grainSize: 0.5, material: 'steel' };
+                    break;
+            }
+            updateUIFromConfig();
+        }
+        
+        function updateUIFromConfig() {
+            document.getElementById('frequency').value = config.frequency;
+            document.getElementById('amplitude').value = config.amplitude;
+            document.getElementById('mode-n').value = config.modeN;
+            document.getElementById('mode-m').value = config.modeM;
+            document.getElementById('grain-size').value = config.grainSize;
+            document.getElementById('material').value = config.material;
+            
+            document.getElementById('freq-display').textContent = config.frequency + ' Hz';
+            document.getElementById('amp-display').textContent = config.amplitude.toFixed(2);
+            document.getElementById('mode-display').textContent = config.modeN + ',' + config.modeM;
+            document.getElementById('grain-display').textContent = config.grainSize.toFixed(1);
+            document.getElementById('math-n').textContent = config.modeN;
+            document.getElementById('math-m').textContent = config.modeM;
+            
+            updateMaterialProperties();
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function animate() {
+            if (isPlaying) {
+                animationId = requestAnimationFrame(animate);
+            }
+            
+            time += 0.01;
+            updateSandPattern();
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

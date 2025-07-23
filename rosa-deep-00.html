@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Rosa 3DTH – Deep-Fortified</title>
+<style>
+    :root{--bg:#111;--text:#eee;--accent:#0f6;--alert:#f33;--mediator:#5af}
+    body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text);overflow:hidden}
+    #canvas{position:absolute;top:0;left:0;width:100vw;height:100vh}
+    #ui{position:absolute;top:10px;right:10px;width:300px;background:rgba(0,0,0,.7);padding:10px;border-radius:6px;font-size:13px;max-height:95vh;overflow-y:auto}
+    #ui h3{margin:6px 0;font-weight:400;color:var(--accent)}
+    #ui button{width:100%;margin:2px 0;padding:4px;background:#222;border:1px solid #444;color:var(--text);border-radius:3px;cursor:pointer}
+    #ui button:hover{background:#333}
+    #journal{max-height:260px;overflow-y:auto;font-size:11px;line-height:1.3;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+    <h3>Controls</h3>
+    <button id="addAgent">Add Agent</button>
+    <button id="addMed">Add Mediator</button>
+    <button id="addAlien">Add Alienation Source</button>
+    <button id="step">Step (Pause)</button>
+    <label><input type="checkbox" id="pause">Pause</label>
+
+    <h3>Insights</h3>
+    <div id="journal"></div>
+</div>
+
+<script>
+/* ---------- UTIL ---------- */
+const rand=(a,b)=>Math.random()*(b-a)+a;
+const clamp=(v,mn,mx)=>Math.max(mn,Math.min(mx,v));
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+
+/* ---------- CONSTANTS ---------- */
+const TICK=16, PROX=120, AUTH=0.7, BREAK=10;
+
+/* ---------- QUALITATIVE PHASES ---------- */
+const PHASES=[
+    {name:'Latent',       min:-1,   max:-0.2, col:'#444'},
+    {name:'Tentative',    min:-0.2, max: 0.2, col:'#fa0'},
+    {name:'Partial Symp', min:0.2,  max:0.7,  col:'#ff0'},
+    {name:'Harmonious',   min:0.7,  max:0.9,  col:'#0f0'},
+    {name:'Over-Reson',   min:0.9,  max:1,    col:'#f0f'}
+];
+function phaseOf(a){return PHASES.find(p=>a>=p.min && a<p.max)}
+
+/* ---------- ENTITY ---------- */
+class Entity {
+    constructor(type='agent'){
+        this.type=type;
+        this.x=rand(50,innerWidth-50);
+        this.y=rand(50,innerHeight-50);
+        this.vx=rand(-0.5,0.5);
+        this.vy=rand(-0.5,0.5);
+        this.r=12;
+
+        /* Core states */
+        this.resonance=rand(-0.3,0.3);
+        this.recognition=rand(0.3,0.7);
+        this.efficacy=rand(0.3,0.7);
+        this.identity=rand(0.4,0.9);
+        this.alienationResistance=rand(0.4,0.8);
+
+        /* Investment / Trust */
+        this.trust=new Map(); // id -> {investment,payoff}
+
+        /* Traits */
+        this.traits=new Set(['openness']);
+        if(type==='agent' && Math.random()<.4) this.traits.add('transformative');
+    }
+
+    step(agents,meta){
+        /* Wander */
+        this.vx*=0.95;this.vy*=0.95;
+        this.vx+=rand(-0.05,0.05);
+        this.vy+=rand(-0.05,0.05);
+        this.x=clamp(this.x+this.vx,0,innerWidth);
+        this.y=clamp(this.y+this.vy,0,innerHeight);
+
+        /* Structural coupling micro-boosts */
+        if(this.resonance<-0.9) this.resonance=clamp(this.resonance+0.01,-1,1);
+        if(this.resonance>0.9) this.resonance=clamp(this.resonance-0.01,-1,1);
+
+        /* Autonomous oscillation for transformative */
+        if(this.traits.has('transformative'))
+            this.resonance=clamp(this.resonance+rand(-0.005,0.005),-1,1);
+
+        const near=agents.filter(a=>a!==this && dist(this,a)<PROX);
+
+        /* Investment & recognition */
+        near.forEach(a=>{
+            if(this.type==='agent' && a.type==='agent'){
+                const C=(this.resonance+a.resonance+this.recognition+a.recognition)/4;
+                const stake=0.05*this.identity;
+                if(C>AUTH){
+                    this.identity=clamp(this.identity+stake,0,1);
+                    a.identity=clamp(a.identity+stake,0,1);
+                    meta.log(`Trust bond reinforced (${this.id.slice(-3)} ↔ ${a.id.slice(-3)})`);
+                }else if(C<0.3){
+                    this.identity=clamp(this.identity-stake,0,1);
+                    a.identity=clamp(a.identity-stake,0,1);
+                }
+            }
+        });
+
+        /* Alienation field */
+        near.filter(a=>a.type==='alienation').forEach(a=>{
+            const f=-0.01*(1-dist(this,a)/PROX)*this.alienationResistance;
+            this.resonance=clamp(this.resonance+f,-1,1);
+        });
+
+        /* Over-resonance decay */
+        if(phaseOf(this.resonance)?.name==='Over-Reson'){
+            this.resonance=clamp(this.resonance-0.05,-1,1);
+            meta.log(`Over-resonance decay for ${this.id.slice(-3)}`);
+        }
+
+        /* Identity growth */
+        this.identity=clamp(this.identity+0.01*(this.recognition-0.5),0,1);
+
+        /* Trait evolution */
+        if(Math.random()<0.002 && this.recognition>0.8)
+            this.traits.add('courage');
+    }
+}
+
+/* ---------- SIMULATION ---------- */
+class Sim {
+    constructor(){
+        this.agents=[];
+        this.paused=false;
+        this.running=true;
+        this.complexity=0;
+        this.insightLog=[];
+        this.agents.push(new Entity('structural_coupling')); // invisible
+        for(let i=0;i<5;i++) this.agents.push(new Entity('agent'));
+    }
+    add(type){this.agents.push(new Entity(type))}
+    step(){
+        if(this.paused) return;
+        this.agents.forEach(a=>a.step(this.agents,this));
+        this.metacognition();
+    }
+    metacognition(){
+        /* Complexity = dense subgraph count */
+        let density=0;
+        this.agents.filter(a=>a.type==='agent').forEach((a,i)=>{
+            this.agents.filter(b=>b.type==='agent' && b!==a).forEach(b=>{
+                const C=(a.resonance+b.resonance+a.recognition+b.recognition)/4;
+                if(C>0.7) density++;
+            });
+        });
+        this.complexity=density;
+        if(this.complexity>BREAK && !this.insightLog.includes('break')){
+            this.log("True emergence: novel philosophical synthesis.");
+            this.insightLog.push('break');
+        }
+    }
+    log(msg){
+        const j=document.getElementById('journal');
+        j.textContent+=`[${Date.now()%10000}] ${msg}\n`;
+        j.scrollTop=j.scrollHeight;
+    }
+}
+
+/* ---------- RENDER ---------- */
+class Render {
+    constructor(sim){
+        this.sim=sim;
+        this.c=document.getElementById('canvas');
+        this.ctx=this.c.getContext('2d');
+        this.resize();
+        window.addEventListener('resize',()=>this.resize());
+    }
+    resize(){
+        this.c.width=innerWidth;
+        this.c.height=innerHeight;
+    }
+    draw(){
+        const ctx=this.ctx;
+        ctx.clearRect(0,0,innerWidth,innerHeight);
+
+        /* Resonance field glow by qualitative phase */
+        this.sim.agents.forEach(a=>{
+            if(a.type==='structural_coupling') return;
+            const phase=phaseOf(a.resonance);
+            const g=ctx.createRadialGradient(a.x,a.y,0,a.x,a.y,a.r*4);
+            g.addColorStop(0,phase.col);
+            g.addColorStop(1,'hsla(0,0%,0%,0)');
+            ctx.fillStyle=g;
+            ctx.beginPath();ctx.arc(a.x,a.y,a.r*4,0,Math.PI*2);ctx.fill();
+        });
+
+        /* Agents */
+        this.sim.agents.forEach(a=>{
+            if(a.type==='structural_coupling') return;
+            const phase=phaseOf(a.resonance);
+            ctx.beginPath();
+            ctx.arc(a.x,a.y,a.r,0,Math.PI*2);
+            ctx.fillStyle=phase.col;
+            ctx.fill();
+            ctx.strokeStyle='#fff';
+            ctx.lineWidth=0.5;
+            ctx.stroke();
+
+            /* Phase label */
+            ctx.fillStyle='#fff';
+            ctx.font='9px monospace';
+            ctx.fillText(phase.name.slice(0,1),a.x+a.r+2,a.y);
+        });
+    }
+}
+
+/* ---------- BOOTSTRAP ---------- */
+const sim=new Sim();
+const render=new Render(sim);
+function loop(){
+    sim.step();
+    render.draw();
+    if(sim.running) requestAnimationFrame(loop);
+}
+loop();
+
+/* UI wiring */
+document.getElementById('addAgent').onclick=()=>sim.add('agent');
+document.getElementById('addMed').onclick=()=>sim.add('mediator');
+document.getElementById('addAlien').onclick=()=>sim.add('alienation');
+document.getElementById('pause').onchange=e=>sim.paused=e.target.checked;
+document.getElementById('step').onclick=()=>{sim.paused=true;sim.step();render.draw();};
+</script>
+</body>
+</html>
