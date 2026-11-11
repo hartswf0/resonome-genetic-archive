@@ -336,11 +336,11 @@ function makeXY(el,ix,iy){
     if(dx||dy){e.preventDefault();wake();if(dx)setMacro(ix,clamp(state.mac[ix]+dx),true);if(dy)setMacro(iy,clamp(state.mac[iy]+dy),true)}});
   const cache=['',''];
   // target text is fitted, not clipped: full list -> first target + count -> shortened name (full detail lives in the matrix)
-  function fit(row,i,slot){const tg=macroTargets(i),key=tg.join('|')+'@'+row.clientWidth;if(cache[slot]===key)return;const sp=row.lastChild;
+  function fit(row,i,slot){if(!row.clientWidth){cache[slot]='';return}const tg=macroTargets(i),key=tg.join('|')+'@'+row.clientWidth;if(cache[slot]===key)return;const sp=row.lastChild;
     const forms=tg.length?[tg.join(', '),tg[0]+(tg.length>1?' +'+(tg.length-1):''),tg[0].slice(0,9)+'…'+(tg.length>1?' +'+(tg.length-1):''),tg[0].slice(0,5)+'…']:['unassigned','—'];
     row.title=tg.length?'M'+(i+1)+' → '+tg.join(', '):'M'+(i+1)+' unassigned';
     for(const f of forms){sp.textContent=(tg.length?' → ':' ')+f;if(row.scrollWidth<=row.clientWidth)break}
-    if(row.clientWidth)cache[slot]=key}
+    cache[slot]=key}
   const n3=v=>String(Math.round(v*100)).padStart(3,' ');
   return {paint(){const x=state.mac[ix],y=state.mac[iy];dot.style.left=vl.style.left=(x*100)+'%';dot.style.top=hl.style.top=((1-y)*100)+'%';
     ty.firstChild.textContent='M'+(iy+1)+' ↕ '+n3(y);tx.firstChild.textContent='M'+(ix+1)+' ↔ '+n3(x);fit(ty,iy,0);fit(tx,ix,1)}};
@@ -399,16 +399,26 @@ function resolveSpec(spec){ if(spec==='test')return null; try{const u=new URL(sp
 function nameOf(spec){ if(spec==='test')return 'PROBE'; try{return decodeURIComponent(new URL(spec,location.href).pathname.split('/').pop().replace(/\.html?$/,''))||spec}catch(e){return spec}}
 function loadDeck(d,spec){
   if(spec!=='test'&&!resolveSpec(spec)){banner('Not a loadable URL: '+spec,2500);spec=d.spec||'test'}
-  disconnect(d);d.spec=spec;d.gen++;d.loaded=false;d.manifest=null;d.params=new Map();d.attempts=0;d.lastReq=0;d.lastSet=new Map();
+  disconnect(d);if(d.cut&&d.cutHeld)setCut(d,false);d.spec=spec;d.gen++;d.loaded=false;d.manifest=null;d.params=new Map();d.attempts=0;d.lastReq=0;d.lastSet=new Map();d.ctxs=[];d.held=d.cutHeld=false;d.error=null;d.legacy=false;
   const f=d.frame;
   if(spec==='test'){f.removeAttribute('src');f.srcdoc=probeDoc(d.key);d.url='';d.name='PROBE '+d.key}
-  else{d.url=resolveSpec(spec);f.removeAttribute('srcdoc');f.src=d.url;d.name=nameOf(spec)}
+  else{d.url=resolveSpec(spec);f.removeAttribute('srcdoc');f.src=d.url;d.name=nameOf(spec);probeUrl(d)}
   const op=$('#op'+d.key);if(d.url){op.href=d.url.replace(/([?&])embed=1(&|$)/,(m,a,b)=>b?a:'').replace(/[?&]$/,'');op.style.display=''}else op.style.display='none';
   syncPickers();paintDeck(d);renderMatrix();writeUrl();
 }
+// an iframe gives no load error: ask the server (same origin: real status; elsewhere: at least "reachable at all")
+function probeUrl(d){const gen=d.gen,fail=msg=>{if(d.gen!==gen)return;d.error=msg;dropMaps(d,()=>true);paintDeck(d);renderMatrix()};
+  try{const same=new URL(d.url).origin===location.origin;
+    fetch(d.url,same?{method:'HEAD',cache:'no-store'}:{mode:'no-cors',cache:'no-store'}).then(r=>{if(same&&!r.ok)fail(r.status===404?'404 · page not found':'HTTP '+r.status+' · did not load')},()=>fail('unreachable · did not load'))}catch(e){}}
+// mappings that point at params a freshly swapped-in deck does not have are removed, not left looking assigned
+function dropMaps(d,gone){if(!d.swapped)return;d.swapped=false;const n=state.maps.length;
+  state.maps=state.maps.filter(m=>![m.src,m.dst].some(k=>!isMacro(k)&&splitKey(k).d===d&&gone(splitKey(k).id)));
+  const k=n-state.maps.length;if(k){renderMatrix();paintPads();writeUrl();if(!state.learn)banner(k+' mapping'+(k>1?'s':'')+' to deck '+d.key+' removed — '+d.name+' has no such param',2600)}}
+function swapDeck(d,spec){d.swapped=true;loadDeck(d,spec)}
 function disconnect(d){if(d.src){try{d.src.disconnect()}catch(e){}}d.src=null;d.stream=null;d.mode=null}
 function onFrameLoad(d){
-  if(!d.spec)return;d.loaded=true;const gen=d.gen;d.touched=false;watchDeck(d);
+  if(!d.spec)return;d.loaded=true;const gen=d.gen;d.touched=false;watchDeck(d);hookCtx(d);
+  setTimeout(()=>{if(d.gen===gen&&!d.manifest){d.legacy=true;dropMaps(d,()=>true);paintDeck(d);renderMatrix();paintPads()}},1200);
   [40,350,1000,2500,5000].forEach(ms=>setTimeout(()=>{if(d.gen===gen&&!d.manifest)hello(d)},ms));
   if(state.running)setTimeout(()=>{if(d.gen===gen){startDeck(d);burst(d)}},120);
   if(state.bpmTouched)setTimeout(()=>{if(d.gen===gen)sendBpm(d)},300);
@@ -418,7 +428,8 @@ function setManifest(d,m){
   if(!m||!Array.isArray(m.params))return;
   d.manifest=m;d.params=new Map();
   for(const p of m.params){if(!p||p.id===undefined)continue;const id=String(p.id);d.params.set(id,{id,label:String(p.label||id),group:String(p.group||''),value:clamp(+p.value||0)})}
-  if(m.name)d.name=String(m.name);
+  if(m.name)d.name=String(m.name);d.legacy=false;
+  dropMaps(d,id=>!d.params.has(id));
   paintDeck(d);renderMatrix();paintPads();
 }
 function legacyStream(w){ // same-origin bridges the legacy pages expose
@@ -451,21 +462,38 @@ function setMonitor(d,on){const b=bridge(d);try{if(b&&b.setMonitor)b.setMonitor(
   post(d,{type:'set-monitor',on:!!on})}
 function startDeck(d){const b=bridge(d);if(b&&typeof b.start==='function'){try{b.start();return}catch(e){}}
   const w=sameOrigin(d);if(w&&typeof w.__mandallaResumeAudio==='function'){try{Promise.resolve(w.__mandallaResumeAudio()).then(()=>tryConnect(d,false)).catch(()=>{});return}catch(e){}}
+  if(d.held){d.held=false;releaseDirect(d)}
   post(d,{type:'resume-audio'})}
 function stopDeck(d){const b=bridge(d);if(b&&typeof b.stop==='function'){try{b.stop();return}catch(e){}}
   const w=sameOrigin(d);if(w&&typeof w.__mandallaSuspendAudio==='function'){try{Promise.resolve(w.__mandallaSuspendAudio()).catch(()=>{});return}catch(e){}}
-  post(d,{type:'suspend-audio'})}
+  post(d,{type:'suspend-audio'});
+  if(!d.stream&&d.loaded&&holdDirect(d))d.held=true}
+/* A legacy deck with no reachable stream plays "direct". The rack cannot mix it, but for same-origin pages it can still hold the
+   deck's AudioContext(s): contexts made after load are recorded by wrapping the constructor, earlier ones are looked up by name. */
+function hookCtx(d){d.ctxs=[];const w=sameOrigin(d);if(!w||bridge(d))return;
+  for(const n of ['AudioContext','webkitAudioContext']){try{const O=w[n];if(typeof O!=='function'||O.__scion)continue;
+    const W=function(...a){const c=new O(...a);d.ctxs.push(c);return c};W.prototype=O.prototype;W.__scion=true;try{Object.setPrototypeOf(W,O)}catch(e){}w[n]=W}catch(e){}}}
+function directCtxs(d){const w=sameOrigin(d);if(!w||d.stream)return [];const out=d.ctxs.slice();
+  try{const f=w.eval("(function(){var n=['audioCtx','audioContext','audioctx','actx','ctx','ac','context','AC'],o=[];for(var i=0;i<n.length;i++){try{var v=eval(n[i]);if(v&&typeof v.suspend==='function'&&typeof v.createGain==='function')o.push(v)}catch(e){}}return o})()");
+    for(const c of f)if(!out.includes(c))out.push(c)}catch(e){}
+  return out.filter(c=>c.state!=='closed')}
+function holdDirect(d){let n=0;for(const c of directCtxs(d)){n++;if(c.state==='running')c.suspend().catch(()=>{})}return n}
+function releaseDirect(d){if(d.cut&&d.cutHeld)return;for(const c of directCtxs(d)){if(c.state==='suspended')c.resume().catch(()=>{})}}
+function directCut(d){if(d.stream)return;const proto=!sameOrigin(d)&&!!d.manifest; // a protocol deck on another origin: CUT is set-monitor off
+  if(d.cut){if(proto){post(d,{type:'set-monitor',on:false});d.cutHeld=true}else if(holdDirect(d))d.cutHeld=true}
+  else if(d.cutHeld){d.cutHeld=false;if(proto)post(d,{type:'set-monitor',on:true});else if(!d.held)releaseDirect(d)}}
 function burst(d){const gen=d.gen;[0,200,600,1200,2500].forEach(ms=>setTimeout(()=>{if(d.gen===gen&&!d.stream){tryConnect(d,true)}},ms))}
 function setRunning(on,drive){
   state.running=on;const b=$('#bStart');b.textContent=on?'■ STOP':'▶ START';b.classList.toggle('on',on);
   if(on){state.userStopped=false;ensureAudio();ctx.resume().catch(()=>{});if(drive)for(const d of DL){if(d.loaded){startDeck(d);burst(d)}}}
-  else if(drive){state.userStopped=true;for(const d of DL)d.touched=false;for(const d of DL)stopDeck(d);if(ctx)ctx.suspend().catch(()=>{})}
+  else if(drive){state.userStopped=true;for(const d of DL)d.touched=false;for(const d of DL)stopDeck(d);if(ctx)ctx.suspend().catch(()=>{});
+    const loose=DL.filter(d=>statusOf(d).c==='direct'&&!d.held&&!d.manifest);if(loose.length)banner('Deck '+loose.map(d=>d.key).join(' + ')+' plays direct and is out of the rack\'s reach — stop it inside the deck',3200)}
 }
 function activated(){return navigator.userActivation?navigator.userActivation.hasBeenActive:state.touched}
 // A first touch anywhere (START, a macro, or inside a deck) must end up audible through the mixer:
 // "The player touched inside a deck": same-origin decks get capture listeners on their window; others are detected by focus moving into the frame.
 function deckTouched(d){
-  state.touched=true;if(d.touched&&d.stream&&state.running)return;d.touched=true;
+  state.touched=true;if(d.held){d.held=false;releaseDirect(d)}if(d.touched&&d.stream&&state.running)return;d.touched=true;
   if(state.userStopped){state.userStopped=false;if(ctx)ctx.resume().catch(()=>{})} // touching a deck after STOP must not be silent
   if(!d.stream){d.attempts=0;burst(d)}
   if(!state.running){setRunning(true,false);
@@ -495,8 +523,8 @@ window.addEventListener('message',e=>{
 const pk=(d,id)=>d.key+'.'+id;
 function splitKey(k){const i=k.indexOf('.');return {d:decks[k.slice(0,i)],id:k.slice(i+1)}}
 const isMacro=k=>/^m[0-3]$/.test(k);
-function labelOf(k){if(isMacro(k))return 'M'+(+k[1]+1);const {d,id}=splitKey(k);if(!d)return k;const p=d.params.get(id);return d.key+'·'+(p?p.label:id)}
-function macroTargets(i){const t=state.maps.filter(m=>m.src==='m'+i).map(m=>labelOf(m.dst));return t.length?'→ '+t.join(', '):'unassigned'}
+function labelOf(k){if(isMacro(k))return 'M'+(+k[1]+1);const {d,id}=splitKey(k);if(!d)return k;const p=d.params.get(id);return d.key+'·'+(p?p.label:id+((d.manifest||d.legacy||d.error)?' (n/a)':''))}
+function macroTargets(i){return state.maps.filter(m=>m.src==='m'+i).map(m=>labelOf(m.dst))}
 function shape(m,v){return clamp(m.lo+(m.hi-m.lo)*(m.inv?1-v:v))}
 function setParam(d,id,v){
   if(!d)return;v=clamp(v);d.lastSet.set(id,{v,t:performance.now()});
@@ -532,9 +560,9 @@ function delMap(m){const i=state.maps.indexOf(m);if(i>=0)state.maps.splice(i,1);
 /* ---- learn: wiggle a deck control, then a macro (macro -> control) or a control in the other deck (first drives second) ---- */
 function startLearn(){
   state.learn={stage:1,rng:new Map(),first:null,mac0:state.mac.slice(),rng2:new Map()};
-  app.classList.add('learning');$('#bLearn').classList.add('on');if(phone()&&state.panel!=='pads')setPanel('pads');
+  app.classList.add('learning');$('#bLearn').classList.add('on');if(compact()&&state.panel!=='pads')setPanel('pads');
   const hasM=DL.some(d=>d.manifest);
-  banner(hasM?'LEARN 1/2 — move a control inside a deck':'LEARN — no deck has announced params yet; move a control inside a SCION deck');
+  banner(hasM?'LEARN 1/2 · move a control inside a deck':'LEARN · no deck has announced params yet — move a control inside a SCION deck');
 }
 function endLearn(msg){state.learn=null;app.classList.remove('learning');$('#bLearn').classList.remove('on');if(msg)banner(msg,2200);else hideBanner()}
 function track(map,key,v){let r=map.get(key);if(!r){r={lo:v,hi:v};map.set(key,r)}r.lo=Math.min(r.lo,v);r.hi=Math.max(r.hi,v);return r.hi-r.lo}
@@ -547,11 +575,16 @@ function learnParam(d,id,v){
   }
   const span=track(L.rng,key,v);
   if(span>.03||L.first){const f=best(L.rng);if(f!==L.first||L.stage===1){L.first=f;L.stage=2;L.mac0=state.mac.slice();
-    banner('LEARN 2/2 — '+labelOf(f)+' picked. Now move a macro pad to bind it, or a control in deck '+(d.key==='A'?'B':'A')+' to couple them')}}
+    banner('LEARN 2/2 · '+labelOf(f)+' picked → drag a macro pad along the axis to bind, or move a deck '+(d.key==='A'?'B':'A')+' control to couple')}}
 }
-function learnMacro(i,v){
+function learnBind(i){const dst=state.learn.first;addMap('m'+i,dst);endLearn('BOUND  M'+(i+1)+' → '+labelOf(dst))}
+function learnMacro(i,v){ // keyboard / API: one macro moves at a time
   const L=state.learn;if(L.stage!==2||!L.first)return;
-  if(Math.abs(v-L.mac0[i])>.05){const dst=L.first;addMap('m'+i,dst);endLearn('BOUND  M'+(i+1)+' → '+labelOf(dst))}
+  if(Math.abs(v-L.mac0[i])>.05)learnBind(i);
+}
+function learnTravel(ix,iy,dx,dy){ // pad drag: the axis the finger actually travelled along since touch-down wins
+  const L=state.learn;if(L.stage!==2||!L.first)return;
+  if(Math.max(dx,dy)>.1)learnBind(dx>=dy?ix:iy);
 }
 
 /* ================= URL: decks in ?a=&b=, mappings in #map= ================= */
@@ -588,25 +621,32 @@ let urlFor=null;
 function openUrlBox(d){urlFor=d;$('#urlLab').textContent='Deck '+d.key+' URL';$('#urlIn').value=d.spec==='test'?'':d.spec;$('#urlbox').classList.add('show');$('#urlIn').focus()}
 function closeUrlBox(){$('#urlbox').classList.remove('show');urlFor=null;syncPickers()}
 for(const d of DL){const sel=$('#sel'+d.key);buildPicker(sel);
-  sel.addEventListener('change',()=>{const v=sel.value;if(v==='__url')openUrlBox(d);else{$('#urlbox').classList.remove('show');urlFor=null;loadDeck(d,v)}});
+  sel.addEventListener('change',()=>{const v=sel.value;if(v==='__url')openUrlBox(d);else{$('#urlbox').classList.remove('show');urlFor=null;swapDeck(d,v)}});
   d.frame.addEventListener('load',()=>onFrameLoad(d))}
-$('#urlGo').onclick=()=>{const v=$('#urlIn').value.trim(),d=urlFor;if(!v||!d)return;closeUrlBox();loadDeck(d,v)};
+$('#urlGo').onclick=()=>{const v=$('#urlIn').value.trim(),d=urlFor;if(!v||!d)return;closeUrlBox();swapDeck(d,v)};
 $('#urlIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('#urlGo').click();if(e.key==='Escape')closeUrlBox()});
 $('#urlX').onclick=closeUrlBox;
 
 /* ================= painting ================= */
 function statusOf(d){
-  if(d.stream)return {t:{bridge:'bridge',legacy:'legacy bridge',post:'postMessage'}[d.mode],c:'live',n:''};
-  if(d.loaded&&activated()&&d.attempts>=5)return {t:'direct',c:'direct',n:'direct: deck plays through its own output — mixer bypassed'};
-  return {t:d.loaded?'ready':'loading',c:'',n:''};
+  if(d.error)return {t:'error',c:'err',n:d.error,k:'err'};
+  if(d.stream)return {t:{bridge:'bridge',legacy:'legacy bridge',post:'postMessage'}[d.mode],c:'live',n:'',k:'live'};
+  if(d.loaded&&activated()&&d.attempts>=5){const reach=directCtxs(d).length>0||!!d.manifest; // protocol decks obey suspend-audio / set-monitor over postMessage
+    return {t:'direct',c:'direct',k:'direct'+(reach?1:0),reach,n:reach?'direct: STOP + CUT only':'direct: not in the mixer',
+      tip:'This deck plays through its own output. Level, EQ, crossfader and recording do not reach it'+(reach?'; STOP and CUT hold its audio engine.':'; stop it inside the deck.')}}
+  return {t:d.loaded?'ready':'loading',c:'',n:'',k:d.loaded?'ready':'loading'};
 }
 function paintDeck(d){
   const s=statusOf(d),k=d.key;
   $('#nm'+k).textContent=$('#cnm'+k).textContent=d.name;
   for(const id of ['#st'+k,'#cst'+k]){const c=$(id);c.textContent=s.t;c.className='chip '+s.c}
-  $('#cn'+k).textContent=d.manifest?d.params.size+' params':(d.loaded?'legacy · no manifest':'');
-  $('#ch'+k).classList.toggle('bypass',s.c==='direct');$('#nt'+k).textContent=s.n;
+  $('#cn'+k).textContent=d.error?d.error:d.manifest?d.params.size+' params':(d.legacy?'legacy · no manifest':'');
+  $('#ch'+k).classList.toggle('bypass',s.c==='direct'||s.c==='err');const nt=$('#nt'+k);nt.textContent=s.n;nt.title=s.tip||'';nt.classList.toggle('err',s.c==='err');
+  const cut=$('#bCut'+k),dead=(s.c==='direct'&&!s.reach)||s.c==='err';cut.disabled=dead;
+  cut.title=dead?'Deck '+k+' is out of the rack\'s reach: CUT cannot silence it':s.c==='direct'?'Deck '+k+' plays direct: CUT holds its audio engine':'Cut deck '+k+' out of the mix';
+  if(s.c==='direct'&&d.cut)directCut(d); // a cut direct deck stays cut even if it wakes itself up
   $('#tabInfo').textContent='A '+statusOf(decks.A).t+' · B '+statusOf(decks.B).t;
+  const sk=s.k+(d.legacy?'L':'');if(sk!==d.stat){d.stat=sk;renderMatrix()}
 }
 const pads=[makeXY($('#xy1'),0,1),makeXY($('#xy2'),2,3)];
 function paintPads(){pads[0].paint();pads[1].paint()}
@@ -625,7 +665,12 @@ function paramOptions(sel,withMacros){
 function renderMatrix(){
   const body=$('#sbody');if(!body)return;const sc=body.scrollTop;rowFaders.length=0;
   let h='';
-  for(const d of DL){if(d.loaded&&!d.manifest)h+='<div class="empty">Deck '+d.key+' · '+esc(d.name)+': legacy deck, no manifest — crossfade, level, EQ and BPM still apply.</div>'}
+  for(const d of DL){const st=statusOf(d),who='Deck '+d.key+' · '+esc(d.name)+': ';
+    if(d.error)h+='<div class="empty bad">'+who+'could not load ('+esc(d.error)+'). Pick another instrument or check the URL.</div>';
+    else if(d.manifest)continue;
+    else if(st.c==='direct')h+='<div class="empty warn">'+who+'legacy deck playing direct through its own output. Level, EQ, crossfader and recording do not reach it'+(st.reach?'; START/STOP and CUT hold its audio engine, BPM is sent.':'; stop it inside the deck.')+'</div>';
+    else if(d.legacy)h+='<div class="empty">'+who+'legacy deck, no manifest — nothing to map, but crossfade, level, EQ and BPM still apply.</div>';
+    else h+='<div class="empty">'+who+(d.loaded?'waiting for a manifest…':'loading…')+'</div>'}
   const mac=state.maps.filter(m=>isMacro(m.src)),cc=state.maps.filter(m=>!isMacro(m.src));
   const row=(m)=>{const i=state.maps.indexOf(m);return '<div class="asg'+(isMacro(m.src)?'':' cc')+'" data-i="'+i+'"><select class="s" aria-label="Source">'+paramOptions(m.src,true)+'</select><span>→</span><select class="d" aria-label="Target">'+paramOptions(m.dst,false)+'</select>'+
     '<div class="rng"><div class="fader lo"></div><div class="fader hi"></div><button class="inv'+(m.inv?' on':'')+'" title="Invert">INV</button><button class="del" aria-label="Delete assignment">✕</button></div></div>'};
@@ -675,7 +720,7 @@ for(const d of DL){
   $('#bCut'+d.key).onclick=()=>{wake();setCut(d,!d.cut)};
   paintKills(d);
 }
-function wake(){ensureAudio()}
+function wake(){ensureAudio();if(!state.running&&!state.userStopped)setRunning(true,true)} // touching any mixer control or pad first starts the rack
 $('#bStart').onclick=()=>setRunning(!state.running,true);
 // tap tempo -> set-bpm to both decks
 let taps=[];
@@ -707,7 +752,7 @@ $('#bRec').onclick=()=>{
 // view, panels, sheet
 function setView(v){state.view=v;$('#decks').className='v-'+v;document.querySelectorAll('#view button').forEach(b=>b.classList.toggle('on',b.dataset.v===v))}
 document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-function setPanel(p){state.panel=p;$('#strip').className='p-'+p;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===p))}
+function setPanel(p){state.panel=p;$('#strip').className='p-'+p;paintPads();document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===p))}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setPanel(state.panel===b.dataset.p?'none':b.dataset.p));
 $('#bMap').onclick=()=>toggleSheet();$('#bClose').onclick=()=>toggleSheet(false);
 $('#bLearn').onclick=()=>{state.learn?endLearn():startLearn()};$('#banX').onclick=()=>endLearn();
@@ -722,17 +767,18 @@ const mEl={A:[$('#mA'),$('#mAv')],B:[$('#mB'),$('#mBv')],M:[$('#mM'),$('#mMv')]}
 function frame(){
   requestAnimationFrame(frame);
   fN++;const now=performance.now();if(now-fT>=1000){fps=fN*1000/(now-fT);fN=0;fT=now;for(const d of DL)paintDeck(d)}
-  if(ctx){for(const d of DL){d.rms=rmsOf(d.nodes.an);meter(mEl[d.key][0],mEl[d.key][1],d.rms)}
-    const r=rmsOf(anM);const gr=limiter.reduction;meter(mEl.M[0],mEl.M[1],r,'MASTER ');if(gr<-0.3)mEl.M[1].textContent+=' · LIM '+gr.toFixed(1)}
+  if(ctx){const live=ctx.state==='running'; // a suspended context leaves stale samples in the analysers: show silence, not the last frame
+    for(const d of DL){d.rms=live?rmsOf(d.nodes.an):0;meter(mEl[d.key][0],mEl[d.key][1],d.rms)}
+    const r=live?rmsOf(anM):0;const gr=live?limiter.reduction:0;meter(mEl.M[0],mEl.M[1],r,'MASTER ');if(gr<-0.3)mEl.M[1].textContent+=' · LIM '+gr.toFixed(1)}
   if(rec){$('#bRec').textContent='■ '+((now-recT0)/1000).toFixed(0)+'s'}
   if(dirtyVals)paintVals();
 }
 
 /* ================= boot ================= */
 const init=readUrl();
-setView(phone()?'a':'ab');setPanel('pads');paintCC();paintPads();
+setView(phone()?'a':'ab');setPanel(state.maps.length?'pads':'mix');paintCC();paintPads(); // pads first only when they do something
 loadDeck(decks.A,init.a);loadDeck(decks.B,init.b);
-if(!phone())toggleSheet(true);
+if(!compact())toggleSheet(true);
 requestAnimationFrame(frame);
 
 // for tests and for the curious
