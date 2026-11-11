@@ -149,7 +149,10 @@
             .panel { padding: 6px 4px; }
             #color-palette { gap: 2px; }
             #sample-buttons { flex-wrap: nowrap; gap: 3px; }
-            #sample-buttons .btn { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 10px; overflow: hidden; text-overflow: clip; }
+            #sample-buttons .btn { flex: 1 1 auto; padding: 0 2px; font-size: 10px; }
+        }
+        @media (max-width: 379px) {
+            .color-swatch { font-size: 9px; border-left-width: 0; border-right-width: 0; }
         }
         /* short phones: keep an open panel smaller than the surfaces */
         @media (max-width: 520px) and (max-height: 700px) {
@@ -161,9 +164,9 @@
             #topbar { height: 40px; }
             #topbar .btn { min-height: 40px; }
             .panel { flex-direction: row; align-items: stretch; padding: 4px 6px; }
-            #mix-grid { flex: 3 1 0; min-width: 0; grid-template-columns: repeat(4, 1fr); gap: 0 10px; }
+            #mix-grid { flex: 1 1 0; min-width: 0; grid-template-columns: repeat(4, 1fr); gap: 0 10px; }
             #panel-mix .panel-title { display: none; }
-            #color-palette { flex: 2 1 0; min-width: 0; gap: 2px; }
+            #color-palette { flex: 1 1 0; min-width: 0; gap: 2px; }
             #wave-wrap { min-height: 44px; }
             #sample-buttons { flex: 0 0 auto; flex-wrap: nowrap; }
             #sample-buttons .btn { padding: 0 5px; font-size: 10px; }
@@ -457,7 +460,7 @@
         const COLOR_NAMES = ['ECHO', 'SWEEP', 'BEND', 'BLOOM', 'SUB', 'FLICKER', 'BOOST', 'NOISE'];
         const clamp01 = (v) => Math.max(0, Math.min(1, v));
         // Field / sequencer balance at the default 50:50 crossfade (the field used to sit 10-20 dB under the beat)
-        const DRONE_LEVEL = 0.3, GRAIN_LEVEL = 1.0, SEQ_SAMPLE_LEVEL = 0.7, SEQ_SYNTH_LEVEL = 0.4;
+        const DRONE_LEVEL = 0.2, GRAIN_LEVEL = 0.8, SEQ_SAMPLE_LEVEL = 0.7, SEQ_SYNTH_LEVEL = 0.4;
 
         // Main Class for a Morphic Deck (either Drone or Sequencer)
         class MorphicDeck {

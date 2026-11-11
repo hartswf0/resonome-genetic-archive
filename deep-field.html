@@ -30,6 +30,7 @@ body.embed #top{display:none}
   background:rgba(3,6,12,.55);padding:3px 6px;border-radius:3px;white-space:nowrap}
 #hudL{left:6px} #hudR{right:6px}
 #hudR b{color:var(--warm);font-weight:700}
+.hud{transition:opacity .25s} .hud.dim{opacity:.16}
 #hint{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);pointer-events:none;font-size:11px;letter-spacing:.14em;
   color:#001018;background:var(--acc);padding:7px 12px;border-radius:999px;white-space:nowrap;font-weight:700;
   transition:opacity .5s;box-shadow:0 0 24px rgba(53,224,255,.45)}
@@ -41,14 +42,14 @@ body.dragover #dropMsg{display:flex}
 #dock{grid-area:dock;background:var(--panel);border-top:1px solid var(--line);padding:6px 8px 8px;display:flex;flex-direction:column;gap:6px;min-width:0}
 .row{display:flex;gap:6px;align-items:stretch;min-width:0}
 .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 10px}
-.cap{font-size:9px;letter-spacing:.14em;color:var(--dim);display:flex;justify-content:space-between;gap:6px;white-space:nowrap}
+.cap{font-size:10px;letter-spacing:.14em;color:var(--dim);display:flex;justify-content:space-between;gap:6px;white-space:nowrap}
 .cap b{color:var(--fg);font-weight:400;overflow:hidden;text-overflow:ellipsis}
 
 /* custom slider: whole block is the hit area */
 .sl{position:relative;height:44px;touch-action:none;cursor:ew-resize;outline:none;min-width:0}
-.sl .cap{position:absolute;left:0;right:0;top:3px;font-size:10px}
+.sl .cap{position:absolute;left:0;right:0;top:2px;font-size:11px}
 .sl .cap .lb{color:var(--dim)}
-.sl .cap .vl{color:var(--fg)}
+.sl .cap .vl{color:var(--fg);letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis}
 .sl .trk{position:absolute;left:0;right:0;bottom:7px;height:14px;background:#0f1a26;border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .sl .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#0d4a5c,var(--acc))}
 .sl .thumb{position:absolute;bottom:4px;width:4px;height:20px;margin-left:-2px;background:#fff;border-radius:2px;box-shadow:0 0 8px var(--acc)}
@@ -58,7 +59,7 @@ body.dragover #dropMsg{display:flex}
 button.b{font-family:var(--mono);background:#0f1a26;color:var(--fg);border:1px solid var(--line);border-radius:4px;
   min-height:44px;min-width:44px;padding:2px 6px;font-size:11px;letter-spacing:.08em;cursor:pointer;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:2px;line-height:1.1;touch-action:manipulation;flex:1 1 0;white-space:nowrap;overflow:hidden}
-button.b small{font-size:9px;color:var(--dim);letter-spacing:.14em}
+button.b small{font-size:10px;color:var(--dim);letter-spacing:.14em}
 button.b span{font-size:11px}
 button.b:active{background:#16293a}
 button.b.on{background:var(--acc);color:#001018;border-color:var(--acc)}
@@ -67,8 +68,8 @@ button.b.warm.on{background:var(--warm);border-color:var(--warm)}
 button.b.go{background:var(--acc);color:#001018;border-color:var(--acc);font-weight:700;flex:0 0 auto}
 button.b.go.on{background:#0f1a26;color:var(--fg)}
 
-#smpBox{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
-#wave{width:100%;height:36px;display:block;background:#070d15;border:1px solid var(--line);border-radius:3px;touch-action:none;cursor:col-resize}
+#smpBox{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;touch-action:none;cursor:col-resize}
+#wave{width:100%;height:36px;display:block;background:#070d15;border:1px solid var(--line);border-radius:3px;pointer-events:none}
 #smpBtns{display:flex;gap:4px;flex:0 0 auto}
 #smpBtns button.b{flex:0 0 auto;width:52px}
 .step{display:flex;gap:4px;align-items:center;height:44px}
@@ -77,7 +78,13 @@ button.b.go.on{background:#0f1a26;color:var(--fg)}
 .step .mid b{font-size:13px;font-weight:400}
 .step button.b{flex:0 0 44px;font-size:16px}
 
-@media (min-width:820px) and (min-aspect-ratio:11/10){
+/* short portrait screens: tighten the chrome so the field stays the largest thing */
+@media (max-height:620px) and (max-aspect-ratio:11/10){
+  #top{padding:0 8px}
+  #dock{gap:4px;padding:4px 8px 6px}
+}
+/* landscape: dock beside the field */
+@media (min-width:560px) and (min-aspect-ratio:11/10){
   #app{grid-template-columns:minmax(0,1fr) 330px;grid-template-rows:auto minmax(0,1fr);grid-template-areas:"field top" "field dock"}
   #dock{border-top:0;border-left:1px solid var(--line);overflow-y:auto;gap:12px;padding:12px}
   #top{border-left:1px solid var(--line)}
@@ -88,6 +95,20 @@ button.b.go.on{background:#0f1a26;color:var(--fg)}
   #smpBox{flex:1 1 100%}
   #smpBtns{flex:1 1 100%}
   #smpBtns button.b{flex:1 1 0;width:auto}
+  .sl{touch-action:pan-y}   /* horizontal faders: a vertical swipe may still scroll the dock if it ever overflows */
+}
+/* short landscape (phones on their side): compact two-column dock so every control is on screen */
+@media (min-width:560px) and (min-aspect-ratio:11/10) and (max-height:590px){
+  .sl .cap{letter-spacing:.05em}
+  #app{grid-template-columns:minmax(0,1fr) clamp(290px,45vw,400px)}
+  #top{padding:0 8px}
+  #dock{gap:6px;padding:6px 8px 8px}
+  .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 10px}
+  #wave{height:36px}
+  #dock>.row:first-child{flex-wrap:nowrap}
+  #smpBox{flex:1 1 auto}
+  #smpBtns{flex:0 0 auto}
+  #smpBtns button.b{flex:0 0 auto;width:52px}
 }
 </style>
 </head>
@@ -110,13 +131,13 @@ button.b.go.on{background:#0f1a26;color:var(--fg)}
 
   <div id="dock">
     <div class="row">
-      <div id="smpBox">
+      <div id="smpBox" aria-label="Sample waveform: touch or drag to choose the region that pours into the field">
         <div class="cap"><span>SAMPLE</span><b id="smpInfo">-</b></div>
-        <canvas id="wave" aria-label="Sample waveform: touch or drag to choose the region that pours into the field"></canvas>
+        <canvas id="wave"></canvas>
       </div>
       <div id="smpBtns">
         <button class="b" id="genBtn"><small>GEN</small><span id="genVal">BELLS</span></button>
-        <button class="b" id="loadBtn"><small>FILE</small><span>LOAD</span></button>
+        <button class="b" id="loadBtn"><small>FILE</small><span id="loadVal">LOAD</span></button>
         <button class="b warm" id="pourBtn"><small>POUR</small><span id="pourVal">OFF</span></button>
       </div>
       <input type="file" id="file" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac,.aiff" hidden>
@@ -152,13 +173,13 @@ function DeepFieldCore(){
     else if(shape===2){ r=0.43*(0.22+0.78*Math.abs(Math.cos(RN[k]*a))); x=0.5+r*Math.cos(a+g*0.5); y=0.5+r*Math.sin(a+g*0.5); }
     else if(shape===3){ var th=k*0.5236+0.3, s=Math.sin(a)*0.44, o=(k-2.5)*0.11;
       x=0.5+s*Math.cos(th)-o*Math.sin(th); y=0.5+s*Math.sin(th)+o*Math.cos(th); }
-    else { r=0.13+0.05*k; x=0.5+0.15*Math.cos(g*2+0.6)+r*Math.cos(a+g); y=0.5+0.15*Math.sin(g*2+0.6)+r*Math.sin(a+g); }
+    else { r=0.13+0.05*k; var oc=r>0.31?0.46-r:0.15; x=0.5+oc*Math.cos(g*2+0.6)+r*Math.cos(a+g); y=0.5+oc*Math.sin(g*2+0.6)+r*Math.sin(a+g); } // outer orbits pull toward the centre so they stay round
     out[0]=x<0.02?0.02:(x>0.98?0.98:x); out[1]=y<0.02?0.02:(y>0.98?0.98:y);
   }
 
   function Engine(NX,NY,sr){
     var DEC=Math.max(1,Math.round(sr/12000)), FS=sr/DEC, N=NX*NY;
-    var h=new Float64Array(N), hp=new Float64Array(N), lp=new Float64Array(N), env=new Float64Array(N), c2m=new Float64Array(N);
+    var h=new Float64Array(N), hp=new Float64Array(N), h2=new Float64Array(N), lp=new Float64Array(N), env=new Float64Array(N), c2m=new Float64Array(N);
     var i; for(i=0;i<N;i++) c2m[i]=1;
     var P={d:1.3e-4,s1:0.005,c2:0.137,drive:0.5,scanHz:0.27,heads:3,shape:0,freeze:0,vol:0.6};
     var A=0, wg=0.002, stepCount=0, decCnt=0, bpm=0, beatPh=0, breathT=Math.random()*100;
@@ -166,6 +187,13 @@ function DeepFieldCore(){
     var hph=new Float64Array(6), xy=new Float64Array(2);
     for(i=0;i<6;i++) hph[i]=i*0.171;
     var dcxL=0,dcyL=0,dcxR=0,dcyR=0, volS=0;
+    // reconstruction low-pass (4th-order Butterworth just under the field's Nyquist): removes the images that
+    // upsampling the ~11-12 kHz membrane to the output rate would otherwise leave near FS
+    var bq=[], zL=new Float64Array(4), zR=new Float64Array(4), lpMix=1;
+    (function(){ var w=TAU*0.42*FS/sr, cs=Math.cos(w), sn=Math.sin(w), Q=[0.54119610,1.30656296];
+      for(var q=0;q<2;q++){ var al=sn/(2*Q[q]), a0=1+al; bq.push([(1-cs)/2/a0,(1-cs)/a0,-2*cs/a0,(1-al)/a0]); } })();
+    function lpf(x,z){ var c=bq[0], y=c[0]*x+z[0]; z[0]=c[1]*x-c[2]*y+z[1]; z[1]=c[0]*x-c[3]*y;
+      c=bq[1]; x=y; y=c[0]*x+z[2]; z[2]=c[1]*x-c[2]*y+z[3]; z[3]=c[0]*x-c[3]*y; return y; }
 
     function kern(x,y){ // 3x3 gaussian stamp around a fractional cell position
       var fx=1+x*(NX-3), fy=1+y*(NY-3), cx=Math.round(fx), cy=Math.round(fy);
@@ -186,13 +214,16 @@ function DeepFieldCore(){
     var smp=null, sA=0, sB=0, sPos=0, sPrev=0, pour=0, pourK=kern(0.35,0.4), pourG=0;
 
     function plk(x,y,a){ // displacement pluck, zero initial velocity
-      var fx=1+x*(NX-3), fy=1+y*(NY-3), cx=Math.round(fx), cy=Math.round(fy), dx, dy;
-      for(dy=-6;dy<=6;dy++)for(dx=-6;dx<=6;dx++){
+      var fx=1+x*(NX-3), fy=1+y*(NY-3), cx=Math.round(fx), cy=Math.round(fy), dx, dy, R=P.freeze?9:6, w=P.freeze?20:9;   // a held field takes a broader, gentler dab
+      if(P.freeze) a*=0.4;
+      for(dy=-R;dy<=R;dy++)for(dx=-R;dx<=R;dx++){
         var xx=cx+dx, yy=cy+dy; if(xx<1||xx>NX-2||yy<1||yy>NY-2) continue;
-        var ex=xx-fx, ey=yy-fy, g=a*Math.exp(-(ex*ex+ey*ey)/9.0), j=yy*NX+xx;
-        h[j]+=g; hp[j]+=g; }
+        var ex=xx-fx, ey=yy-fy, g=a*Math.exp(-(ex*ex+ey*ey)/w), j=yy*NX+xx;
+        if(P.freeze){ g+=h[j]; g=g>1.5?1.5:(g<-1.5?-1.5:g); h[j]=g; hp[j]=g; h2[j]=g; }   // held field: the touch is painted in and stays
+        else { h[j]+=g; hp[j]+=g; h2[j]+=g; } }
+      if(P.freeze){ var e=0; for(j=0;j<N;j++) e+=h[j]*h[j]; A=e/N; }
     }
-    function clearAll(){ for(var j=0;j<N;j++){h[j]=0;hp[j]=0;lp[j]=0;env[j]=0;} A=0; wg=0.002; }
+    function clearAll(){ for(var j=0;j<N;j++){h[j]=0;hp[j]=0;h2[j]=0;lp[j]=0;env[j]=0;} A=0; wg=0.002; }
 
     function breathe(){ // slow drifting tension lobes: modes wander, patterns never sit perfectly still
       breathT+=512/FS;
@@ -206,16 +237,16 @@ function DeepFieldCore(){
     function step(){
       var d=P.d+BETA*A; if(d>0.2)d=0.2;
       var vd=1-d, s1=P.s1, kc=P.c2*(1+KAPPA*A), cap=(0.47-2*s1)/1.06; if(kc>cap)kc=cap;
-      var e=0, x, y, j, end, c, l, n, NXl=NX, hh=h, pp=hp, ll=lp, cc=c2m;
+      var e=0, x, y, j, end, c, l, n, NXl=NX, hh=h, pp=hp, oo=h2, ll=lp, cc=c2m;
       for(y=1;y<NY-1;y++){
         j=y*NXl+1; end=y*NXl+NXl-1;
         for(;j<end;j++){
           c=hh[j]; l=hh[j-1]+hh[j+1]+hh[j-NXl]+hh[j+NXl]-4*c;
           n=c+vd*(c-pp[j])+kc*cc[j]*l+s1*(l-ll[j]);
-          ll[j]=l; pp[j]=n;
+          ll[j]=l; oo[j]=n;
         }
       }
-      h=pp; hp=hh;
+      h=oo; hp=hh; h2=pp;   // three time levels are kept so the pickup can interpolate velocity as well as height
       stepCount++;
       var q, f, o, drive=P.drive;
       // weather
@@ -263,11 +294,14 @@ function DeepFieldCore(){
           var p=hph[k]+base*RATIO[k]; if(p>=1)p-=1; hph[k]=p;
           pathXY(shape,k,p,xy);
           var fx=1+xy[0]*(NX-3), fy=1+xy[1]*(NY-3);
-          var v=read(h,fx,fy); if(fr<1||!frz){ var vo=read(hp,fx,fy); v=v*fr+vo*(1-fr)+(frz?0:5*(v-vo)); } // height plus its rate of change (brighter pickup)
+          var v=read(h,fx,fy); if(!frz){ var vo=read(hp,fx,fy), v2=read(h2,fx,fy); v=v*fr+vo*(1-fr)+5*((v-vo)*fr+(vo-v2)*(1-fr)); } // height plus its rate of change (brighter pickup), both interpolated between field steps
           l+=v*(1-0.65*xy[0]); r+=v*(0.35+0.65*xy[0]);
         }
         volS+=(P.vol-volS)*0.002;
         l*=og; r*=og;
+        // slow scan of the live field: band-limit to the field's own bandwidth. Audio-rate / held wavetable scanning is left bright.
+        lpMix+=(((frz||P.scanHz>=20)?0:1)-lpMix)*0.001;
+        var fl=lpf(l,zL), fr2=lpf(r,zR); l=fl*lpMix+l*(1-lpMix); r=fr2*lpMix+r*(1-lpMix);
         dcyL=l-dcxL+0.9975*dcyL; dcxL=l; dcyR=r-dcxR+0.9975*dcyR; dcxR=r;
         l=dcyL*volS; r=dcyR*volS;
         L[s]=l/(1+(l<0?-l:l)); R[s]=r/(1+(r<0?-r:r));   // soft limiter
@@ -287,7 +321,7 @@ function DeepFieldCore(){
       var q, o;
       switch(m.t){
         case 'p': P[m.k]=m.v; break;
-        case 'pluck': if(!P.freeze) plk(m.x,m.y,m.a); break;
+        case 'pluck': plk(m.x,m.y,m.a); break;
         case 'stir': o=stirs[m.id&3]; o.k=kern(m.x,m.y); if(m.s>o.str)o.str=m.s; break;
         case 'stirEnd': break;
         case 'nodes':
@@ -304,7 +338,7 @@ function DeepFieldCore(){
         case 'pour': pour=m.on?1:0; if(m.x!==undefined) pourK=kern(m.x,m.y); break;
         case 'clear': clearAll(); break;
         case 'bpm': bpm=m.bpm>0?m.bpm:0; break;
-        case 'state': if(m.h&&m.h.length===N){ h.set(m.h); hp.set(m.hp||m.h); } break;
+        case 'state': if(m.h&&m.h.length===N){ h.set(m.h); hp.set(m.hp||m.h); h2.set(hp); } break;
       }
     }
     return {NX:NX,NY:NY,N:N,FS:FS,DEC:DEC,render:render,idle:idle,snapshot:snapshot,cmd:cmd,
@@ -325,8 +359,8 @@ const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
 const wrap=$('fieldWrap'), glc=$('gl'), ovc=$('ov');
 let fieldW=1, fieldH=1;
 (function(){ const r=wrap.getBoundingClientRect(); fieldW=Math.max(50,r.width); fieldH=Math.max(50,r.height); })();
-const NX=clamp(Math.round(Math.sqrt(2000*fieldW/fieldH)),30,68), NY=clamp(Math.round(2000/NX),30,68), N=NX*NY;
-const SNAP=2*N+16;
+function gridFor(w,h){ const nx=clamp(Math.round(Math.sqrt(2000*w/h)),30,68); return [nx,clamp(Math.round(2000/nx),30,68)]; }
+let NX=gridFor(fieldW,fieldH)[0], NY=gridFor(fieldW,fieldH)[1], N=NX*NY, SNAP=2*N+16;
 
 /* ---------- musical helpers ---------- */
 const SCALES=[['FREE',null],['CHROMATIC',[0,1,2,3,4,5,6,7,8,9,10,11]],['MAJOR',[0,2,4,5,7,9,11]],['MINOR',[0,2,3,5,7,8,10]],['PENTATONIC',[0,3,5,7,10]],['WHOLE TONE',[0,2,4,6,8,10]]];
@@ -350,26 +384,30 @@ const map={
   scanHz:v=>{ let f=0.02*Math.pow(2,v*14.5); if(f>=20) f=quant(f); return f; },
   vol:v=>v*v*1.15
 };
+// While the field is held, the scan heads become wavetable oscillators over the frozen picture, so they never run
+// below audio rate: a held field is always heard. Above 20 Hz the scan slider is used unchanged.
+const HOLD_HZ=55;
+const scanEff=()=>{ const f=map.scanHz(S.scan); return (S.freeze&&f<20)?HOLD_HZ:f; };
 const fund=()=>map.c(S.tension)*simFS/2*Math.sqrt(1/((NX-1)*(NX-1))+1/((NY-1)*(NY-1)));
 const fmtHz=f=>f>=100?f.toFixed(0)+' Hz':(f>=10?f.toFixed(1)+' Hz':f.toFixed(2)+' Hz');
 const readout={
   damping:()=>{ const t=13.8/(map.d(S.damping)*simFS); return 'ring '+(t>=10?t.toFixed(0):t.toFixed(1))+' s'; },
   tension:()=>'f₁ '+fmtHz(fund()),
   drive:()=>'×'+map.drive(S.drive).toFixed(2),
-  scan:()=>{ const f=map.scanHz(S.scan); return fmtHz(f)+(f>=20?' '+noteName(f):''); },
+  scan:()=>{ const f=scanEff(); return fmtHz(f)+(f>=20?' '+noteName(f):''); },
   volume:()=>Math.round(S.volume*100)+'%'
 };
 
 /* ---------- engines: local (main thread) + worklet ---------- */
 let local=core.Engine(NX,NY,48000), localSR=48000;
 let ctx=null, node=null, sp=null, master=null, monGain=null, streamDest=null, monitorOn=true;
-let workletLive=false, wantRun=false, lastSnapT=0;
+let workletLive=false, workletReady=false, wantRun=false, lastSnapT=0;
 let snap=new Float32Array(SNAP), localBuf=new Float32Array(SNAP);
 let sample=null; // {name,data,sr}
 
 function send(m){ local.cmd(m); if(workletLive) node.port.postMessage(m); }
 function engineParams(){ return [['d',map.d(S.damping)],['s1',map.s1(S.damping)],['c2',Math.pow(map.c(S.tension),2)],['drive',map.drive(S.drive)],
-  ['scanHz',map.scanHz(S.scan)],['heads',S.heads],['shape',S.path],['freeze',S.freeze],['vol',map.vol(S.volume)]]; }
+  ['scanHz',scanEff()],['heads',S.heads],['shape',S.path],['freeze',S.freeze],['vol',map.vol(S.volume)]]; }
 function pushParams(){ for(const [k,v] of engineParams()) send({t:'p',k,v}); }
 function nodeList(){ return S.nodes.map(n=>({id:n.id,x:n.x,y:n.y,f:n.f,rich:n.rich})); }
 function resample(d,from,to){ if(from===to) return d; const n=Math.max(1,Math.floor(d.length*to/from)), o=new Float32Array(n), r=from/to;
@@ -402,25 +440,45 @@ function ensureCtx(){
     const src='const core=('+DeepFieldCore.toString()+')();\n'+
       'class DeepFieldProc extends AudioWorkletProcessor{\n'+
       ' constructor(o){super();const p=o.processorOptions;this.e=core.Engine(p.NX,p.NY,sampleRate);this.size=p.SNAP;this.pool=[];this.made=0;this.cnt=0;this.every=Math.round(sampleRate/60);\n'+
-      '  this.port.onmessage=ev=>{const m=ev.data;if(m.t==="ret"){if(this.pool.length<8)this.pool.push(m.buf);}else this.e.cmd(m);};}\n'+
-      ' process(i,outs){const o=outs[0],L=o[0],R=o[1]||o[0];this.e.render(L,R,L.length);this.cnt+=L.length;\n'+
+      '  this.port.onmessage=ev=>{const m=ev.data;if(m.t==="ret"){if(this.pool.length<8&&m.buf.length===this.size)this.pool.push(m.buf);}else if(m.t==="kill")this.dead=true;else this.e.cmd(m);};}\n'+
+      ' process(i,outs){if(this.dead)return false;const o=outs[0],L=o[0],R=o[1]||o[0];this.e.render(L,R,L.length);this.cnt+=L.length;\n'+
       '  if(this.cnt>=this.every){this.cnt=0;let b=this.pool.pop();if(!b&&this.made<6){b=new Float32Array(this.size);this.made++;}\n'+
       '   if(b){this.e.snapshot(b);this.port.postMessage({t:"snap",buf:b},[b.buffer]);}}\n'+
       '  return true;}}\n'+
       'registerProcessor("deep-field",DeepFieldProc);';
     const url=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
     ctx.audioWorklet.addModule(url).then(()=>{
-      node=new AudioWorkletNode(ctx,'deep-field',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{NX,NY,SNAP}});
-      node.port.onmessage=ev=>{ const m=ev.data; if(m.t==='snap'){ const old=snap; snap=m.buf; lastSnapT=performance.now();
-        if(old&&old.length===SNAP&&old!==localBuf) node.port.postMessage({t:'ret',buf:old},[old.buffer]); } };
-      replay(m=>node.port.postMessage(m),ctx.sampleRate);
-      node.port.postMessage({t:'state',h:local.getH().slice(),hp:local.getHp().slice()});
-      node.connect(master); workletLive=true; refreshAll();
+      workletReady=true; spawnNode(local.getH().slice(),local.getHp().slice()); refreshAll();
     }).catch(err=>{ console.warn('[deep-field] AudioWorklet unavailable, using ScriptProcessor',err); useSP(); });
   } else useSP();
   ctx.onstatechange=updateStart;
   refreshAll();
   return ctx;
+}
+function spawnNode(h0,hp0){ // (re)create the worklet engine for the current grid
+  if(node){ try{ node.port.postMessage({t:'kill'}); node.disconnect(); }catch(e){} }
+  const nd=new AudioWorkletNode(ctx,'deep-field',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{NX,NY,SNAP}});
+  nd.port.onmessage=ev=>{ const m=ev.data; if(nd!==node||m.t!=='snap'||m.buf.length!==SNAP) return;
+    const old=snap; snap=m.buf; lastSnapT=performance.now();
+    if(old&&old.length===SNAP&&old!==localBuf) nd.port.postMessage({t:'ret',buf:old},[old.buffer]); };
+  node=nd; lastSnapT=0;
+  replay(m=>nd.port.postMessage(m),ctx.sampleRate);
+  nd.port.postMessage({t:'state',h:h0,hp:hp0});
+  nd.connect(master); workletLive=true;
+}
+function regrid(){ // the field was resized/rotated: rebuild the membrane at the new aspect, carrying the picture over
+  const g=gridFor(fieldW,fieldH);
+  if(Math.abs(g[0]-NX)<3&&Math.abs(g[1]-NY)<3) return;
+  const live=workletLive&&lastSnapT&&snap.length===SNAP, oh=live?snap:local.getH(), oNX=NX, oNY=NY;
+  const nx=g[0], ny=g[1], nh=new Float64Array(nx*ny);
+  for(let y=1;y<ny-1;y++) for(let x=1;x<nx-1;x++){ const fx=1+(x-1)/(nx-3)*(oNX-3), fy=1+(y-1)/(ny-3)*(oNY-3), ix=Math.min(oNX-2,fx|0), iy=Math.min(oNY-2,fy|0), tx=fx-ix, ty=fy-iy, j=iy*oNX+ix;
+    nh[y*nx+x]=(oh[j]*(1-tx)+oh[j+1]*tx)*(1-ty)+(oh[j+oNX]*(1-tx)+oh[j+oNX+1]*tx)*ty; }
+  NX=nx; NY=ny; N=NX*NY; SNAP=2*N+16;
+  local=core.Engine(NX,NY,localSR); replay(m=>local.cmd(m),localSR); local.cmd({t:'state',h:nh}); local._synced=true;
+  snap=new Float32Array(SNAP); localBuf=new Float32Array(SNAP); texData=new Uint8Array(N*4); envPrev=new Float32Array(N); img2=null; lastSnapT=0;
+  if(gl){ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,NX,NY,0,gl.RGBA,gl.UNSIGNED_BYTE,texData); gl.uniform2f(uGrid,NX,NY); }
+  if(workletReady) spawnNode(nh.slice(),nh.slice());
+  pathsDirty=true; refreshAll();
 }
 function startAudio(){ wantRun=true; const c=ensureCtx(); if(!c) return;
   if(c.state!=='running'){ const p=c.resume(); if(p&&p.catch) p.catch(()=>{}); }
@@ -442,7 +500,9 @@ function getParam(id){ switch(id){
   case 'freeze': return S.freeze?1:0; case 'pour': return S.pour?1:0; case 'clear': return 0;
   default: return (id in S)?S[id]:undefined; } }
 function setParam(id,v,fromHost){
-  v=clamp(+v||0,0,1);
+  if(v===null||v===undefined||(typeof v==='string'&&v.trim()==='')) return;
+  v=+v; if(!isFinite(v)) return;   // a non-numeric value is ignored rather than read as 0
+  v=clamp(v,0,1);
   switch(id){
     case 'damping': case 'tension': case 'drive': case 'scan': case 'volume': S[id]=v; break;
     case 'heads': S.heads=1+Math.round(v*5); pathsDirty=true; break;
@@ -464,7 +524,7 @@ window.scionDeck={ version:1, manifest,
   getStream(){ ensureCtx(); return streamDest?streamDest.stream:null; },
   set(id,v){ setParam(id,v,true); }, get:getParam,
   start(){ startAudio(); }, stop(){ stopAudio(); }, setMonitor, setBpm,
-  stats(){ return {fps:fpsAvg,quality,frameMs:jsMs,lock:lockV,rms:rmsV,nodes:S.nodes.length,grid:[NX,NY],worklet:workletLive,state:ctx?ctx.state:'none',sample:sample?sample.name:null}; } };
+  stats(){ return {fps:fpsAvg,quality,dbg:{cv:+cvS.toFixed(3),corr:+corrS.toFixed(3)},frameMs:jsMs,lock:lockV,rms:rmsV,nodes:S.nodes.length,grid:[NX,NY],worklet:workletLive,state:ctx?ctx.state:'none',sample:sample?sample.name:null}; } };
 window.addEventListener('message',ev=>{
   const m=ev.data; if(!m||typeof m!=='object') return;
   const reply=o=>{ try{ (ev.source||window.parent).postMessage(o,'*'); }catch(e){ return false; } return true; };
@@ -487,12 +547,12 @@ function makeSlider(id,label){
   el.setAttribute('role','slider'); el.setAttribute('aria-label',label); el.setAttribute('aria-valuemin','0'); el.setAttribute('aria-valuemax','100');
   el.innerHTML='<div class="cap"><span class="lb">'+label.toUpperCase()+'</span><span class="vl"></span></div><div class="trk"><div class="fill"></div></div><div class="thumb"></div>';
   const setFromX=e=>{ const r=el.getBoundingClientRect(); setParam(id,(e.clientX-r.left-6)/(r.width-12)); };
-  el.addEventListener('pointerdown',e=>{ e.preventDefault(); try{el.setPointerCapture(e.pointerId);}catch(_){}
+  el.addEventListener('pointerdown',e=>{ e.preventDefault(); startAudio(); try{el.setPointerCapture(e.pointerId);}catch(_){}
     el.classList.add('drag'); el._drag=true; setFromX(e); });
   el.addEventListener('pointermove',e=>{ if(el._drag) setFromX(e); });
   const end=()=>{ el._drag=false; el.classList.remove('drag'); };
   el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end); el.addEventListener('lostpointercapture',end);
-  el.addEventListener('keydown',e=>{ const s=e.shiftKey?0.1:0.02;
+  el.addEventListener('keydown',e=>{ const s=e.shiftKey?0.1:0.02; if(e.key.indexOf('Arrow')===0) startAudio();
     if(e.key==='ArrowRight'||e.key==='ArrowUp'){ setParam(id,S[id]+s); e.preventDefault(); }
     if(e.key==='ArrowLeft'||e.key==='ArrowDown'){ setParam(id,S[id]-s); e.preventDefault(); } });
   sliderEls[id]={el,fill:el.querySelector('.fill'),thumb:el.querySelector('.thumb'),vl:el.querySelector('.vl')};
@@ -503,12 +563,12 @@ const sg=$('sliders');
 (function(){ const st=document.createElement('div'); st.className='step';
   st.innerHTML='<button class="b" id="headDn" aria-label="Fewer scan heads"><span>&minus;</span></button><div class="mid"><small>SCAN HEADS</small><b id="headVal">3</b></div><button class="b" id="headUp" aria-label="More scan heads"><span>+</span></button>';
   sg.appendChild(st); })();
-$('headDn').addEventListener('click',()=>setParam('heads',(clamp(S.heads-1,1,6)-1)/5));
-$('headUp').addEventListener('click',()=>setParam('heads',(clamp(S.heads+1,1,6)-1)/5));
-$('scaleBtn').addEventListener('click',()=>setParam('scale',((S.scale+1)%SCALES.length)/(SCALES.length-1)));
-$('pathBtn').addEventListener('click',()=>setParam('path',((S.path+1)%PATHS.length)/(PATHS.length-1)));
+$('headDn').addEventListener('click',()=>{ startAudio(); setParam('heads',(clamp(S.heads-1,1,6)-1)/5); });
+$('headUp').addEventListener('click',()=>{ startAudio(); setParam('heads',(clamp(S.heads+1,1,6)-1)/5); });
+$('scaleBtn').addEventListener('click',()=>{ startAudio(); setParam('scale',((S.scale+1)%SCALES.length)/(SCALES.length-1)); });
+$('pathBtn').addEventListener('click',()=>{ startAudio(); setParam('path',((S.path+1)%PATHS.length)/(PATHS.length-1)); });
 $('freezeBtn').addEventListener('click',()=>{ startAudio(); setParam('freeze',S.freeze?0:1); });
-$('clearBtn').addEventListener('click',()=>setParam('clear',1));
+$('clearBtn').addEventListener('click',()=>{ startAudio(); setParam('clear',1); });
 $('pourBtn').addEventListener('click',()=>{ startAudio(); setParam('pour',S.pour?0:1); });
 
 function refreshAll(){
@@ -546,7 +606,9 @@ const GEN=[
         if(H[s]) d[i]+=0.22*Math.exp(-t*70)*r()*2; } } return d; }]
 ];
 let genIdx=0;
-function setSample(name,data,sr){
+function setSample(name,data,sr,isGen){
+  // the two source buttons always say which one is feeding the field
+  $('genVal').textContent=isGen?name:'OFF'; $('genBtn').classList.toggle('on',!!isGen); $('loadBtn').classList.toggle('on',!isGen); $('loadVal').textContent=isGen?'LOAD':'ON';
   let pk=0; for(let i=0;i<data.length;i++){ const a=Math.abs(data[i]); if(a>pk)pk=a; }
   if(pk>0&&isFinite(pk)){ const g=0.9/pk; for(let i=0;i<data.length;i++) data[i]*=g; }
   sample={name,data,sr,a:0,b:1,dur:data.length/sr};
@@ -558,8 +620,8 @@ function setSample(name,data,sr){
   waveDirty=true; smpInfo();
 }
 function smpInfo(){ if(!sample) return; $('smpInfo').textContent=sample.name+' · '+(sample.a*sample.dur).toFixed(2)+'–'+(sample.b*sample.dur).toFixed(2)+' s'; }
-function genSample(i){ genIdx=((i%GEN.length)+GEN.length)%GEN.length; const g=GEN[genIdx]; $('genVal').textContent=g[0];
-  setSample(g[0],g[1](ctx?ctx.sampleRate:48000),ctx?ctx.sampleRate:48000); }
+function genSample(i){ genIdx=((i%GEN.length)+GEN.length)%GEN.length; const g=GEN[genIdx];
+  setSample(g[0],g[1](ctx?ctx.sampleRate:48000),ctx?ctx.sampleRate:48000,true); }
 $('genBtn').addEventListener('click',()=>{ startAudio(); genSample(genIdx+1); if(!S.pour) setParam('pour',1); });
 $('loadBtn').addEventListener('click',()=>{ startAudio(); $('file').click(); });
 $('file').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; if(f) loadFile(f); e.target.value=''; });
@@ -590,16 +652,17 @@ window.addEventListener('drop',e=>{ e.preventDefault(); dragDepth=0; document.bo
 (function(){ let d=null;
   const fx=e=>{ const r=wave.getBoundingClientRect(); return clamp((e.clientX-r.left)/r.width,0,1); };
   const apply=(a,b,jump)=>{ if(!sample) return; sample.a=a; sample.b=b; send({t:'region',a,b,jump}); waveDirty=true; smpInfo(); };
-  wave.addEventListener('pointerdown',e=>{ if(!sample) return; e.preventDefault(); startAudio(); try{wave.setPointerCapture(e.pointerId);}catch(_){}
+  const box=$('smpBox');
+  box.addEventListener('pointerdown',e=>{ if(!sample) return; e.preventDefault(); startAudio(); try{box.setPointerCapture(e.pointerId);}catch(_){}
     d={x0:fx(e),moved:false}; if(!S.pour) setParam('pour',1); });
-  wave.addEventListener('pointermove',e=>{ if(!d) return; const x=fx(e); if(Math.abs(x-d.x0)>0.02) d.moved=true;
+  box.addEventListener('pointermove',e=>{ if(!d) return; const x=fx(e); if(Math.abs(x-d.x0)>0.02) d.moved=true;
     if(d.moved) apply(Math.min(d.x0,x),Math.max(d.x0,x),false); });
   const up=e=>{ if(!d) return;
     if(!d.moved){ const w=Math.min(1,Math.max(0.12,0.35/sample.dur)); const a=clamp(d.x0-w/2,0,1-w); apply(a,a+w,true); }
     else send({t:'region',a:sample.a,b:sample.b,jump:true});
     d=null; };
-  wave.addEventListener('pointerup',up); wave.addEventListener('pointercancel',up);
-  wave.addEventListener('dblclick',()=>apply(0,1,true));
+  box.addEventListener('pointerup',up); box.addEventListener('pointercancel',up);
+  box.addEventListener('dblclick',()=>apply(0,1,true));
 })();
 function drawWave(playFrac){
   const r=wave.getBoundingClientRect(), dpr=Math.min(2,window.devicePixelRatio||1), W=Math.max(10,Math.round(r.width*dpr)), H=Math.max(10,Math.round(r.height*dpr));
@@ -634,7 +697,7 @@ wrap.addEventListener('pointerdown',e=>{
   try{wrap.setPointerCapture(e.pointerId);}catch(_){}
   const now=performance.now(), p=toNorm(e.clientX,e.clientY), hit=hitNode(e.clientX,e.clientY);
   let slot=slotUse.indexOf(0); if(slot<0) slot=0; slotUse[slot]=1;
-  const st={slot,x0:e.clientX,y0:e.clientY,lx:e.clientX,ly:e.clientY,lt:now,t0:now,moved:false,timer:0,pinned:false,nx:p.x,ny:p.y,node:hit};
+  const st={slot,px:e.clientX,py:e.clientY,x0:e.clientX,y0:e.clientY,lx:e.clientX,ly:e.clientY,lt:now,t0:now,moved:false,timer:0,pinned:false,nx:p.x,ny:p.y,node:hit};
   ptrs.set(e.pointerId,st);
   const amp=clamp(0.5+1.0*map.drive(S.drive),0.4,2.2);
   if(hit){
@@ -653,6 +716,7 @@ wrap.addEventListener('pointermove',e=>{
   if(!st.moved||st.pinned||st.node) return;
   const p=toNorm(e.clientX,e.clientY); st.nx=p.x; st.ny=p.y;
   const speed=Math.hypot(dx,dy)/dt; // px per ms
+  if(S.freeze&&Math.hypot(e.clientX-st.px,e.clientY-st.py)>10){ st.px=e.clientX; st.py=e.clientY; send({t:'pluck',x:p.x,y:p.y,a:0.35*(st.slot&1?-1:1)}); }   // held field: a drag paints a ridge into the wavetable
   send({t:'stir',id:st.slot,x:p.x,y:p.y,s:clamp(speed*0.9,0.05,1.6)});
   if(S.pour){ S.spout.x=p.x; S.spout.y=p.y; send({t:'pour',on:1,x:p.x,y:p.y}); }
   st.lx=e.clientX; st.ly=e.clientY; st.lt=now;
@@ -663,7 +727,7 @@ wrap.addEventListener('contextmenu',e=>e.preventDefault());
 
 /* ---------- rendering ---------- */
 let gl=null, prog=null, tex=null, uLock=null, uGrid=null, ctx2=null;
-const texData=new Uint8Array(N*4);
+let texData=new Uint8Array(N*4), envPrev=new Float32Array(N), envPrevT=0, cvS=0, corrS=0;
 const octx=ovc.getContext('2d');
 let ovDpr=1, pathsDirty=true, hudDirty=true, pathCache=[];
 const VS='attribute vec2 p;varying vec2 v;void main(){v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}';
@@ -706,16 +770,17 @@ function initGL(){
   uLock=gl.getUniformLocation(prog,'uLock'); uGrid=gl.getUniformLocation(prog,'uG'); gl.uniform2f(uGrid,NX,NY);
   gl.uniform1i(gl.getUniformLocation(prog,'uT'),0);
 }
-let glRef=glc, img2=null, tmp2=null, quality=clamp(+qs.get('q')||1,0.3,1), slowT=0;
+let glRef=glc, img2=null, tmp2=null, quality=clamp(+qs.get('q')||1,0.3,3), qFull=false, slowT=0, goodT=0, probing=0, probeFrom=1, probeOk=0, probeWait=4, fpsPeak=0, rgT=0;
 function resize(){
   const r=wrap.getBoundingClientRect(); fieldW=Math.max(10,r.width); fieldH=Math.max(10,r.height);
   const dpr=window.devicePixelRatio||1;
-  let s=Math.min(dpr,2); const budget=460000*quality*quality; if(fieldW*fieldH*s*s>budget) s=Math.sqrt(budget/(fieldW*fieldH));
+  let s=Math.min(dpr,2); const budget=460000*quality*quality; qFull=fieldW*fieldH*s*s<=budget; if(!qFull) s=Math.sqrt(budget/(fieldW*fieldH));
   const W=Math.max(16,Math.round(fieldW*s)), H=Math.max(16,Math.round(fieldH*s));
   if(glRef.width!==W||glRef.height!==H){ glRef.width=W; glRef.height=H; if(gl) gl.viewport(0,0,W,H); }
   ovDpr=Math.min(dpr,quality<0.6?1.5:2); const ow=Math.round(fieldW*ovDpr), oh=Math.round(fieldH*ovDpr);
   if(ovc.width!==ow||ovc.height!==oh){ ovc.width=ow; ovc.height=oh; }
   pathsDirty=true; waveDirty=true;
+  clearTimeout(rgT); rgT=setTimeout(regrid,250);
 }
 window.addEventListener('resize',resize);
 if(window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
@@ -732,8 +797,20 @@ function frame(t){
   const t0f=performance.now();
   const dt=Math.min(100,t-lastT); lastT=t; frameN++;
   fpsCnt++; if(t-lastFpsT>=500){ fpsAvg=fpsCnt*1000/(t-lastFpsT); fpsCnt=0; lastFpsT=t;
-    // adaptive quality: if the device cannot hold 50 fps, render the field at a lower internal resolution (never the simulation)
-    if(fpsAvg<48&&document.visibilityState==='visible'){ if(++slowT>=4&&quality>0.51){ quality=Math.max(0.5,quality*0.72); slowT=0; resize(); } } else slowT=0; }
+    // adaptive quality: only the render resolution moves, never the simulation. Slow -> step down. Smooth -> probe one
+    // step back up; a probe that cannot hold the frame rate is undone within a second and retried after a doubling wait.
+    if(document.visibilityState==='visible'){
+      if(fpsAvg>fpsPeak) fpsPeak=fpsAvg;
+      if(fpsAvg<(probing?52:48)){ goodT=0;
+        if(++slowT>=(probing?2:4)){ slowT=0;
+          if(probing){ quality=probeFrom; probing=0; probeWait=Math.min(480,probeWait*2); resize(); }
+          else if(quality>0.51){ quality=Math.max(0.5,quality*0.72); probeWait=Math.min(480,probeWait*2); resize(); } } }
+      else { slowT=0;
+        if(fpsAvg>=Math.max(52,0.9*Math.min(fpsPeak,60))){
+          if(probing){ if(++probeOk>=4){ probing=0; probeWait=4; goodT=0; } }
+          else if(!qFull&&++goodT>=probeWait){ goodT=0; probeFrom=quality; quality=Math.min(3,quality*1.25); probing=1; probeOk=0; resize(); } }
+        else goodT=0; }
+    } }
   // which engine is producing the picture?
   const audioRunning=ctx&&ctx.state==='running';
   let src;
@@ -750,7 +827,14 @@ function frame(t){
   let se=0, se2=0, cnt=0;
   for(let y=3;y<NY-3;y++){ for(let x=3;x<NX-3;x++){ const e=Math.sqrt(src[N+y*NX+x]); se+=e; se2+=e*e; cnt++; } }
   const mean=se/cnt, cv=mean>1e-9?Math.sqrt(Math.max(0,se2/cnt-mean*mean))/mean:0;
-  const lk=clamp((cv-0.40)/0.25,0,1)*(S.nodes.length||src[2*N+10]>0.3?1:0.5);
+  // how still is the energy picture? correlate it with itself ~0.3 s ago: a locked standing pattern barely moves, weather does
+  { let sp=0, sp2=0, sep=0; const ep=envPrev;
+    for(let y=3;y<NY-3;y++){ for(let x=3;x<NX-3;x++){ const j=y*NX+x, e=Math.sqrt(src[N+j]), q=ep[j]; sp+=q; sp2+=q*q; sep+=e*q; } }
+    const va=se2/cnt-mean*mean, vb=sp2/cnt-(sp/cnt)*(sp/cnt), co=(va>1e-18&&vb>1e-18)?(sep/cnt-mean*sp/cnt)/Math.sqrt(va*vb):0;
+    corrS+=(co-corrS)*0.1; cvS+=(cv-cvS)*0.1;
+    if(t-envPrevT>300&&!S.freeze){ envPrevT=t; for(let j=0;j<N;j++) ep[j]=Math.sqrt(src[N+j]); } }
+  const driven=S.nodes.length||src[2*N+10]>0.3;
+  const lk=driven?Math.max(clamp((cv-0.40)/0.25,0,1),clamp((cv-0.18)/0.22,0,1)*clamp((corrS-0.90)/0.09,0,1)):clamp((cv-0.40)/0.25,0,1)*0.5;
   lockV+=(lk-lockV)*0.06;
   const targ=Math.max(0.0012,rmsV); expo+=(targ-expo)*0.08; envRef+=(Math.max(0.001,mean)-envRef)*0.08;
   const gh=Math.pow(expo/0.05,0.3)/(expo*2.4), ge=Math.pow(envRef/0.05,0.25)/(envRef*2.6)*255;
@@ -780,10 +864,11 @@ function frame(t){
   octx.globalAlpha=1; octx.font='10px ui-monospace,Menlo,Consolas,monospace'; octx.textAlign='center';
   for(const n of S.nodes){ const q=toPx(n.x,n.y), pulse=0.5+0.5*Math.sin(t*0.006+n.id);
     octx.strokeStyle='#ffcf7a'; octx.lineWidth=2; octx.beginPath(); octx.arc(q[0],q[1],9,0,6.2832); octx.stroke();
-    octx.lineWidth=1; octx.globalAlpha=0.5*(1-pulse); octx.beginPath(); octx.arc(q[0],q[1],9+pulse*16,0,6.2832); octx.stroke(); octx.globalAlpha=1;
+    const room=Math.min(q[0],q[1],fieldW-q[0],fieldH-q[1])-2, pr=Math.max(0,Math.min(16,room-9));   // the pulse ring never crosses the field edge
+    octx.lineWidth=1; octx.globalAlpha=0.5*(1-pulse); octx.beginPath(); octx.arc(q[0],q[1],9+pulse*pr,0,6.2832); octx.stroke(); octx.globalAlpha=1;
     octx.fillStyle='#ffcf7a'; octx.beginPath(); octx.arc(q[0],q[1],2.5,0,6.2832); octx.fill();
-    const ty=q[1]<30?q[1]+24:q[1]-15; octx.fillStyle='rgba(3,6,12,.7)'; octx.fillRect(q[0]-15,ty-10,30,13);
-    octx.fillStyle='#ffe2ad'; octx.fillText(noteName(n.f),q[0],ty); }
+    const ty=q[1]<30?q[1]+24:q[1]-15, lx=clamp(q[0],17,fieldW-17); octx.fillStyle='rgba(3,6,12,.7)'; octx.fillRect(lx-15,ty-10,30,13);
+    octx.fillStyle='#ffe2ad'; octx.fillText(noteName(n.f),lx,ty); }
   if(S.pour){ const q=toPx(S.spout.x,S.spout.y), a=src[2*N+10];
     octx.strokeStyle='#fff'; octx.lineWidth=1.5; octx.setLineDash([3,3]); octx.beginPath(); octx.arc(q[0],q[1],13+3*Math.sin(t*0.01),0,6.2832); octx.stroke(); octx.setLineDash([]);
     octx.fillStyle='rgba(255,255,255,'+(0.4+0.5*a)+')'; octx.fillText('POUR',q[0],q[1]+(q[1]>fieldH-40?-20:30)); }
@@ -794,8 +879,14 @@ function frame(t){
   if(waveDirty||S.pour){ drawWave(S.pour?src[2*N+8]:-1); waveDirty=false; }
   jsMs+=((performance.now()-t0f)-jsMs)*0.05;
   if(hudDirty||t-hudT>250){ hudT=t; hudDirty=false;
-    $('hudL').textContent=(S.freeze?'FROZEN · ':'')+'f₁ '+fmtHz(fund())+' · '+S.nodes.length+' NODE'+(S.nodes.length===1?'':'S');
-    $('hudR').innerHTML='LOCK <b>'+Math.round(lockV*100)+'%</b>'; }
+    const hl=$('hudL'), hr=$('hudR'), ns=S.nodes.length+' NODE'+(S.nodes.length===1?'':'S');
+    hl.textContent=S.freeze?'HELD · WAVETABLE '+readout.scan()+' · '+ns:'f₁ '+fmtHz(fund())+' · '+ns;
+    hr.innerHTML='LOCK <b>'+Math.round(lockV*100)+'%</b>';
+    // a readout pill steps aside (fades) while a resonator or a finger is underneath it
+    for(const el of [hl,hr]){ const x0=el.offsetLeft-26, x1=x0+el.offsetWidth+52, y1=el.offsetTop+el.offsetHeight+30; let under=false;
+      for(const n of S.nodes){ const q=toPx(n.x,n.y); if(q[0]>x0&&q[0]<x1&&q[1]<y1) under=true; }
+      const wr=wrap.getBoundingClientRect(); ptrs.forEach(st=>{ const x=st.lx-wr.left, y=st.ly-wr.top; if(x>x0&&x<x1&&y<y1) under=true; });
+      el.classList.toggle('dim',under); } }
 }
 
 /* ---------- boot ---------- */
