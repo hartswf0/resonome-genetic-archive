@@ -1,0 +1,2370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Morphic Resonance Deck 08g</title>
+    <style>
+        :root {
+            --ui-color-primary: #E0FFFF;
+            --ui-color-accent: #00FFFF;
+            --ui-color-bg-dark: rgba(0, 20, 24, 0.72);
+            --ui-color-border-subtle: rgba(0, 255, 255, 0.3);
+            --ui-color-slider-track: rgba(0, 255, 255, 0.12);
+            --ui-shadow-inset: rgba(0, 0, 0, 0.6);
+            --fuzz: #FF00FF;
+            --infl: #00FF00;
+            --rail-w: 52px;
+            --gap: 6px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; }
+        body {
+            background: #000; overflow: hidden; touch-action: none;
+            font-family: 'Courier New', monospace; color: var(--ui-color-primary); font-size: 12px;
+        }
+        button { font-family: inherit; color: inherit; }
+
+        /* ---------- App frame: everything is docked, nothing floats over the surfaces ---------- */
+        #app {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; flex-direction: column; gap: var(--gap);
+            padding: calc(env(safe-area-inset-top, 0px) + 4px) calc(env(safe-area-inset-right, 0px) + 6px)
+                     calc(env(safe-area-inset-bottom, 0px) + 6px) calc(env(safe-area-inset-left, 0px) + 6px);
+        }
+        #topbar { flex: 0 0 auto; height: 44px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+        #title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                 letter-spacing: 2px; text-transform: uppercase; color: rgba(224,255,255,.75); }
+        #title small { color: rgba(224,255,255,.45); letter-spacing: 1px; }
+        .btn {
+            flex: 0 0 auto; min-height: 44px; min-width: 44px; padding: 0 12px;
+            background: rgba(224, 255, 255, 0.08); border: 2px solid var(--ui-color-border-subtle);
+            border-radius: 8px; cursor: pointer; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+            white-space: nowrap; touch-action: manipulation;
+        }
+        .btn:hover { background: rgba(224, 255, 255, 0.18); border-color: var(--ui-color-primary); }
+        .btn:active { background: var(--ui-color-primary); color: #000; }
+        .btn.on { background: rgba(0,255,255,.22); border-color: var(--ui-color-accent); color: #fff; }
+        #play-pause-button { min-width: 104px; font-weight: bold; font-size: 14px; border-color: var(--ui-color-accent);
+                             box-shadow: 0 0 12px rgba(0,255,255,.45); }
+        #play-pause-button.running { box-shadow: none; }
+
+        #stage { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--gap); }
+        #portal-container { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; gap: var(--gap); position: relative; }
+        .canvas-container {
+            flex: 1 1 0; min-width: 0; min-height: 0; position: relative; overflow: hidden;
+            border: 1px solid var(--ui-color-border-subtle); border-radius: 8px;
+            touch-action: none; cursor: crosshair; background: #000; transition: opacity .05s linear;
+        }
+        .morphic-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; transition: opacity 0.2s ease; }
+        .surface-head { position: absolute; left: 6px; right: 6px; top: 5px; display: flex; justify-content: space-between; align-items: baseline;
+                        gap: 8px; pointer-events: none; font-size: 11px; text-shadow: 0 0 4px #000, 0 0 2px #000, 0 0 1px #000; }
+        /* tag and readout share one flex row: the tag gives way (ellipsis) instead of the two overprinting */
+        .surface-tag { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .5px;
+                       color: rgba(224,255,255,.85); text-transform: uppercase; }
+        .surface-read { flex: 0 0 auto; white-space: nowrap; color: #E0FFFF; }
+        #start-hint {
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5;
+            padding: 10px 16px; border: 2px solid rgba(255,255,255,.35); border-radius: 8px; background: rgba(0,0,0,.55);
+            font-size: 15px; letter-spacing: 2px; color: #fff; white-space: nowrap; animation: hint 1.6s infinite alternate ease-in-out;
+        }
+        @keyframes hint { from { opacity: .55; } to { opacity: 1; } }
+        body.started #start-hint, body.embed #start-hint { display: none; }
+
+        /* ---------- Faders (custom pointer-event elements; no native range inputs anywhere) ---------- */
+        .fader { position: relative; touch-action: none; cursor: grab; outline: none; --p: 0; --tint: var(--ui-color-accent); }
+        .fader:active { cursor: grabbing; }
+        .fader:focus-visible .f-track { border-color: #fff; }
+        .f-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: rgba(224,255,255,.8); white-space: nowrap; pointer-events: none; }
+        .f-val { font-size: 11px; font-weight: bold; color: var(--tint); white-space: nowrap; pointer-events: none; }
+        .f-track { position: relative; background: var(--ui-color-slider-track); border: 2px solid var(--ui-color-border-subtle);
+                   border-radius: 8px; box-shadow: inset 0 0 5px var(--ui-shadow-inset); pointer-events: none; }
+        .f-fill { position: absolute; background: var(--tint); opacity: .28; border-radius: 5px; }
+        .f-thumb { position: absolute; background: var(--tint); border-radius: 6px; box-shadow: 0 0 10px var(--tint); }
+        .fader.drag .f-thumb { background: #fff; }
+
+        /* vertical: label on top, track spans the whole rail, readout at the bottom */
+        .rail { flex: 0 0 var(--rail-w); min-height: 0; display: flex; }
+        /* the name runs up the rail beside the track (plain vertical text, so even INFLUENCE fits at a readable size) */
+        .fader.v { width: var(--rail-w); height: 100%; display: grid; grid-template-columns: 14px 26px; grid-template-rows: minmax(0, 1fr) auto;
+                   justify-content: center; align-items: stretch; gap: 4px 2px;
+                   padding: 6px 0; background: var(--ui-color-bg-dark); border: 2px solid var(--ui-color-border-subtle); border-radius: 10px; }
+        .fader.v .f-label { grid-column: 1; grid-row: 1; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center;
+                            font-size: 11px; line-height: 14px; letter-spacing: 2px; font-weight: bold; color: var(--tint); overflow: hidden; }
+        .fader.v .f-track { grid-column: 2; grid-row: 1; min-height: 0; }
+        .fader.v .f-val { grid-column: 1 / 3; grid-row: 2; text-align: center; }
+        .fader.v .f-fill { left: 0; right: 0; bottom: 0; height: calc(var(--p) * 100%); }
+        .fader.v .f-thumb { left: -2px; right: -2px; height: 22px; bottom: calc(var(--p) * (100% - 22px)); }
+        #fuzz-fader { --tint: var(--fuzz); }
+        #influence-fader { --tint: var(--infl); }
+
+        /* horizontal */
+        .fader.h { min-height: 44px; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; }
+        .fader.h .f-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; pointer-events: none; }
+        .fader.h .f-track { height: 22px; }
+        .fader.h .f-fill { left: 0; top: 0; bottom: 0; width: calc(var(--p) * 100%); }
+        .fader.h .f-thumb { top: -2px; bottom: -2px; width: 22px; left: calc(var(--p) * (100% - 22px)); }
+
+        /* ---------- Docked control strip ---------- */
+        #dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+        #dock-bar { display: flex; align-items: stretch; gap: var(--gap); min-width: 0; }
+        #dock-bar .btn { padding: 0 8px; font-size: 11px; }
+        #crossfader-fader { flex: 1 1 auto; padding: 2px 8px 4px; background: var(--ui-color-bg-dark);
+                            border: 2px solid var(--ui-color-border-subtle); border-radius: 8px; }
+        #panels { display: flex; gap: var(--gap); min-width: 0; align-items: stretch; }
+        .panel { flex: 1 1 0; min-width: 0; padding: 6px 8px; background: var(--ui-color-bg-dark);
+                 border: 2px solid var(--ui-color-border-subtle); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .panel.closed { display: none; }
+        #panels.empty { display: none; }
+        .panel-title { font-size: 10px; letter-spacing: 1px; color: rgba(224,255,255,.6); text-transform: uppercase; }
+        #mix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+        #color-palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+        .color-swatch { min-height: 44px; min-width: 0; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+                        display: flex; align-items: flex-end; justify-content: center; padding: 0 0 3px;
+                        font-size: 10px; letter-spacing: 0; font-weight: bold; color: #000; overflow: hidden; touch-action: manipulation; }
+        .color-swatch.dark { color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; }
+        .color-swatch.selected { border-color: #fff; box-shadow: 0 0 10px var(--ui-color-primary); }
+        #wave-wrap { position: relative; flex: 1 1 auto; min-height: 76px; border: 1px solid var(--ui-color-border-subtle);
+                     border-radius: 6px; overflow: hidden; touch-action: none; cursor: col-resize; background: rgba(0,0,0,.5); }
+        #wave-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+        #sample-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
+        #sample-buttons .btn { flex: 1 1 auto; padding: 0 6px; font-size: 11px; letter-spacing: 0; }
+        #file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        body.dropping #wave-wrap { border-color: #fff; box-shadow: 0 0 14px var(--ui-color-accent); }
+        body.dropping #app::after { content: 'DROP AUDIO FILE TO SAMPLE IT'; position: absolute; left: 50%; top: 40%;
+            transform: translate(-50%,-50%); padding: 14px 20px; background: rgba(0,0,0,.8); border: 2px dashed #fff;
+            border-radius: 10px; font-size: 14px; letter-spacing: 2px; pointer-events: none; z-index: 20; white-space: nowrap; }
+
+        /* ---------- Portrait / phone: stack field over sequencer so each gets the full width ---------- */
+        @media (max-aspect-ratio: 1/1) {
+            #portal-container { flex-direction: column; }
+            #panels { flex-direction: column; }
+            :root { --rail-w: 48px; }
+            #title small { display: none; }
+        }
+        @media (max-width: 520px) {
+            #title { font-size: 10px; letter-spacing: 1px; }
+            #play-pause-button { min-width: 92px; }
+            /* full-width panel, tight gutters: 8 swatches are 44px wide at 390px */
+            .panel { padding: 6px 4px; }
+            #color-palette { gap: 2px; }
+            #sample-buttons { flex-wrap: nowrap; gap: 3px; }
+            #sample-buttons .btn { flex: 1 1 auto; padding: 0 2px; font-size: 10px; }
+        }
+        @media (max-width: 379px) {
+            .color-swatch { font-size: 9px; border-left-width: 0; border-right-width: 0; }
+        }
+        /* short phones: keep an open panel smaller than the surfaces */
+        @media (max-width: 520px) and (max-height: 700px) {
+            #wave-wrap { min-height: 56px; }
+            .panel-title { display: none; }
+        }
+        /* landscape phone / short window: an open panel is ONE row, so the surfaces never fall back to a thin band */
+        @media (max-height: 520px) {
+            #topbar { height: 40px; }
+            #topbar .btn { min-height: 40px; }
+            .panel { flex-direction: row; align-items: stretch; padding: 4px 6px; }
+            #mix-grid { flex: 1 1 0; min-width: 0; grid-template-columns: repeat(4, 1fr); gap: 0 10px; }
+            #panel-mix .panel-title { display: none; }
+            #color-palette { flex: 1 1 0; min-width: 0; gap: 2px; }
+            #wave-wrap { min-height: 44px; }
+            #sample-buttons { flex: 0 0 auto; flex-wrap: nowrap; }
+            #sample-buttons .btn { padding: 0 5px; font-size: 10px; }
+        }
+        /* ---------- Embedded in a host mixer: no title/transport chrome ---------- */
+        body.embed #topbar { display: none; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div id="topbar">
+        <button id="play-pause-button" class="btn" aria-label="Start or stop sound">&#9654; START</button>
+        <div id="title">Morphic Resonance Deck <small>08g &middot; field + sequencer + sampler</small></div>
+        <button id="fullscreen-btn" class="btn" aria-label="Toggle fullscreen">FULL</button>
+    </div>
+
+    <div id="stage">
+        <div class="rail">
+            <div id="fuzz-fader" class="fader v" data-fader="fuzz">
+                <span class="f-label">FUZZ</span>
+                <div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div>
+                <span class="f-val">0%</span>
+            </div>
+        </div>
+
+        <div id="portal-container">
+            <div id="deck-a-container" class="canvas-container">
+                <canvas id="canvas-a" class="morphic-canvas"></canvas>
+                <div class="surface-head"><span class="surface-tag">Field &middot; touch + drag</span><span class="surface-read" id="field-read"></span></div>
+                <div id="start-hint">TOUCH TO START</div>
+            </div>
+            <div id="deck-b-container" class="canvas-container">
+                <canvas id="canvas-b" class="morphic-canvas"></canvas>
+                <div class="surface-head"><span class="surface-tag">Sequencer &middot; tap cells</span><span class="surface-read" id="seq-read"></span></div>
+            </div>
+        </div>
+
+        <div class="rail">
+            <div id="influence-fader" class="fader v" data-fader="influence">
+                <span class="f-label">INFLUENCE</span>
+                <div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div>
+                <span class="f-val">100%</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="dock">
+        <div id="dock-bar">
+            <button id="mix-toggle" class="btn" aria-controls="panel-mix">MIX</button>
+            <div id="crossfader-fader" class="fader h" data-fader="crossfade">
+                <div class="f-head"><span class="f-label">&#9664; FIELD</span><span class="f-val">XFADE 50:50</span><span class="f-label">SEQ &#9654;</span></div>
+                <div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div>
+            </div>
+            <button id="sample-toggle" class="btn" aria-controls="panel-sample">SAMPLE</button>
+        </div>
+        <div id="panels">
+            <div id="panel-mix" class="panel">
+                <div id="mix-grid">
+                    <div class="fader h" data-fader="bpm"><div class="f-head"><span class="f-label">TEMPO</span><span class="f-val" id="bpm-display">120 BPM</span></div><div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div></div>
+                    <div class="fader h" data-fader="master"><div class="f-head"><span class="f-label">MASTER VOL</span><span class="f-val"></span></div><div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div></div>
+                    <div class="fader h" data-fader="droneVol"><div class="f-head"><span class="f-label">FIELD VOL</span><span class="f-val"></span></div><div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div></div>
+                    <div class="fader h" data-fader="seqVol"><div class="f-head"><span class="f-label">SEQ VOL</span><span class="f-val"></span></div><div class="f-track"><div class="f-fill"></div><div class="f-thumb"></div></div></div>
+                </div>
+                <div class="panel-title">Row colour = effect for the next cells you tap: <span id="color-name"></span></div>
+                <div id="color-palette"></div>
+            </div>
+            <div id="panel-sample" class="panel">
+                <div id="wave-wrap"><canvas id="wave-canvas"></canvas></div>
+                <div id="sample-buttons">
+                    <button id="sample-load" class="btn">LOAD FILE</button>
+                    <button id="sample-builtin" class="btn">BUILT-IN</button>
+                    <button id="sample-grab" class="btn">GRAB 2s</button>
+                    <button id="sample-audition" class="btn">&#9654; REGION</button>
+                    <button id="sample-source" class="btn on">SEQ: SAMPLE</button>
+                </div>
+                <input type="file" id="file-input" accept="audio/*,.wav,.mp3,.ogg,.m4a,.flac,.aiff">
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global portal application object
+        const portalApp = {};
+        window.portalApp = portalApp;
+        const HAS_THREE = typeof THREE !== 'undefined';   // page stays playable (2D fallback) if the CDN is unreachable
+
+        // Utility function to convert HSV to RGB for JS
+        function hsvToRgb(h, s, v) {
+            let r, g, b;
+            const i = Math.floor(h * 6);
+            const f = h * 6 - i;
+            const p = v * (1 - s);
+            const q = v * (1 - f * s);
+            const t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v, g = t, b = p; break;
+                case 1: r = q, g = v, b = p; break;
+                case 2: r = p, g = v, b = t; break;
+                case 3: r = p, g = q, b = v; break;
+                case 4: r = t, g = p, b = v; break;
+                case 5: r = v, g = p, b = q; break;
+            }
+            return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+        }
+        portalApp.hsvToRgb = hsvToRgb;
+
+        // Utility for distortion curve
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 4096;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; i++) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        // Shaders for Drone Deck (canvas-a) - UNCHANGED
+        const droneConfig = {
+            type: 'drone',
+            vertexShader: `
+                uniform float time;
+                uniform float intensity;
+                uniform float flow;
+                uniform vec2 mouse;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    
+                    float dist = distance(uv, mouse);
+                    float wave = sin(dist * 15.0 - time * 2.0) * 0.1;
+                    float ripple = sin(length(pos.xy) * 8.0 - time * 3.0) * 0.05;
+                    
+                    float morphic = sin(pos.x * 4.0 + time * flow) * 
+                                   cos(pos.y * 3.0 + time * flow * 0.7) * intensity * 0.3;
+                    
+                    pos.z += wave + ripple + morphic;
+                    vDistortion = abs(wave + ripple + morphic);
+                    vPosition = pos;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float bloom;
+                uniform float harmonic;
+                uniform vec2 mouse;
+                uniform float audioLevel;
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+                
+                void main() {
+                    vec2 center = vUv - 0.5;
+                    float dist = length(center);
+                    
+                    float hue = time * 0.1 + dist * 2.0 + vDistortion * 5.0 + audioLevel * 0.5;
+                    float sat = 0.7 + sin(time * 0.5 + dist * 10.0) * 0.3;
+                    float brightness = bloom * (0.3 + vDistortion * 2.0 + audioLevel * 0.4); 
+                    brightness = max(0.1, brightness); 
+                    
+                    vec3 color = hsv2rgb(vec3(hue, sat, brightness));
+                    
+                    // Add visual cursor glow
+                    float cursorDist = distance(vUv, mouse);
+                    float cursorGlow = smoothstep(0.1, 0.0, cursorDist) * (0.5 + audioLevel * 1.0); 
+                    color += vec3(0.1, 0.2, 0.3) * cursorGlow; 
+                    
+                    float alpha = 0.8 - dist * 0.5 + vDistortion + audioLevel * 0.2;
+                    alpha *= smoothstep(1.5, 0.0, dist);
+                    alpha += cursorGlow * 0.5;
+                    
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `,
+            uniforms: {
+                time: { value: 0 },
+                intensity: { value: 0.5 },
+                flow: { value: 0.6 },
+                bloom: { value: 0.8 },
+                harmonic: { value: 0.4 }, 
+                mouse: { value: null },
+                audioLevel: { value: 0 }
+            }
+        };
+
+        // Shaders for Sequencer Deck (canvas-b) - REDESIGNED FOR SUBTLE WAVE, CLEAR GRID NODES
+        const sequencerConfig = {
+            type: 'sequencer',
+            vertexShader: `
+                uniform float time;
+                uniform float intensity; // General visual intensity (from influence)
+                uniform float flow;      // General visual flow (from influence)
+                uniform float beatPulse; 
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion;
+                
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    
+                    // Reintroducing subtle wave-like distortion, tied to influence
+                    float morphic = sin(pos.x * 2.5 + time * flow * 0.05) * // Increased flow influence slightly
+                                    cos(pos.y * 2.0 - time * flow * 0.03) * intensity * 0.04; // Increased intensity for more visible waves
+                    
+                    // Minimal overall grid pop from beatPulse
+                    pos.z += morphic + beatPulse * 0.005; 
+                    vDistortion = abs(morphic + beatPulse * 0.005); 
+                    vPosition = pos;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float audioLevel;
+                uniform float beatPulse; 
+                uniform float bloom; /* Added bloom uniform */
+                varying vec2 vUv;
+                varying vec3 vPosition;
+                varying float vDistortion; 
+                
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+                
+                void main() {
+                    vec2 center = vUv - 0.5;
+                    float dist = length(center); 
+
+                    // --- Background: Subtle, dynamic, near black atmosphere with wave reactivity ---
+                    // Gentle hue and brightness shift based on time and audio, now including bloom
+                    float backgroundHue = 0.55 + time * 0.005; 
+                    float backgroundBrightness = 0.008 + audioLevel * 0.015 + vDistortion * 0.1 + bloom * 0.005; /* Bloom integrated */
+                    vec3 backgroundColor = hsv2rgb(vec3(backgroundHue, 0.7, backgroundBrightness)); 
+
+                    // --- Perfect 8x8 Grid Lines: Ultra thin, very subtle, and aligned ---
+                    vec2 gridUV = vUv;
+                    vec2 gridDensity = vec2(8.0, 8.0); 
+                    vec2 grid = fract(gridUV * gridDensity); 
+                    
+                    // Ultra thin grid lines, almost invisible unless beatPulse is strong
+                    float gridLineX = (1.0 - smoothstep(0.00005, 0.0001, grid.x)); 
+                    float gridLineY = (1.0 - smoothstep(0.00005, 0.0001, grid.y)); 
+                    
+                    // Extremely subtle grid line glow, mostly from beatPulse
+                    float gridIntensity = max(gridLineX, gridLineY) * (0.002 + beatPulse * 0.008); 
+                    
+                    // Dynamic grid line color based on time and beatPulse (syncs with drone hue)
+                    float hue = mod(time * 0.05 + beatPulse * 0.2, 1.0);
+                    vec3 gridLineColor = hsv2rgb(vec3(hue, 0.8, 1.0)) * gridIntensity;
+                    
+                    // Combine background and grid lines
+                    vec3 finalColor = backgroundColor + gridLineColor;
+
+                    // Overall alpha: Keep it simple and solid
+                    float alpha = 0.9; 
+                    
+                    gl_FragColor = vec4(finalColor, alpha);
+                }
+            `,
+            uniforms: {
+                time: { value: 0 },
+                intensity: { value: 0.7 }, 
+                flow: { value: 0.8 },      
+                audioLevel: { value: 0 },
+                beatPulse: { value: 0.0 },
+                bloom: { value: 0.8 } /* Added bloom uniform */
+            }
+        };
+
+        const SEQ_SEMITONES = [12, 10, 7, 5, 3, 0, -2, -5];   // sample-mode pitch per row (top row highest)
+        const COLOR_NAMES = ['ECHO', 'SWEEP', 'BEND', 'BLOOM', 'SUB', 'FLICKER', 'BOOST', 'NOISE'];
+        const clamp01 = (v) => Math.max(0, Math.min(1, v));
+        // Field / sequencer balance at the default 50:50 crossfade (the field used to sit 10-20 dB under the beat)
+        const DRONE_LEVEL = 0.2, GRAIN_LEVEL = 0.8, SEQ_SAMPLE_LEVEL = 0.7, SEQ_SYNTH_LEVEL = 0.4;
+
+        // Main Class for a Morphic Deck (either Drone or Sequencer)
+        class MorphicDeck {
+            constructor(containerId, canvasId, config) {
+                this.container = document.getElementById(containerId);
+                this.canvas = document.getElementById(canvasId);
+                this.config = config;
+
+                this.gl = false;          // true when three.js + WebGL are available
+                this.ctx2d = null;        // fallback renderer
+                this.mesh = null;
+                this.particles = null;
+                this.time = 0;
+                this.mouse = { x: 0.5, y: 0.5 };
+                this.audioLevel = 0;
+                this.beatPulse = 0;
+                this.touchPulse = 0;
+
+                // Audio
+                this.audioContext = null;
+                this.outputGain = null;
+                this.mainVoice = [];
+                this.filters = [];
+
+                // Deck parameters (UI controlled)
+                this.visualIntensity = config.uniforms.intensity ? config.uniforms.intensity.value : 0.5;
+                this.visualFlow = config.uniforms.flow ? config.uniforms.flow.value : 0.6;
+                this.visualBloom = config.uniforms.bloom ? config.uniforms.bloom.value : 0.8;
+
+                this.audioFrequency = 220;
+                this.audioResonance = 0.7;
+                this.deckVolume = 0.7;
+
+                // Sequencer specific properties
+                if (this.config.type === 'sequencer') {
+                    this.bpm = 120;
+                    this.layers = [];
+                    this.sequencerVoices = [];
+                    this.currentSequencerStep = 0;
+                    this.visualStep = -1;
+                    this.nextSequencerStepTime = 0;
+                    this.sequencerInterval = null;
+                    this.isPlaying = false;
+                    this.influence = 1.0;
+                    this.sequencerVisualNodes = [];
+                    this.hoverCell = -1;
+                    this.initSequencerLayers();
+                }
+
+                this.initVisuals();
+            }
+
+            initVisuals() {
+                if (HAS_THREE) {
+                    try {
+                        this.scene = new THREE.Scene();
+                        this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+                        this.gl = true;
+                    } catch (err) {
+                        console.warn('WebGL unavailable, using 2D fallback:', err && err.message);
+                        this.gl = false;
+                    }
+                }
+                if (!this.gl) {
+                    this.ctx2d = this.canvas.getContext('2d');
+                    this.resize();
+                    return;
+                }
+
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+                const planeSize = 20;
+                const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+                this.camera.position.z = (planeSize / 2) / Math.tan(fovRad / 2);
+                this.camera.lookAt(this.scene.position);
+
+                if (this.config.type === 'sequencer') {
+                    this.scene.add(new THREE.AmbientLight(0x606060));
+                }
+
+                const uniforms = {
+                    time: { value: 0 },
+                    mouse: { value: new THREE.Vector2(0.5, 0.5) },
+                    audioLevel: { value: 0 },
+                    intensity: { value: this.visualIntensity },
+                    flow: { value: this.visualFlow },
+                    beatPulse: { value: this.beatPulse },
+                    bloom: { value: this.visualBloom },
+                    harmonic: { value: 0.4 }
+                };
+
+                this.material = new THREE.ShaderMaterial({
+                    vertexShader: this.config.vertexShader, fragmentShader: this.config.fragmentShader,
+                    uniforms, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+                });
+
+                const geometry = new THREE.PlaneGeometry(planeSize, planeSize, 128, 128);
+                this.mesh = new THREE.Mesh(geometry, this.material);
+                // slight overscan on the field so the rippling edge never exposes black; the cursor uniform compensates
+                this.overscan = this.config.type === 'drone' ? 1.06 : 1.0;
+                this.mesh.scale.set(this.overscan, this.overscan, 1);
+                this.scene.add(this.mesh);
+
+                this.createParticleField();
+
+                if (this.config.type === 'sequencer') {
+                    this.createSequencerVisualNodes();
+                }
+
+                this.resize();
+            }
+
+            createParticleField() {
+                const particleCount = 200;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                for (let i = 0; i < particleCount * 3; i += 3) {
+                    positions[i] = (Math.random() - 0.5) * 20;
+                    positions[i + 1] = (Math.random() - 0.5) * 20;
+                    positions[i + 2] = (Math.random() - 0.5) * 10;
+                    colors[i] = 0.1 + Math.random() * 0.2;
+                    colors[i + 1] = 0.5 + Math.random() * 0.5;
+                    colors[i + 2] = 0.8 + Math.random() * 0.2;
+                }
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                const material = new THREE.PointsMaterial({ size: 0.05, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
+                this.particles = new THREE.Points(geometry, material);
+                this.scene.add(this.particles);
+            }
+
+            initAudio(audioContext, destinationNode) {
+                this.audioContext = audioContext;
+                this.outputGain = this.audioContext.createGain();
+                this.outputGain.gain.value = this.deckVolume;
+                this.outputGain.connect(destinationNode);
+
+                if (this.config.type === 'drone') {
+                    this.createDroneAudio();
+                } else if (this.config.type === 'sequencer') {
+                    this.createSequencerAudio();
+                    this.startSequencerScheduler();
+                }
+            }
+
+            createDroneAudio() {
+                const baseFreq = this.audioFrequency;
+                const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                // The drone only sounds while the transport runs: auditioning a sample before START (or after STOP)
+                // wakes the AudioContext but must not leave an un-stoppable drone behind.
+                this.droneGate = this.audioContext.createGain();
+                this.droneGate.gain.value = 0;
+                this.droneGate.connect(this.outputGain);
+
+                frequencies.forEach((freq, i) => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    const filter = this.audioContext.createBiquadFilter();
+
+                    osc.type = i === 0 ? 'sine' : ['sawtooth', 'triangle', 'square'][i % 3];
+                    osc.frequency.value = freq;
+                    gain.gain.value = DRONE_LEVEL / frequencies.length;
+
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 800 + i * 400;
+                    filter.Q.value = this.audioResonance * 10;
+
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.droneGate);
+                    osc.start();
+                    this.mainVoice.push(osc);
+                    this.filters.push(filter);
+                });
+            }
+
+            createSequencerAudio() {
+                this.sequencerVoices = [];
+                for (let i = 0; i < 8; i++) { // One voice per layer (y-axis)
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    // The colour-1 filter sweep used to be patched in and out with connect()/disconnect()
+                    // inside setTimeout; it is now a permanent (transparent at 20 kHz) stage of the voice.
+                    const filter = this.audioContext.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 20000;
+                    filter.Q.value = 1.0;
+                    osc.type = 'triangle';
+                    osc.frequency.value = 440;
+                    gain.gain.value = 0;
+                    osc.connect(gain);
+                    gain.connect(filter);
+                    filter.connect(this.outputGain);
+                    osc.start();
+                    this.sequencerVoices.push({ osc, gain, filter });
+                }
+            }
+
+            startSequencerScheduler() {
+                if (this.sequencerInterval) clearInterval(this.sequencerInterval);
+                this.nextSequencerStepTime = this.audioContext.currentTime;
+                this.sequencerInterval = setInterval(() => this.scheduler(), 25);
+            }
+
+            setPlaying(on) {
+                on = !!on;
+                if (on && !this.isPlaying && this.audioContext) {
+                    // restart the clock: a stale nextSequencerStepTime made the scheduler burst-fire every missed step
+                    this.nextSequencerStepTime = this.audioContext.currentTime + 0.03;
+                }
+                this.isPlaying = on;
+                if (!on) this.visualStep = -1;
+            }
+
+            scheduler() {
+                if (!this.isPlaying || this.audioContext.state !== 'running') return;
+
+                const now = this.audioContext.currentTime;
+                const secondsPerStep = (60 / this.bpm) / 4;
+                const lookahead = 0.1;
+
+                if (this.nextSequencerStepTime < now - 0.25) this.nextSequencerStepTime = now;   // tab was asleep
+                while (this.nextSequencerStepTime < now + lookahead) {
+                    this.scheduleStep(this.currentSequencerStep, this.nextSequencerStepTime);
+                    this.nextSequencerStepTime += secondsPerStep;
+                    this.currentSequencerStep = (this.currentSequencerStep + 1) % 8;
+                }
+            }
+
+            // One sequencer hit: synth voice (original engine) or a slice of the chosen sample region
+            triggerCell(y, step, time) {
+                const voice = this.sequencerVoices[y];
+                if (!voice) return null;
+                let hit = null;
+                const sampler = portalApp.sampler;
+                if (sampler.seqSource === 'sample' && portalApp.getSampleBuffer()) {
+                    const buf = portalApp.getSampleBuffer();
+                    const regionLen = Math.max(0.02, (sampler.end - sampler.start) * buf.duration);
+                    const sliceLen = regionLen / 8;
+                    const offset = Math.min(buf.duration - 0.01, sampler.start * buf.duration + step * sliceLen);
+                    const rate = Math.pow(2, SEQ_SEMITONES[y] / 12);
+                    const dur = Math.max(0.04, Math.min(0.6, sliceLen / rate));
+                    const src = this.audioContext.createBufferSource();
+                    src.buffer = buf;
+                    src.playbackRate.value = rate;
+                    const g = this.audioContext.createGain();
+                    const peak = SEQ_SAMPLE_LEVEL * this.influence;
+                    g.gain.setValueAtTime(0, time);
+                    g.gain.linearRampToValueAtTime(peak, time + 0.004);
+                    g.gain.setValueAtTime(peak, time + dur * 0.7);
+                    g.gain.linearRampToValueAtTime(0, time + dur);
+                    src.connect(g);
+                    g.connect(voice.filter);
+                    src.start(time, offset, dur * rate + 0.05);
+                    src.stop(time + dur + 0.02);
+                    hit = { src, gain: g, peak, dur };
+                    portalApp.flashSlice(step);
+                } else {
+                    voice.osc.frequency.setValueAtTime(110 + step * 55, time);
+                    voice.gain.gain.cancelScheduledValues(time);
+                    voice.gain.gain.setValueAtTime(0, time);
+                    voice.gain.gain.linearRampToValueAtTime(SEQ_SYNTH_LEVEL * this.influence, time + 0.01);
+                    voice.gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+                }
+                return hit;
+            }
+
+            scheduleStep(step, time) {
+                this.beatPulse = 1.0 * this.influence;
+                this.visualStep = step;
+
+                for (let y = 0; y < 8; y++) { // Iterate through layers (rows)
+                    const layerState = this.layers[y];
+                    if (layerState.nodeStates[step]) {
+                        const voice = this.sequencerVoices[y];
+                        const hit = this.triggerCell(y, step, time);
+
+                        switch (y) { // Effects are still tied to the layer/row
+                            case 0: this.triggerPulse(); break;
+                            case 1: this.bumpIntensity(); break;
+                            case 2: this.shiftBloom(); break;
+                            case 3: this.grainGlitch(); break;
+                        }
+
+                        this.triggerColorEffect(layerState.colorIndex, time, voice, step, hit);
+                        layerState.lastTriggeredTime[step] = this.audioContext.currentTime;
+                    }
+                }
+            }
+
+            // --- pointer -> cell mapping (the grid now fills its container exactly, so this matches the picture) ---
+            cellFromEvent(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                const step = Math.floor(((e.clientX - rect.left) / rect.width) * 8);
+                const layer = Math.floor(((e.clientY - rect.top) / rect.height) * 8);
+                if (step < 0 || step > 7 || layer < 0 || layer > 7) return null;
+                return { step, layer };
+            }
+
+            // Toggle with the parent's colour semantics; returns the new on/off state
+            toggleCell(layer, step) {
+                const l = this.layers[layer];
+                const currentState = l.nodeStates[step];
+                if (currentState && l.colorIndex === portalApp.activeColorIndex) {
+                    this.setCell(layer, step, false);
+                    return false;
+                }
+                this.setCell(layer, step, true);
+                return true;
+            }
+
+            setCell(layer, step, on) {
+                const l = this.layers[layer];
+                l.nodeStates[step] = on;
+                l.lastTriggeredTime[step] = 0;
+                if (on) {
+                    l.colorIndex = portalApp.activeColorIndex;
+                    // immediate sonic answer to the touch
+                    if (this.audioContext && this.audioContext.state === 'running') {
+                        this.triggerCell(layer, step, this.audioContext.currentTime + 0.005);
+                        l.lastTriggeredTime[step] = this.audioContext.currentTime;
+                    }
+                }
+                this.beatPulse = Math.max(this.beatPulse, 0.6);
+                portalApp.updateStateInURL();
+                portalApp.updateReadouts();
+            }
+
+            initSequencerLayers() {
+                this.layers = [];
+                for (let i = 0; i < 8; i++) {
+                    this.layers.push({
+                        nodeStates: Array(8).fill(false),
+                        colorIndex: 0,
+                        lastTriggeredTime: Array(8).fill(0)
+                    });
+                }
+                this.layers[0].nodeStates[0] = true; this.layers[0].nodeStates[2] = true; this.layers[0].nodeStates[4] = true; this.layers[0].nodeStates[6] = true;
+                this.layers[1].nodeStates[1] = true; this.layers[1].nodeStates[3] = true; this.layers[1].nodeStates[5] = true; this.layers[1].nodeStates[7] = true;
+            }
+
+            createSequencerVisualNodes() {
+                this.sequencerVisualNodes = [];
+                const nodeSize = 2.3;
+
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const posX = -10 + (x + 0.5) * (20 / 8);
+                        const posY = 10 - (y + 0.5) * (20 / 8);
+
+                        const geometry = new THREE.PlaneGeometry(nodeSize, nodeSize);
+                        const material = new THREE.MeshStandardMaterial({
+                            color: 0xcccccc,
+                            transparent: true,
+                            opacity: 0.5,
+                            depthTest: false,
+                            depthWrite: false,
+                            emissive: new THREE.Color(0x000000),
+                            emissiveIntensity: 0
+                        });
+                        const nodeMesh = new THREE.Mesh(geometry, material);
+                        nodeMesh.position.set(posX, posY, 0.1);
+                        nodeMesh.userData = { gridX: x, gridY: y };
+                        this.scene.add(nodeMesh);
+                        this.sequencerVisualNodes.push(nodeMesh);
+                    }
+                }
+                this.updateSequencerVisualNodes();
+            }
+
+            updateSequencerVisualNodes() {
+                if (!this.gl || this.config.type !== 'sequencer' || !this.sequencerVisualNodes || this.sequencerVisualNodes.length === 0) return;
+
+                const now = this.audioContext ? this.audioContext.currentTime : 0;
+                const pal = portalApp.getPaletteColors();
+
+                let nodeIndex = 0;
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const mesh = this.sequencerVisualNodes[nodeIndex];
+                        if (!mesh) { nodeIndex++; continue; }
+
+                        const layerState = this.layers[y];
+                        const nodeIsActive = layerState.nodeStates[x];
+                        const isPlayingStep = (this.visualStep === x && this.isPlaying);
+                        const isHovered = (nodeIndex === this.hoverCell);
+
+                        const c = pal[layerState.colorIndex] || pal[0];
+                        const baseColor = c.base;
+                        const glowColor = c.glow;
+
+                        mesh.material.emissiveIntensity = 0;
+                        mesh.material.emissive.setHex(0x000000);
+
+                        // --- Visual State Logic: playing + active, playing column, hovered, active, inactive ---
+                        if (isPlayingStep && nodeIsActive) {
+                            mesh.material.color.setHex(0x00FFFF);
+                            mesh.material.opacity = 1.0;
+                            const s = 1.1 * (1 + this.beatPulse * 0.2);
+                            mesh.scale.set(s, s, 1.0);
+                            mesh.material.emissive.setHex(0x00FFFF);
+                            mesh.material.emissiveIntensity = 0.8 + this.beatPulse * 0.5;
+                        } else if (isPlayingStep) {
+                            // play-head column: visible but clearly distinct from a sounding cell
+                            mesh.material.color.setHex(0x00FFFF);
+                            mesh.material.opacity = 0.22 + this.beatPulse * 0.1;
+                            mesh.scale.set(1.0, 1.0, 1.0);
+                            mesh.material.emissive.setHex(0x00FFFF);
+                            mesh.material.emissiveIntensity = 0.25;
+                        } else if (isHovered) {
+                            mesh.material.color.setHex(0x40E0D0);
+                            mesh.material.opacity = 0.9;
+                            mesh.scale.set(1.05, 1.05, 1.0);
+                            mesh.material.emissive.setHex(0x40E0D0);
+                            mesh.material.emissiveIntensity = 0.4;
+                        } else if (nodeIsActive) {
+                            mesh.material.color.copy(baseColor);
+                            mesh.material.opacity = 0.8;
+                            mesh.scale.set(1.0, 1.0, 1.0);
+                            mesh.material.emissive.copy(baseColor);
+                            mesh.material.emissiveIntensity = 0.4;
+                            if (layerState.lastTriggeredTime[x] === 0) {
+                                nodeIndex++;
+                                continue;
+                            }
+                        } else {
+                            // Inactive: faint but findable target
+                            mesh.material.color.copy(c.inactive);
+                            mesh.material.opacity = 0.16;
+                            mesh.scale.set(1.0, 1.0, 1.0);
+                        }
+
+                        // Afterglow
+                        const timeSinceTriggered = now - layerState.lastTriggeredTime[x];
+                        const afterglowDuration = 0.1;
+                        const afterglowFactor = Math.max(0, 1.0 - (timeSinceTriggered / afterglowDuration));
+
+                        if (afterglowFactor > 0.01 && !isPlayingStep && !isHovered && layerState.lastTriggeredTime[x] !== 0) {
+                            mesh.material.color.lerp(glowColor, afterglowFactor * 0.6);
+                            mesh.material.opacity = Math.max(mesh.material.opacity, afterglowFactor * 0.6);
+                            mesh.scale.set(1.0 + afterglowFactor * 0.08, 1.0 + afterglowFactor * 0.08, 1.0);
+                            mesh.material.emissive.copy(glowColor);
+                            mesh.material.emissiveIntensity = afterglowFactor * 0.3;
+                        }
+
+                        nodeIndex++;
+                    }
+                }
+            }
+
+            triggerPulse() {
+                const d = portalApp.leftDeck;
+                if (d) {
+                    d.visualIntensity = Math.min(1.0, d.visualIntensity + 0.1);
+                    setTimeout(() => { d.visualIntensity = Math.max(0.1, d.visualIntensity - 0.05); }, 100);
+                }
+            }
+
+            bumpIntensity() {
+                const d = portalApp.leftDeck;
+                if (d) {
+                    d.visualIntensity = Math.min(1, d.visualIntensity + 0.2);
+                    setTimeout(() => { d.visualIntensity = Math.max(0.1, d.visualIntensity - 0.1); }, 200);
+                }
+            }
+
+            shiftBloom() {
+                const d = portalApp.leftDeck;
+                if (d) {
+                    d.visualBloom = 1.5;
+                    setTimeout(() => { d.visualBloom = 0.8; }, 300);
+                }
+            }
+
+            grainGlitch() {
+                const oldFlow = this.visualFlow;
+                this.visualFlow = oldFlow * 2;
+                setTimeout(() => { this.visualFlow = oldFlow; }, 100);
+
+                if (this.audioContext && portalApp.globalFuzzNode) {
+                    const now = this.audioContext.currentTime;
+                    const currentFuzzAmount = portalApp.globalFuzzAmount;
+
+                    portalApp.globalFuzzWetGain.gain.cancelScheduledValues(now);
+                    portalApp.globalFuzzWetGain.gain.setValueAtTime(currentFuzzAmount, now);
+                    portalApp.globalFuzzWetGain.gain.linearRampToValueAtTime(1.0, now + 0.005);
+                    portalApp.globalFuzzWetGain.gain.linearRampToValueAtTime(currentFuzzAmount, now + 0.15);
+                }
+            }
+
+            triggerColorEffect(colorIndex, time, voice, step, hit) {
+                if (!this.audioContext) return;
+                const now = time;
+                const left = portalApp.leftDeck;
+
+                switch (colorIndex) {
+                    case 0: { // Red: feedback echo. The delay is a permanent send now (no connect/disconnect races).
+                        const send = portalApp.globalDelaySend, fb = portalApp.globalDelayFeedback;
+                        if (send && fb) {
+                            portalApp.globalDelay.delayTime.setValueAtTime(0.05 + Math.random() * 0.1, now);
+                            send.gain.cancelScheduledValues(now);
+                            send.gain.setValueAtTime(1, now);
+                            send.gain.setValueAtTime(0, now + 0.3);
+                            fb.gain.cancelScheduledValues(now);
+                            fb.gain.setValueAtTime(0, now);
+                            fb.gain.linearRampToValueAtTime(0.7, now + 0.01);
+                            fb.gain.linearRampToValueAtTime(0.0, now + 0.3);
+                        }
+                        if (left) left.visualIntensity = Math.min(1.0, left.visualIntensity + 0.15);
+                        this.visualIntensity = Math.min(1.0, this.visualIntensity + 0.15);
+                        setTimeout(() => {
+                            if (left) left.visualIntensity = Math.max(0.1, left.visualIntensity - 0.08);
+                            this.visualIntensity = Math.max(0.1, this.visualIntensity - 0.08);
+                        }, 150);
+                        break;
+                    }
+
+                    case 1: // Yellow-Green: filter sweep on the triggered voice
+                        if (voice && voice.filter) {
+                            const f = voice.filter;
+                            f.frequency.cancelScheduledValues(now);
+                            f.Q.cancelScheduledValues(now);
+                            f.frequency.setValueAtTime(20000, now);
+                            f.frequency.exponentialRampToValueAtTime(150, now + 0.05);
+                            f.frequency.exponentialRampToValueAtTime(20000, now + 0.4);
+                            f.Q.setValueAtTime(1.0, now);
+                            f.Q.linearRampToValueAtTime(10.0, now + 0.05);
+                            f.Q.linearRampToValueAtTime(1.0, now + 0.4);
+                        }
+                        break;
+
+                    case 2: { // Green: pitch bend on the triggered voice
+                        const d = hit ? hit.src.detune : (voice ? voice.osc.detune : null);
+                        if (d) {
+                            d.cancelScheduledValues(now);
+                            d.setValueAtTime(0, now);
+                            d.linearRampToValueAtTime(300, now + 0.05);
+                            d.linearRampToValueAtTime(-300, now + 0.1);
+                            d.linearRampToValueAtTime(0, now + 0.2);
+                        }
+                        break;
+                    }
+
+                    case 3: // Cyan: Bloom Flare
+                        if (left) {
+                            left.visualBloom = 1.8;
+                            setTimeout(() => { left.visualBloom = 0.8; }, 200);
+                        }
+                        break;
+
+                    case 4: { // Blue: sub bass
+                        const subOsc = this.audioContext.createOscillator();
+                        const subGain = this.audioContext.createGain();
+                        subOsc.type = 'sine';
+                        subOsc.frequency.value = 40;
+                        subGain.gain.setValueAtTime(0, now);
+                        subOsc.connect(subGain);
+                        subGain.connect(this.outputGain);
+                        subOsc.start(now);
+                        subGain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+                        subGain.gain.linearRampToValueAtTime(0, now + 0.5);
+                        subOsc.stop(now + 0.5);
+                        break;
+                    }
+
+                    case 5: { // Magenta: flicker (on the containers, so it no longer fights the crossfader's canvas opacity)
+                        const flickerInterval = 40;
+                        const flickerCount = 3;
+                        for (let i = 0; i < flickerCount; i++) {
+                            setTimeout(() => { portalApp.setFlicker(true); }, i * flickerInterval * 2);
+                            setTimeout(() => { portalApp.setFlicker(false); }, i * flickerInterval * 2 + flickerInterval);
+                        }
+                        break;
+                    }
+
+                    case 6: // White: gain boost
+                        if (hit) {
+                            hit.gain.gain.cancelScheduledValues(now);
+                            hit.gain.gain.setValueAtTime(0, now);
+                            hit.gain.gain.linearRampToValueAtTime(hit.peak * 1.7, now + 0.004);
+                            hit.gain.gain.linearRampToValueAtTime(0, now + hit.dur);
+                        } else if (voice) {
+                            voice.gain.gain.cancelScheduledValues(now);
+                            voice.gain.gain.setValueAtTime(SEQ_SYNTH_LEVEL * this.influence, now);
+                            voice.gain.gain.linearRampToValueAtTime(SEQ_SYNTH_LEVEL * 2.4 * this.influence, now + 0.01);
+                            voice.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                        }
+                        break;
+
+                    case 7: { // Grey: noise burst
+                        const bufferSize = Math.floor(this.audioContext.sampleRate * 0.15);
+                        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+                        const output = noiseBuffer.getChannelData(0);
+                        for (let i = 0; i < bufferSize; i++) {
+                            output[i] = Math.random() * 2 - 1;
+                        }
+                        const noiseSource = this.audioContext.createBufferSource();
+                        noiseSource.buffer = noiseBuffer;
+                        const noiseGain = this.audioContext.createGain();
+                        noiseGain.gain.setValueAtTime(0, now);
+                        noiseSource.connect(noiseGain);
+                        noiseGain.connect(this.outputGain);
+                        noiseSource.start(now);
+                        noiseGain.gain.linearRampToValueAtTime(0.08, now + 0.01);
+                        noiseGain.gain.linearRampToValueAtTime(0, now + 0.15);
+                        noiseSource.stop(now + 0.15);
+                        break;
+                    }
+                }
+            }
+
+            updateAudioParameters() {
+                if (!this.audioContext || !this.outputGain) return;
+
+                if (this.config.type === 'drone') {
+                    const baseFreq = this.audioFrequency;
+                    const frequencies = [baseFreq, baseFreq * 1.5, baseFreq * 2, baseFreq * 0.5, baseFreq * 3];
+                    this.mainVoice.forEach((osc, i) => {
+                        osc.frequency.setTargetAtTime(frequencies[i], this.audioContext.currentTime, 0.1);
+                    });
+                    this.filters.forEach(filter => {
+                        filter.frequency.setTargetAtTime(200 + this.visualIntensity * 1000, this.audioContext.currentTime, 0.1);
+                        filter.Q.setTargetAtTime(this.audioResonance * 15 + 1, this.audioContext.currentTime, 0.1);
+                    });
+                }
+            }
+
+            setDeckVolume(value) { this.deckVolume = value; }
+            setBPM(bpm) { this.bpm = Math.max(60, Math.min(240, Math.round(bpm))); }
+            setInfluence(val) { this.influence = val; }
+
+            update(globalAudioLevel) {
+                this.time += 0.016;
+                this.audioLevel = globalAudioLevel;
+                if (this.touchPulse > 0.001) this.touchPulse *= 0.92; else this.touchPulse = 0;
+
+                if (this.config.type === 'sequencer') {
+                    if (this.beatPulse > 0.001) this.beatPulse *= 0.9; else this.beatPulse = 0;
+                }
+
+                if (!this.gl) { this.draw2D(); return; }
+
+                const u = this.material.uniforms;
+                u.time.value = this.time;
+                u.mouse.value.set(0.5 + (this.mouse.x - 0.5) / this.overscan, 0.5 + (this.mouse.y - 0.5) / this.overscan);
+                u.audioLevel.value = this.audioLevel + this.touchPulse;
+
+                if (this.config.type === 'drone') {
+                    u.intensity.value = this.visualIntensity + this.touchPulse * 0.6;
+                    u.flow.value = this.visualFlow;
+                    u.bloom.value = this.visualBloom;
+                    this.updateAudioParameters();
+                } else {
+                    u.beatPulse.value = this.beatPulse;
+                    u.intensity.value = this.influence;
+                    u.flow.value = this.influence * 0.5;
+                    u.bloom.value = this.visualBloom;
+                    this.updateSequencerVisualNodes();
+                }
+
+                if (this.particles) {
+                    const positions = this.particles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i + 2] = (Math.sin(this.time * 0.01 + i) * 0.01) * this.audioLevel * 5;
+                        positions[i] += Math.cos(this.time * 0.005 + i) * 0.005;
+                    }
+                    this.particles.geometry.attributes.position.needsUpdate = true;
+                    this.particles.rotation.y = this.time * 0.005;
+                }
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            // Minimal Canvas2D rendering so the instrument is still readable without three.js / WebGL
+            draw2D() {
+                const g = this.ctx2d;
+                if (!g) return;
+                const w = this.canvas.width, h = this.canvas.height;
+                g.fillStyle = '#000';
+                g.fillRect(0, 0, w, h);
+                if (this.config.type === 'drone') {
+                    this.updateAudioParameters();
+                    const cx = this.mouse.x * w, cy = (1 - this.mouse.y) * h;
+                    const lvl = this.audioLevel + this.touchPulse;
+                    for (let i = 0; i < 9; i++) {
+                        const r = ((this.time * 40 * (0.3 + this.visualFlow) + i * 60) % 540) * (w + h) / 900;
+                        g.strokeStyle = `hsla(${(this.time * 6 + i * 22) % 360}, 80%, ${30 + this.visualBloom * 30}%, ${0.25 + lvl * 0.6})`;
+                        g.lineWidth = 2 + this.visualIntensity * 6;
+                        g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+                    }
+                } else {
+                    const cw = w / 8, ch = h / 8, pad = Math.max(2, cw * 0.05);
+                    for (let y = 0; y < 8; y++) {
+                        const l = this.layers[y];
+                        const hsv = portalApp.colorPalette[l.colorIndex] || portalApp.colorPalette[0];
+                        for (let x = 0; x < 8; x++) {
+                            const on = l.nodeStates[x], play = this.isPlaying && this.visualStep === x;
+                            if (play && on) g.fillStyle = '#00FFFF';
+                            else if (play) g.fillStyle = 'rgba(0,255,255,0.22)';
+                            else if (y * 8 + x === this.hoverCell) g.fillStyle = 'rgba(64,224,208,0.7)';
+                            else if (on) g.fillStyle = hsvToRgb(hsv[0], hsv[1], hsv[2] * 0.85);
+                            else g.fillStyle = 'rgba(224,255,255,0.07)';
+                            g.fillRect(x * cw + pad, y * ch + pad, cw - pad * 2, ch - pad * 2);
+                        }
+                    }
+                }
+            }
+
+            resize() {
+                if (!this.canvas || !this.container) return;
+                const rect = this.container.getBoundingClientRect();
+                const w = Math.max(2, Math.floor(rect.width)), h = Math.max(2, Math.floor(rect.height));
+                if (rect.width < 2 || rect.height < 2) return;
+
+                if (!this.gl) {
+                    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                    this.canvas.width = Math.round(w * dpr);
+                    this.canvas.height = Math.round(h * dpr);
+                    return;
+                }
+                // The parent fitted a square plane inside the container (letterboxed to a thin band on tall
+                // containers) while pointer maths used the whole rectangle. Stretch the scene so the plane
+                // fills the container: what you see is exactly what you touch.
+                const aspect = w / h;
+                this.camera.aspect = aspect;
+                const planeSize = 20;
+                const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+                this.camera.position.z = (planeSize / 2) / Math.tan(fovRad / 2);
+                this.scene.scale.set(aspect, 1, 1);
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(w, h, false);
+            }
+
+            setMousePosition(x, y) { this.mouse.x = x; this.mouse.y = y; }
+
+            setCanvasOpacity(value) {
+                if (this.canvas) this.canvas.style.opacity = value;
+            }
+
+            getState() {
+                const state = {
+                    visuals: { intensity: this.visualIntensity, flow: this.visualFlow, bloom: this.visualBloom },
+                    audio: { frequency: this.audioFrequency, resonance: this.audioResonance, deckVolume: this.deckVolume }
+                };
+                if (this.config.type === 'sequencer') {
+                    state.sequencer = {
+                        layers: this.layers.map(layer => ({ nodeStates: layer.nodeStates, colorIndex: layer.colorIndex })),
+                        influence: this.influence,
+                        bpm: this.bpm
+                    };
+                }
+                return state;
+            }
+
+            setState(state) {
+                const num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+                if (state.visuals) {
+                    this.visualIntensity = num(state.visuals.intensity, this.visualIntensity);
+                    this.visualFlow = num(state.visuals.flow, this.visualFlow);
+                    this.visualBloom = num(state.visuals.bloom, this.visualBloom);
+                }
+                if (state.audio) {
+                    this.audioFrequency = num(state.audio.frequency, this.audioFrequency);
+                    this.audioResonance = num(state.audio.resonance, this.audioResonance);
+                    this.deckVolume = clamp01(num(state.audio.deckVolume, this.deckVolume));
+                }
+                if (this.config.type === 'sequencer' && state.sequencer) {
+                    const s = state.sequencer;
+                    if (Array.isArray(s.layers) && s.layers.length === 8) {
+                        this.layers = s.layers.map(layer => ({
+                            nodeStates: Array.isArray(layer.nodeStates) && layer.nodeStates.length === 8 ?
+                                layer.nodeStates.map(ns => ns === true) : Array(8).fill(false),
+                            colorIndex: (typeof layer.colorIndex === 'number' && layer.colorIndex >= 0 && layer.colorIndex < portalApp.colorPalette.length) ?
+                                Math.floor(layer.colorIndex) : 0,
+                            lastTriggeredTime: Array(8).fill(0)
+                        }));
+                    }
+                    // (isPlaying is deliberately not restored: sound only ever starts from a gesture)
+                    this.influence = clamp01(num(s.influence, this.influence));
+                    this.setBPM(num(s.bpm, this.bpm));
+                }
+            }
+        }
+
+        // =========================================================
+        // Global Application Setup and UI Management
+        // =========================================================
+
+        portalApp.audioContext = null;
+        portalApp.masterGain = null;
+        portalApp.globalAnalyser = null;
+        portalApp.globalFrequencyData = null;
+        portalApp.globalAudioLevel = 0;
+
+        portalApp.globalFuzzNode = null;
+        portalApp.globalFuzzWetGain = null;
+        portalApp.globalFuzzDryGain = null;
+        portalApp.globalFuzzAmount = 0.0;
+
+        portalApp.globalDelay = null;
+        portalApp.globalDelayFeedback = null;
+        portalApp.globalDelaySend = null;
+        portalApp.outBus = null;         // full mix, post fx: feeds speakers (through monitorGain) and getStream()
+        portalApp.monitorGain = null;
+        portalApp.streamDest = null;
+        portalApp.monitorOn = true;
+
+        portalApp.leftDeck = null;
+        portalApp.rightDeck = null;
+
+        portalApp.started = false;
+        portalApp.embed = /[?&]embed=1\b/.test(location.search);
+        portalApp.crossfaderValue = 0.5;
+        portalApp.masterOutputVolume = 0.5;
+        portalApp.faders = {};
+
+        portalApp.colorPalette = [
+            [0.0, 1.0, 1.0],   // Red (0)
+            [0.16, 1.0, 1.0],  // Yellow-Green (1)
+            [0.33, 1.0, 1.0],  // Green (2)
+            [0.5, 1.0, 1.0],   // Cyan (3)
+            [0.66, 1.0, 1.0],  // Blue (4)
+            [0.83, 1.0, 1.0],  // Magenta (5)
+            [0.0, 0.0, 1.0],   // White (6)
+            [0.0, 0.0, 0.5]    // Grey (7)
+        ];
+        portalApp.activeColorIndex = 0;
+
+        portalApp.getPaletteColors = () => {
+            if (!portalApp._pal) {
+                portalApp._pal = portalApp.colorPalette.map(h => ({
+                    base: new THREE.Color().setStyle(hsvToRgb(h[0], h[1], h[2])),
+                    glow: new THREE.Color().setStyle(hsvToRgb(h[0], h[1], 1.0)),
+                    inactive: new THREE.Color().setStyle(hsvToRgb(h[0], h[1] * 0.3, 0.6))
+                }));
+            }
+            return portalApp._pal;
+        };
+
+        portalApp.setFlicker = (on) => {
+            const o = on ? '0.05' : '';
+            document.getElementById('deck-a-container').style.opacity = o;
+            document.getElementById('deck-b-container').style.opacity = o;
+        };
+
+        // ---------------------------------------------------------
+        // Sampler: built-in generated phrase, file / drop loading, region, grains
+        // ---------------------------------------------------------
+        portalApp.sampler = {
+            data: null,          // Float32Array (mono) used for the waveform
+            sampleRate: 44100,
+            buffer: null,        // AudioBuffer (created lazily once an AudioContext exists)
+            name: '',
+            start: 0, end: 1,    // chosen region, normalised
+            seqSource: 'sample', // 'sample' | 'synth'
+            flash: -1, flashT: 0
+        };
+
+        // Eight contrasting half-second events, so the 8 sequencer columns address 8 different sounds.
+        portalApp.generateBuiltInSample = () => {
+            const sr = 44100, seg = Math.floor(sr * 0.5), out = new Float32Array(seg * 8);
+            let seed = 1234567;
+            const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; };
+            const pluck = (f, t) => {
+                let s = 0;
+                for (let h = 1; h <= 8; h++) s += Math.sin(2 * Math.PI * f * h * t) * Math.exp(-t * (3 + h * 2.2)) / h;
+                return s * 0.7;
+            };
+            const bell = (f, t, ratio, idx) => Math.sin(2 * Math.PI * f * t + idx * Math.exp(-t * 4) * Math.sin(2 * Math.PI * f * ratio * t)) * Math.exp(-t * 5) * 0.6;
+            let lp = 0, prev = 0;
+            for (let s = 0; s < 8; s++) {
+                for (let i = 0; i < seg; i++) {
+                    const t = i / sr;
+                    let v = 0;
+                    switch (s) {
+                        case 0: { // kick
+                            const ph = 2 * Math.PI * (45 * t + (150 - 45) / 28 * (1 - Math.exp(-28 * t)));
+                            v = Math.sin(ph) * Math.exp(-t * 7) * 0.95; break;
+                        }
+                        case 1: v = pluck(220, t); break;
+                        case 2: { const n = rnd(); v = (n - prev) * Math.exp(-t * 38) * 0.5; prev = n; break; }   // hat
+                        case 3: v = bell(659.25, t, 1.41, 3); break;
+                        case 4: { const n = rnd(); lp += (n - lp) * 0.4; v = lp * Math.exp(-t * 16) * 0.7 + Math.sin(2 * Math.PI * 185 * t) * Math.exp(-t * 22) * 0.5; break; } // snare
+                        case 5: v = pluck(261.63, t); break;
+                        case 6: { // vowel glide
+                            const f0 = 110, f1 = 700 - 400 * t * 2, f2 = 1100 + 1200 * t * 2;
+                            for (let h = 1; h <= 24; h++) {
+                                const hf = f0 * h;
+                                const a = Math.exp(-Math.pow((hf - f1) / 130, 2)) + 0.7 * Math.exp(-Math.pow((hf - f2) / 180, 2));
+                                v += Math.sin(2 * Math.PI * hf * t) * a;
+                            }
+                            v *= 0.3 * Math.min(1, t * 40) * Math.exp(-t * 2.5); break;
+                        }
+                        case 7: v = bell(392, t, 2.76, 5) + bell(587.33, t, 1.0, 1) * 0.5; break;
+                    }
+                    const fade = Math.min(1, (seg - i) / 400);   // no click at the slice edge
+                    out[s * seg + i] = v * fade;
+                }
+            }
+            return { data: out, sampleRate: sr };
+        };
+
+        portalApp.setSample = (data, sampleRate, name, audioBuffer) => {
+            const s = portalApp.sampler;
+            s.data = data; s.sampleRate = sampleRate; s.name = name; s.buffer = audioBuffer || null;
+            s.start = 0; s.end = 1;
+            portalApp.sampleStatus = '';      // a good sample replaces any earlier "could not decode" message
+            portalApp._wavePeaks = null;
+            portalApp.drawWave();
+            portalApp.updateStateInURL();
+            portalApp.emitParam('regionStart', 0); portalApp.emitParam('regionEnd', 1);
+        };
+
+        portalApp.loadBuiltInSample = () => {
+            const b = portalApp.generateBuiltInSample();
+            portalApp.setSample(b.data, b.sampleRate, 'built-in phrase');
+        };
+
+        portalApp.getSampleBuffer = () => {
+            const s = portalApp.sampler, ctx = portalApp.audioContext;
+            if (!ctx || !s.data || !s.data.length) return null;
+            if (!s.buffer) {
+                s.buffer = ctx.createBuffer(1, s.data.length, s.sampleRate);
+                s.buffer.getChannelData(0).set(s.data);
+            }
+            return s.buffer;
+        };
+
+        portalApp.loadSampleFromArrayBuffer = (arrayBuffer, name) => {
+            const ctx = portalApp.ensureAudio();
+            return new Promise((resolve, reject) => {
+                let settled = false;
+                const fail = (err) => {
+                    if (settled) return;
+                    settled = true;
+                    portalApp.sampleStatus = 'could not decode ' + name + ' - sample unchanged';
+                    portalApp.drawWave();
+                    reject(err || new Error('decode failed'));
+                };
+                let pr;
+                try { pr = ctx.decodeAudioData(arrayBuffer, (buf) => {
+                    if (settled) return;
+                    settled = true;
+                    const n = buf.length, mono = new Float32Array(n);
+                    for (let c = 0; c < buf.numberOfChannels; c++) {
+                        const ch = buf.getChannelData(c);
+                        for (let i = 0; i < n; i++) mono[i] += ch[i] / buf.numberOfChannels;
+                    }
+                    portalApp.setSample(mono, buf.sampleRate, name, buf);
+                    portalApp.setSeqSource('sample', true);
+                    resolve(buf);
+                }, fail); } catch (err) { fail(err); }
+                // decodeAudioData ALSO returns a promise that rejects on undecodable data; an unhandled copy of that
+                // rejection was surfacing as a page error ("Unable to decode audio data").
+                if (pr && typeof pr.then === 'function') pr.then(() => {}, fail);
+            });
+        };
+
+        portalApp.loadSampleFile = (file) => {
+            if (!file) return Promise.resolve(null);
+            portalApp.sampleStatus = 'loading ' + file.name + '...';
+            portalApp.drawWave();
+            return new Promise((resolve) => {
+                const fr = new FileReader();
+                fr.onload = () => {
+                    portalApp.loadSampleFromArrayBuffer(fr.result, file.name)
+                        .then((b) => resolve(b), () => resolve(null));
+                };
+                fr.onerror = () => { portalApp.sampleStatus = 'could not read ' + file.name; portalApp.drawWave(); resolve(null); };
+                fr.readAsArrayBuffer(file);
+            });
+        };
+
+        // Resample the deck's own output for 2 seconds into the sample slot
+        portalApp.grabOutput = () => {
+            if (typeof MediaRecorder === 'undefined') { portalApp.sampleStatus = 'grab not supported in this browser'; portalApp.drawWave(); return; }
+            if (portalApp._grabbing) return;
+            portalApp.start();
+            try {
+                const rec = new MediaRecorder(portalApp.getStream());
+                const chunks = [];
+                portalApp._grabbing = true;
+                const btn = document.getElementById('sample-grab');
+                btn.classList.add('on'); btn.textContent = 'GRABBING';
+                rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+                rec.onstop = () => {
+                    portalApp._grabbing = false;
+                    btn.classList.remove('on'); btn.textContent = 'GRAB 2s';
+                    new Blob(chunks, { type: rec.mimeType }).arrayBuffer()
+                        .then(ab => portalApp.loadSampleFromArrayBuffer(ab, 'grabbed output'))
+                        .then(() => {}, () => {});
+                };
+                rec.start();
+                setTimeout(() => { try { rec.stop(); } catch (e) {} }, 2000);
+            } catch (err) {
+                portalApp._grabbing = false;
+                portalApp.sampleStatus = 'grab failed';
+                portalApp.drawWave();
+            }
+        };
+
+        portalApp.setRegion = (a, b, announce) => {
+            const s = portalApp.sampler;
+            let lo = clamp01(Math.min(a, b)), hi = clamp01(Math.max(a, b));
+            const minLen = s.data ? Math.max(0.002, 0.02 / (s.data.length / s.sampleRate)) : 0.01;
+            if (hi - lo < minLen) { hi = Math.min(1, lo + minLen); lo = Math.max(0, hi - minLen); }
+            s.start = lo; s.end = hi;
+            portalApp.drawWave();
+            if (announce !== false) {
+                portalApp.emitParam('regionStart', lo); portalApp.emitParam('regionEnd', hi);
+                portalApp.updateStateInURL();
+            }
+        };
+
+        portalApp.auditionRegion = () => {
+            portalApp.ensureRunning();
+            const buf = portalApp.getSampleBuffer(), ctx = portalApp.audioContext, s = portalApp.sampler;
+            if (!buf) return;
+            if (portalApp._audition) { try { portalApp._audition.stop(); } catch (e) {} }
+            const t = ctx.currentTime + 0.01;
+            const dur = Math.min(4, (s.end - s.start) * buf.duration);
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.8, t + 0.005);
+            g.gain.setValueAtTime(0.8, t + Math.max(0.006, dur - 0.02));
+            g.gain.linearRampToValueAtTime(0, t + dur);
+            src.connect(g); g.connect(portalApp.masterGain);
+            src.start(t, s.start * buf.duration, dur + 0.02);
+            portalApp._audition = src;
+        };
+
+        // One grain of the chosen region; x picks the position inside the region, y the pitch (+-1 octave)
+        portalApp.playGrain = (x, y) => {
+            const buf = portalApp.getSampleBuffer(), ctx = portalApp.audioContext, deck = portalApp.leftDeck, s = portalApp.sampler;
+            if (!buf || !ctx || ctx.state !== 'running' || !deck || !deck.outputGain) return;
+            const t = ctx.currentTime + 0.005;
+            const regionLen = (s.end - s.start) * buf.duration;
+            const pos01 = clamp01(x + (Math.random() - 0.5) * 0.03);
+            const offset = Math.min(buf.duration - 0.02, s.start * buf.duration + pos01 * regionLen);
+            const rate = Math.pow(2, (y - 0.5) * 2);
+            const dur = 0.14;
+            const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(GRAIN_LEVEL, t + dur * 0.35);
+            g.gain.linearRampToValueAtTime(0, t + dur);
+            src.connect(g); g.connect(deck.outputGain);
+            src.start(t, Math.max(0, offset), dur * rate + 0.05);
+            src.stop(t + dur + 0.02);
+            s.grainPos = s.start + pos01 * (s.end - s.start); s.grainT = performance.now();
+            portalApp._waveDirty = true;
+        };
+
+        portalApp.flashSlice = (step) => {
+            portalApp.sampler.flash = step; portalApp.sampler.flashT = performance.now();
+            portalApp._waveDirty = true;
+        };
+
+        portalApp.setSeqSource = (src, silent) => {
+            portalApp.sampler.seqSource = (src === 'synth') ? 'synth' : 'sample';
+            const b = document.getElementById('sample-source');
+            const isS = portalApp.sampler.seqSource === 'sample';
+            b.textContent = isS ? 'SEQ: SAMPLE' : 'SEQ: SYNTH';
+            b.classList.toggle('on', isS);
+            portalApp.updateReadouts();
+            if (!silent) { portalApp.emitParam('seqSource', isS ? 1 : 0); portalApp.updateStateInURL(); }
+        };
+
+        // --- waveform drawing ---
+        portalApp.drawWave = () => {
+            const cv = document.getElementById('wave-canvas'), wrap = document.getElementById('wave-wrap');
+            const r = wrap.getBoundingClientRect();
+            if (r.width < 4 || r.height < 4) return;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+            if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; portalApp._wavePeaks = null; }
+            const g = cv.getContext('2d'), s = portalApp.sampler;
+            g.clearRect(0, 0, W, H);
+            if (s.data && s.data.length) {
+                if (!portalApp._wavePeaks) {
+                    const pk = new Float32Array(W * 2), d = s.data, n = d.length;
+                    const stride = Math.max(1, Math.floor(n / W / 400));
+                    for (let x = 0; x < W; x++) {
+                        let lo = 0, hi = 0;
+                        const a = Math.floor(x * n / W), b = Math.max(a + 1, Math.floor((x + 1) * n / W));
+                        for (let i = a; i < b; i += stride) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+                        pk[x * 2] = lo; pk[x * 2 + 1] = hi;
+                    }
+                    portalApp._wavePeaks = pk;
+                }
+                const pk = portalApp._wavePeaks, mid = H / 2, x0 = s.start * W, x1 = s.end * W;
+                // region
+                g.fillStyle = 'rgba(0,255,255,0.16)';
+                g.fillRect(x0, 0, x1 - x0, H);
+                // slice flash (sequencer) and grain position (field)
+                const nowMs = performance.now();
+                if (s.flash >= 0 && nowMs - s.flashT < 160) {
+                    const sw = (x1 - x0) / 8;
+                    g.fillStyle = 'rgba(255,255,255,' + (0.45 * (1 - (nowMs - s.flashT) / 160)).toFixed(3) + ')';
+                    g.fillRect(x0 + s.flash * sw, 0, sw, H);
+                    portalApp._waveDirty = true;
+                }
+                // waveform (rendered once into an offscreen layer; dim outside the region, bright inside)
+                if (!portalApp._waveLayer || portalApp._waveLayer.width !== W || portalApp._waveLayer.height !== H || portalApp._waveLayerPk !== pk) {
+                    const off = portalApp._waveLayer || document.createElement('canvas');
+                    off.width = W; off.height = H;
+                    const og = off.getContext('2d');
+                    og.fillStyle = '#7dffff';
+                    for (let x = 0; x < W; x++) {
+                        const lo = pk[x * 2], hi = pk[x * 2 + 1];
+                        const yTop = mid - hi * mid * 0.92, yBot = mid - lo * mid * 0.92;
+                        og.fillRect(x, yTop, 1, Math.max(1, yBot - yTop));
+                    }
+                    portalApp._waveLayer = off; portalApp._waveLayerPk = pk;
+                }
+                g.globalAlpha = 0.35;
+                g.drawImage(portalApp._waveLayer, 0, 0);
+                g.globalAlpha = 1;
+                g.drawImage(portalApp._waveLayer, x0, 0, Math.max(1, x1 - x0), H, x0, 0, Math.max(1, x1 - x0), H);
+                // slice ticks
+                g.fillStyle = 'rgba(0,255,255,0.5)';
+                for (let i = 1; i < 8; i++) g.fillRect(x0 + (x1 - x0) * i / 8, H - 6 * dpr, 1, 6 * dpr);
+                // region handles
+                g.fillStyle = '#fff';
+                g.fillRect(x0, 0, 2 * dpr, H); g.fillRect(x1 - 2 * dpr, 0, 2 * dpr, H);
+                if (s.grainT && nowMs - s.grainT < 200) {
+                    g.fillStyle = '#FF00FF';
+                    g.fillRect(s.grainPos * W - dpr, 0, 2 * dpr, H);
+                    portalApp._waveDirty = true;
+                }
+            }
+            // text: what it is, how long, what is selected
+            const dur = s.data ? s.data.length / s.sampleRate : 0;
+            g.font = (10 * dpr) + 'px "Courier New", monospace';
+            g.textBaseline = 'top';
+            g.shadowColor = '#000'; g.shadowBlur = 3 * dpr;
+            g.fillStyle = '#E0FFFF';
+            const label = portalApp.sampleStatus || ('SAMPLE: ' + s.name + '  ' + dur.toFixed(2) + 's');
+            g.textAlign = 'left';
+            g.fillText(label.length > 44 ? label.slice(0, 43) + '…' : label, 5 * dpr, 4 * dpr);
+            g.textAlign = 'right';
+            g.fillStyle = '#7dffff';
+            g.fillText('REGION ' + (s.start * dur).toFixed(2) + '–' + (s.end * dur).toFixed(2) + 's', W - 5 * dpr, 4 * dpr);
+            g.textBaseline = 'bottom';
+            g.fillStyle = 'rgba(224,255,255,0.6)';
+            g.fillText('drag = choose region · tap = move it · drop a file', W - 5 * dpr, H - 7 * dpr);
+            g.shadowBlur = 0;
+        };
+
+        // ---------------------------------------------------------
+        // Custom faders (pointer events + pointer capture; horizontal and vertical)
+        // ---------------------------------------------------------
+        function makeFader(el, opt) {
+            const track = el.querySelector('.f-track');
+            const valEl = el.querySelector('.f-val');
+            const vertical = el.classList.contains('v');
+            const min = opt.min, max = opt.max, step = opt.step || 0;
+            let p = 0;
+            const toValue = (q) => { let v = min + q * (max - min); if (step) v = Math.round(v / step) * step; return v; };
+            const render = () => {
+                el.style.setProperty('--p', p.toFixed(4));
+                const v = toValue(p);
+                valEl.textContent = opt.fmt(v, p);
+                el.setAttribute('aria-valuenow', String(Math.round(v * 100) / 100));
+                el.setAttribute('aria-valuetext', valEl.textContent);
+            };
+            const api = {
+                get: () => toValue(p),
+                get01: () => p,
+                // set from code (no echo to the host)
+                set: (v) => { p = clamp01((v - min) / (max - min)); render(); },
+                // set from the player or the host
+                set01: (q, fromPlayer) => {
+                    q = clamp01(q);
+                    if (step) q = clamp01((toValue(q) - min) / (max - min));
+                    p = q; render();
+                    opt.onInput(toValue(p));
+                    if (fromPlayer) { portalApp.emitParam(opt.id, p); portalApp.updateStateInURL(); }
+                }
+            };
+            const fromPointer = (e) => {
+                const r = track.getBoundingClientRect();
+                const th = 22;
+                return vertical ? clamp01(1 - (e.clientY - r.top - th / 2) / Math.max(1, r.height - th))
+                                : clamp01((e.clientX - r.left - th / 2) / Math.max(1, r.width - th));
+            };
+            let active = null;
+            el.addEventListener('pointerdown', (e) => {
+                if (e.button > 0) return;
+                active = e.pointerId;
+                try { el.setPointerCapture(e.pointerId); } catch (err) {}
+                el.classList.add('drag');
+                api.set01(fromPointer(e), true);
+                e.preventDefault();
+            });
+            el.addEventListener('pointermove', (e) => { if (active === e.pointerId) { api.set01(fromPointer(e), true); e.preventDefault(); } });
+            const end = (e) => { if (active === e.pointerId) { active = null; el.classList.remove('drag'); } };
+            el.addEventListener('pointerup', end);
+            el.addEventListener('pointercancel', end);
+            el.addEventListener('lostpointercapture', end);
+            el.addEventListener('keydown', (e) => {
+                const d = (e.key === 'ArrowUp' || e.key === 'ArrowRight') ? 1 : (e.key === 'ArrowDown' || e.key === 'ArrowLeft') ? -1 : 0;
+                if (!d) return;
+                const inc = step ? step / (max - min) : 0.02;
+                api.set01(p + d * inc * (e.shiftKey ? 5 : 1), true);
+                e.preventDefault();
+            });
+            el.setAttribute('role', 'slider');
+            el.setAttribute('tabindex', '0');
+            el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
+            el.setAttribute('aria-label', opt.label);
+            el.setAttribute('aria-valuemin', String(min));
+            el.setAttribute('aria-valuemax', String(max));
+            api.set(opt.value);
+            return api;
+        }
+
+        const pct = (v) => Math.round(v * 100) + '%';
+
+        portalApp.buildFaders = () => {
+            const q = (id) => document.querySelector('[data-fader="' + id + '"]');
+            const F = portalApp.faders;
+            F.bpm = makeFader(q('bpm'), { id: 'bpm', label: 'Tempo', min: 60, max: 240, step: 1, value: portalApp.rightDeck.bpm,
+                fmt: (v) => v + ' BPM', onInput: (v) => { portalApp.rightDeck.setBPM(v); } });
+            F.droneVol = makeFader(q('droneVol'), { id: 'droneVol', label: 'Field volume', min: 0, max: 1, value: portalApp.leftDeck.deckVolume,
+                fmt: pct, onInput: (v) => { portalApp.leftDeck.setDeckVolume(v); portalApp.updateCrossfader(portalApp.crossfaderValue); } });
+            F.seqVol = makeFader(q('seqVol'), { id: 'seqVol', label: 'Sequencer volume', min: 0, max: 1, value: portalApp.rightDeck.deckVolume,
+                fmt: pct, onInput: (v) => { portalApp.rightDeck.setDeckVolume(v); portalApp.updateCrossfader(portalApp.crossfaderValue); } });
+            F.master = makeFader(q('master'), { id: 'master', label: 'Master volume', min: 0, max: 1, value: portalApp.masterOutputVolume,
+                fmt: pct, onInput: (v) => portalApp.updateMasterVolume(v) });
+            F.crossfade = makeFader(q('crossfade'), { id: 'crossfade', label: 'Crossfade field to sequencer', min: 0, max: 1, value: portalApp.crossfaderValue,
+                fmt: (v) => 'XFADE ' + Math.round((1 - v) * 100) + ':' + Math.round(v * 100), onInput: (v) => portalApp.updateCrossfader(v) });
+            F.fuzz = makeFader(q('fuzz'), { id: 'fuzz', label: 'Fuzz', min: 0, max: 1, value: portalApp.globalFuzzAmount,
+                fmt: pct, onInput: (v) => portalApp.updateGlobalFuzz(v) });
+            F.influence = makeFader(q('influence'), { id: 'influence', label: 'Influence', min: 0, max: 1, value: portalApp.rightDeck.influence,
+                fmt: pct, onInput: (v) => portalApp.rightDeck.setInfluence(v) });
+        };
+
+        // ---------------------------------------------------------
+        // Audio graph (built once, lazily; safe to build before a gesture - it just stays suspended)
+        //   decks -> masterGain -> analyser -> dry / wet->fuzz -> fxOut -> limiter -> outBus -> monitorGain -> speakers
+        //            masterGain -> delaySend -> delay(+feedback) -> fxOut                 outBus -> MediaStream (host)
+        // ---------------------------------------------------------
+        portalApp.ensureAudio = () => {
+            if (portalApp.audioContext) return portalApp.audioContext;
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            portalApp.audioContext = ctx;
+
+            portalApp.masterGain = ctx.createGain();
+            portalApp.masterGain.gain.value = portalApp.masterOutputVolume;
+
+            portalApp.globalAnalyser = ctx.createAnalyser();
+            portalApp.globalAnalyser.fftSize = 256;
+            portalApp.globalFrequencyData = new Uint8Array(portalApp.globalAnalyser.frequencyBinCount);
+
+            portalApp.globalFuzzNode = ctx.createWaveShaper();
+            portalApp.globalFuzzNode.curve = makeDistortionCurve(portalApp.globalFuzzAmount * 100);
+            portalApp.globalFuzzNode.oversample = '4x';
+            portalApp.globalFuzzWetGain = ctx.createGain();
+            portalApp.globalFuzzDryGain = ctx.createGain();
+            portalApp.globalFuzzWetGain.gain.value = portalApp.globalFuzzAmount;
+            portalApp.globalFuzzDryGain.gain.value = 1 - portalApp.globalFuzzAmount;
+
+            const fxOut = ctx.createGain();
+            const limiter = ctx.createDynamicsCompressor();
+            limiter.threshold.value = -6; limiter.knee.value = 6; limiter.ratio.value = 12;
+            limiter.attack.value = 0.003; limiter.release.value = 0.12;
+            portalApp.outBus = ctx.createGain();
+            portalApp.monitorGain = ctx.createGain();
+            portalApp.monitorGain.gain.value = portalApp.monitorOn ? 1 : 0;
+
+            portalApp.globalDelay = ctx.createDelay(1.0);
+            portalApp.globalDelayFeedback = ctx.createGain();
+            portalApp.globalDelayFeedback.gain.value = 0.0;
+            portalApp.globalDelaySend = ctx.createGain();
+            portalApp.globalDelaySend.gain.value = 0.0;
+
+            portalApp.leftDeck.initAudio(ctx, portalApp.masterGain);
+            portalApp.rightDeck.initAudio(ctx, portalApp.masterGain);
+
+            portalApp.masterGain.connect(portalApp.globalAnalyser);
+            portalApp.globalAnalyser.connect(portalApp.globalFuzzDryGain);
+            portalApp.globalAnalyser.connect(portalApp.globalFuzzWetGain);
+            portalApp.globalFuzzWetGain.connect(portalApp.globalFuzzNode);
+            portalApp.globalFuzzNode.connect(fxOut);
+            portalApp.globalFuzzDryGain.connect(fxOut);
+
+            portalApp.masterGain.connect(portalApp.globalDelaySend);
+            portalApp.globalDelaySend.connect(portalApp.globalDelay);
+            portalApp.globalDelay.connect(portalApp.globalDelayFeedback);
+            portalApp.globalDelayFeedback.connect(portalApp.globalDelay);
+            portalApp.globalDelay.connect(fxOut);
+
+            // The compressor alone let dense patterns overshoot full scale. A fixed soft-knee ceiling follows it:
+            // exactly linear up to 0.7, then bending to an absolute ceiling below 1.0 for any input.
+            const ceilIn = ctx.createGain(); ceilIn.gain.value = 0.25;          // shaper input range covers +-4.0
+            const ceiling = ctx.createWaveShaper();
+            const cN = 16385, cCurve = new Float32Array(cN), KNEE = 0.7, ROOM = 0.28;
+            for (let i = 0; i < cN; i++) {
+                const x = (i / (cN - 1) * 2 - 1) * 4, ax = Math.abs(x);
+                const y = ax <= KNEE ? ax : KNEE + ROOM * Math.tanh((ax - KNEE) / ROOM);
+                cCurve[i] = x < 0 ? -y : y;
+            }
+            ceiling.curve = cCurve; ceiling.oversample = 'none';
+            fxOut.connect(limiter);
+            limiter.connect(ceilIn);
+            ceilIn.connect(ceiling);
+            ceiling.connect(portalApp.outBus);
+            portalApp.outBus.connect(portalApp.monitorGain);
+            portalApp.monitorGain.connect(ctx.destination);
+
+            portalApp.updateCrossfader(portalApp.crossfaderValue);
+            ctx.onstatechange = () => portalApp.updateTransportUI();
+            return ctx;
+        };
+
+        portalApp.getStream = () => {
+            const ctx = portalApp.ensureAudio();
+            if (!portalApp.streamDest) {
+                portalApp.streamDest = ctx.createMediaStreamDestination();
+                portalApp.outBus.connect(portalApp.streamDest);
+            }
+            return portalApp.streamDest.stream;
+        };
+
+        // make sure the context exists and runs (must be called from a gesture the first time)
+        portalApp.ensureRunning = () => {
+            const ctx = portalApp.ensureAudio();
+            if (ctx.state !== 'running') { const pr = ctx.resume(); if (pr && pr.catch) pr.catch(() => {}); }
+            portalApp.updateTransportUI();
+            return ctx;
+        };
+
+        // The field drone follows the transport. Sample auditions (waveform tap, REGION, BUILT-IN, LOAD) wake the
+        // context without opening this gate, so "START" on the button always means "nothing is droning".
+        portalApp.syncDroneGate = () => {
+            const d = portalApp.leftDeck, ctx = portalApp.audioContext;
+            if (!ctx || !d || !d.droneGate) return;
+            const g = d.droneGate.gain, t = ctx.currentTime;
+            g.cancelScheduledValues(t);
+            if (portalApp.rightDeck.isPlaying) g.setTargetAtTime(1, t, 0.015);
+            else g.value = 0;
+        };
+
+        portalApp.start = () => {
+            portalApp.ensureRunning();
+            if (!portalApp.started) {
+                portalApp.started = true;
+                document.body.classList.add('started');
+            }
+            portalApp.rightDeck.setPlaying(true);
+            portalApp.syncDroneGate();
+            portalApp.updateTransportUI();
+        };
+
+        portalApp.stop = () => {
+            if (portalApp.rightDeck) portalApp.rightDeck.setPlaying(false);
+            portalApp.syncDroneGate();
+            if (portalApp._audition) { try { portalApp._audition.stop(); } catch (e) {} portalApp._audition = null; }
+            if (portalApp.audioContext && portalApp.audioContext.state === 'running') {
+                const pr = portalApp.audioContext.suspend(); if (pr && pr.catch) pr.catch(() => {});
+            }
+            portalApp.updateTransportUI();
+        };
+
+        portalApp.isSounding = () => !!(portalApp.audioContext && portalApp.audioContext.state === 'running' && portalApp.rightDeck.isPlaying);
+
+        portalApp.setMonitor = (on) => {
+            portalApp.monitorOn = !!on;
+            if (portalApp.monitorGain) {
+                portalApp.monitorGain.gain.setTargetAtTime(portalApp.monitorOn ? 1 : 0, portalApp.audioContext.currentTime, 0.01);
+            }
+        };
+
+        portalApp.updateTransportUI = () => {
+            const b = document.getElementById('play-pause-button');
+            const on = portalApp.isSounding();
+            b.innerHTML = on ? '&#9632; STOP' : '&#9654; START';
+            b.classList.toggle('running', on);
+            portalApp.updateReadouts();
+        };
+
+        portalApp.updateReadouts = () => {
+            const seq = portalApp.rightDeck, field = portalApp.leftDeck;
+            if (!seq || !field) return;
+            let n = 0;
+            seq.layers.forEach(l => l.nodeStates.forEach(s => { if (s) n++; }));
+            document.getElementById('seq-read').textContent =
+                (portalApp.isSounding() ? (portalApp.sampler.seqSource === 'sample' ? 'SAMPLE' : 'SYNTH') : 'STOPPED') + ' · ' + n + ' ON';
+            document.getElementById('field-read').textContent = Math.round(field.audioFrequency) + ' Hz';
+        };
+
+        portalApp.animate = () => {
+            requestAnimationFrame(portalApp.animate);
+
+            if (portalApp.globalAnalyser && portalApp.globalFrequencyData) {
+                portalApp.globalAnalyser.getByteFrequencyData(portalApp.globalFrequencyData);
+                let sum = 0;
+                const d = portalApp.globalFrequencyData;
+                for (let i = 0; i < d.length; i++) sum += d[i];
+                portalApp.globalAudioLevel = sum / (d.length * 255);
+            }
+
+            portalApp.leftDeck.update(portalApp.globalAudioLevel);
+            portalApp.rightDeck.update(portalApp.globalAudioLevel);
+            if (portalApp._waveDirty) { portalApp._waveDirty = false; portalApp.drawWave(); }
+        };
+
+        // ---------------------------------------------------------
+        // Field: x = drone pitch / flow / grain position, y = bloom / intensity / grain pitch
+        // ---------------------------------------------------------
+        portalApp.setField = (x, y, fromPlayer) => {
+            const d = portalApp.leftDeck;
+            x = clamp01(x); y = clamp01(y);
+            portalApp.fieldX = x; portalApp.fieldY = y;
+            d.setMousePosition(x, y);
+            d.audioFrequency = 100 + x * 400;
+            d.audioResonance = Math.sin(d.time * 0.01 + x * Math.PI) * 0.5 + 0.5;
+            d.visualBloom = 0.3 + y * 0.7;
+            d.visualFlow = x * 2;
+            d.visualIntensity = 0.5 + y * 0.5;
+            d.updateAudioParameters();
+            document.getElementById('field-read').textContent = Math.round(d.audioFrequency) + ' Hz';
+            if (fromPlayer) {
+                portalApp.emitParam('fieldX', x); portalApp.emitParam('fieldY', y);
+                portalApp.updateStateInURL();
+            }
+        };
+        portalApp.fieldX = 0.3; portalApp.fieldY = 0.5;
+
+        portalApp.setupSurfaces = () => {
+            // ----- Field (deck A) -----
+            const a = document.getElementById('deck-a-container');
+            let fieldPointer = null, grainTimer = null;
+            const fieldXY = (e) => {
+                const rect = a.getBoundingClientRect();
+                return [clamp01((e.clientX - rect.left) / rect.width), clamp01(1.0 - (e.clientY - rect.top) / rect.height)];
+            };
+            const stopGrains = () => { if (grainTimer) { clearInterval(grainTimer); grainTimer = null; } };
+            const fieldDown = (e) => {
+                if (e.button > 0) return;
+                e.preventDefault();
+                if (!portalApp.isSounding()) portalApp.start();
+                fieldPointer = e.pointerId;
+                try { a.setPointerCapture(e.pointerId); } catch (err) {}
+                const [x, y] = fieldXY(e);
+                portalApp.setField(x, y, true);
+                portalApp.leftDeck.touchPulse = 1;
+                portalApp.playGrain(x, y);
+                stopGrains();
+                grainTimer = setInterval(() => portalApp.playGrain(portalApp.fieldX, portalApp.fieldY), 55);
+            };
+            a.addEventListener('pointerdown', fieldDown);
+            a.addEventListener('pointermove', (e) => {
+                // mouse hover still steers the drone (parent behaviour); a held pointer also scrubs grains
+                if (fieldPointer === e.pointerId || (e.pointerType === 'mouse' && fieldPointer === null && portalApp.started)) {
+                    const [x, y] = fieldXY(e);
+                    portalApp.setField(x, y, true);
+                    if (fieldPointer === e.pointerId) portalApp.leftDeck.touchPulse = Math.max(portalApp.leftDeck.touchPulse, 0.5);
+                }
+            });
+            const fieldEnd = (e) => { if (fieldPointer === e.pointerId) { fieldPointer = null; stopGrains(); } };
+            a.addEventListener('pointerup', fieldEnd);
+            a.addEventListener('pointercancel', fieldEnd);
+            a.addEventListener('lostpointercapture', fieldEnd);
+
+            // ----- Sequencer (deck B) -----
+            const b = document.getElementById('deck-b-container');
+            const seq = portalApp.rightDeck;
+            let seqPointer = null, paintState = true, lastCell = -1;
+            const seqDown = (e) => {
+                if (e.button > 0) return;
+                e.preventDefault();
+                const c = seq.cellFromEvent(e);
+                if (!portalApp.isSounding()) {
+                    // first touch: start the transport and let the pattern speak; do not edit yet
+                    portalApp.start();
+                    seq.beatPulse = 1;
+                    return;
+                }
+                if (!c) return;
+                seqPointer = e.pointerId;
+                try { b.setPointerCapture(e.pointerId); } catch (err) {}
+                paintState = seq.toggleCell(c.layer, c.step);
+                lastCell = c.layer * 8 + c.step;
+                seq.hoverCell = e.pointerType === 'mouse' ? lastCell : -1;
+            };
+            b.addEventListener('pointerdown', seqDown);
+
+            // ----- A touch whose centre is inside a surface always plays that surface -----
+            // Browsers "touch-adjust" a fat finger to the nearest tappable element. The faders and buttons that sit
+            // 6px from the surfaces were tappable and the surfaces were not, so edge cells were handed to FUZZ,
+            // INFLUENCE, the crossfader or START/STOP. Two layers:
+            //  1. the surfaces are click targets themselves (no-op click listener below), so they compete as
+            //     adjustment candidates and a touch that starts on them stays on them;
+            //  2. whatever the browser decides, a pointer that goes down inside a surface rectangle but was
+            //     dispatched to something else is taken back here, before the other control sees it.
+            const noop = () => {};
+            a.addEventListener('click', noop); b.addEventListener('click', noop);
+            const surfaceAt = (x, y) => {
+                for (const el of [a, b]) {
+                    const r = el.getBoundingClientRect();
+                    if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return el;
+                }
+                return null;
+            };
+            let swallowClickUntil = 0;
+            portalApp.retargetedTouches = 0;
+            window.addEventListener('pointerdown', (e) => {
+                const sEl = surfaceAt(e.clientX, e.clientY);
+                if (!sEl || sEl.contains(e.target)) return;
+                e.stopPropagation();
+                portalApp.retargetedTouches++;
+                swallowClickUntil = performance.now() + 700;
+                (sEl === a ? fieldDown : seqDown)(e);
+            }, true);
+            window.addEventListener('click', (e) => {
+                // the click that follows a taken-back touch would still land on the neighbouring button
+                if (performance.now() < swallowClickUntil && !a.contains(e.target) && !b.contains(e.target)) {
+                    e.stopPropagation(); e.preventDefault();
+                }
+                swallowClickUntil = 0;
+            }, true);
+            b.addEventListener('pointermove', (e) => {
+                const c = seq.cellFromEvent(e);
+                const idx = c ? c.layer * 8 + c.step : -1;
+                if (seqPointer === e.pointerId) {
+                    // drag paints the same on/off state across cells
+                    if (c && idx !== lastCell) {
+                        lastCell = idx;
+                        const l = seq.layers[c.layer];
+                        if (l.nodeStates[c.step] !== paintState || (paintState && l.colorIndex !== portalApp.activeColorIndex)) {
+                            seq.setCell(c.layer, c.step, paintState);
+                        }
+                    }
+                } else if (e.pointerType === 'mouse') {
+                    seq.hoverCell = idx;
+                }
+            });
+            const seqEnd = (e) => { if (seqPointer === e.pointerId) { seqPointer = null; lastCell = -1; } if (e.pointerType !== 'mouse') seq.hoverCell = -1; };
+            b.addEventListener('pointerup', seqEnd);
+            b.addEventListener('pointercancel', seqEnd);
+            b.addEventListener('lostpointercapture', seqEnd);
+            b.addEventListener('pointerleave', () => { seq.hoverCell = -1; });
+
+            // Mouse wheel over the sequencer nudges INFLUENCE (parent feature, no longer hijacks the whole window)
+            b.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                portalApp.faders.influence.set01(portalApp.faders.influence.get01() + (e.deltaY < 0 ? 0.02 : -0.02), true);
+            }, { passive: false });
+
+            // keep both renderers matched to their boxes (dock open/close, rotation, iframe resize)
+            const onResize = () => {
+                portalApp.leftDeck.resize(); portalApp.rightDeck.resize();
+                portalApp._waveDirty = true;
+            };
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(onResize);
+                ro.observe(a); ro.observe(b); ro.observe(document.getElementById('wave-wrap'));
+            }
+            window.addEventListener('resize', onResize);
+        };
+
+        portalApp.setupSamplerUI = () => {
+            const wrap = document.getElementById('wave-wrap');
+            let wp = null, anchor = 0, moved = false;
+            const x01 = (e) => { const r = wrap.getBoundingClientRect(); return clamp01((e.clientX - r.left) / r.width); };
+            wrap.addEventListener('pointerdown', (e) => {
+                if (e.button > 0) return;
+                e.preventDefault();
+                wp = e.pointerId; anchor = x01(e); moved = false;
+                try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+            });
+            wrap.addEventListener('pointermove', (e) => {
+                if (wp !== e.pointerId) return;
+                const x = x01(e);
+                if (!moved && Math.abs(x - anchor) < 0.015) return;
+                moved = true;
+                portalApp.setRegion(anchor, x);
+            });
+            const wEnd = (e) => {
+                if (wp !== e.pointerId) return;
+                wp = null;
+                if (!moved && e.type === 'pointerup') {
+                    // tap: move the region (same length) so it is centred where you touched
+                    const s = portalApp.sampler, len = s.end - s.start;
+                    let lo = x01(e) - len / 2;
+                    lo = Math.max(0, Math.min(1 - len, lo));
+                    portalApp.setRegion(lo, lo + len);
+                }
+                if (e.type === 'pointerup') portalApp.auditionRegion();
+            };
+            wrap.addEventListener('pointerup', wEnd);
+            wrap.addEventListener('pointercancel', wEnd);
+
+            const fileInput = document.getElementById('file-input');
+            document.getElementById('sample-load').onclick = () => fileInput.click();
+            fileInput.addEventListener('change', () => {
+                const f = fileInput.files && fileInput.files[0];
+                if (f) portalApp.loadSampleFile(f);
+                fileInput.value = '';
+            });
+            document.getElementById('sample-builtin').onclick = () => { portalApp.loadBuiltInSample(); portalApp.setSeqSource('sample'); portalApp.auditionRegion(); };
+            document.getElementById('sample-grab').onclick = () => portalApp.grabOutput();
+            document.getElementById('sample-audition').onclick = () => portalApp.auditionRegion();
+            document.getElementById('sample-source').onclick = () => portalApp.setSeqSource(portalApp.sampler.seqSource === 'sample' ? 'synth' : 'sample');
+
+            // drag & drop anywhere on the page
+            let dragDepth = 0;
+            const hasFiles = (e) => e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0;
+            window.addEventListener('dragenter', (e) => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dropping'); e.preventDefault(); } });
+            window.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+            window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dropping'); });
+            window.addEventListener('drop', (e) => {
+                dragDepth = 0; document.body.classList.remove('dropping');
+                if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+                e.preventDefault();
+                portalApp.setPanel('sample', true);
+                portalApp.loadSampleFile(e.dataTransfer.files[0]);
+            });
+        };
+
+        // --- Docked panels (collapsible; they take space from the stage instead of covering it) ---
+        portalApp.panelOpen = { mix: false, sample: false };
+        portalApp.isSmallScreen = () => window.innerHeight < 620 || window.innerWidth < 620;
+        portalApp.setPanel = (name, open) => {
+            portalApp.panelOpen[name] = !!open;
+            if (open && portalApp.isSmallScreen()) {
+                // one panel at a time on a phone, so the surfaces keep most of the screen
+                const other = name === 'mix' ? 'sample' : 'mix';
+                if (portalApp.panelOpen[other]) portalApp.setPanel(other, false);
+            }
+            document.getElementById('panel-' + name).classList.toggle('closed', !open);
+            const t = document.getElementById(name + '-toggle');
+            t.classList.toggle('on', !!open);
+            t.setAttribute('aria-expanded', open ? 'true' : 'false');
+            document.getElementById('panels').classList.toggle('empty', !portalApp.panelOpen.mix && !portalApp.panelOpen.sample);
+            portalApp._waveDirty = true;
+        };
+
+        portalApp.setupChrome = () => {
+            document.getElementById('play-pause-button').onclick = () => { portalApp.isSounding() ? portalApp.stop() : portalApp.start(); };
+            document.getElementById('mix-toggle').onclick = () => portalApp.setPanel('mix', !portalApp.panelOpen.mix);
+            document.getElementById('sample-toggle').onclick = () => portalApp.setPanel('sample', !portalApp.panelOpen.sample);
+            const fs = document.getElementById('fullscreen-btn');
+            const root = document.documentElement;
+            if (!root.requestFullscreen) fs.style.display = 'none';
+            fs.onclick = () => {
+                try {
+                    if (!document.fullscreenElement) { const p = root.requestFullscreen(); if (p && p.catch) p.catch(() => {}); }
+                    else document.exitFullscreen();
+                } catch (err) {}
+            };
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && !(e.target && e.target.closest && e.target.closest('button'))) {
+                    e.preventDefault();
+                    portalApp.isSounding() ? portalApp.stop() : portalApp.start();
+                }
+            });
+        };
+
+        portalApp.updateMasterVolume = (value) => {
+            portalApp.masterOutputVolume = value;
+            if (portalApp.masterGain && portalApp.audioContext && !isNaN(value)) {
+                portalApp.masterGain.gain.setTargetAtTime(value, portalApp.audioContext.currentTime, 0.05);
+            }
+        };
+
+        portalApp.updateCrossfader = (value) => {
+            portalApp.crossfaderValue = value;
+            const L = portalApp.leftDeck, R = portalApp.rightDeck;
+            if (!L || !R) return;
+            const gainL = Math.cos(value * 0.5 * Math.PI);
+            const gainR = Math.cos((1.0 - value) * 0.5 * Math.PI);
+            if (portalApp.audioContext) {
+                const t = portalApp.audioContext.currentTime;
+                if (L.outputGain) L.outputGain.gain.setTargetAtTime(gainL * L.deckVolume, t, 0.01);
+                if (R.outputGain) R.outputGain.gain.setTargetAtTime(gainR * R.deckVolume, t, 0.01);
+            }
+            // a faded-out deck dims but stays visible, so it can still be played
+            L.setCanvasOpacity(0.3 + 0.7 * gainL);
+            R.setCanvasOpacity(0.3 + 0.7 * gainR);
+        };
+
+        portalApp.updateGlobalFuzz = (value) => {
+            portalApp.globalFuzzAmount = value;
+            if (portalApp.globalFuzzNode && portalApp.audioContext && !isNaN(value)) {
+                portalApp.globalFuzzNode.curve = makeDistortionCurve(value * 100);
+                const t = portalApp.audioContext.currentTime;
+                portalApp.globalFuzzDryGain.gain.cancelScheduledValues(t);
+                portalApp.globalFuzzWetGain.gain.cancelScheduledValues(t);
+                portalApp.globalFuzzDryGain.gain.setTargetAtTime(1 - value, t, 0.01);
+                portalApp.globalFuzzWetGain.gain.setTargetAtTime(value, t, 0.01);
+            }
+        };
+
+        portalApp.setActiveColor = (index, fromPlayer) => {
+            index = Math.max(0, Math.min(portalApp.colorPalette.length - 1, Math.round(index)));
+            portalApp.activeColorIndex = index;
+            document.querySelectorAll('.color-swatch').forEach((s, i) => {
+                s.classList.toggle('selected', i === index);
+                s.setAttribute('aria-pressed', i === index ? 'true' : 'false');
+            });
+            document.getElementById('color-name').textContent = COLOR_NAMES[index];
+            if (fromPlayer) { portalApp.emitParam('stepColor', index / 7); portalApp.updateStateInURL(); }
+        };
+
+        portalApp.setupColorPaletteUI = () => {
+            const paletteDiv = document.getElementById('color-palette');
+            paletteDiv.innerHTML = '';
+            portalApp.colorPalette.forEach((hsvColor, index) => {
+                const swatch = document.createElement('button');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = portalApp.hsvToRgb(hsvColor[0], hsvColor[1], hsvColor[2]);
+                swatch.dataset.colorIndex = index;
+                swatch.textContent = COLOR_NAMES[index];
+                // pick the label colour from the swatch luminance (black on pure blue / red was unreadable)
+                const m = /(\d+), (\d+), (\d+)/.exec(swatch.style.backgroundColor) || [0, 255, 255, 255];
+                if (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3] < 140) swatch.classList.add('dark');
+                swatch.setAttribute('aria-label', 'Row colour ' + COLOR_NAMES[index]);
+                swatch.onclick = () => portalApp.setActiveColor(index, true);
+                paletteDiv.appendChild(swatch);
+            });
+            portalApp.setActiveColor(portalApp.activeColorIndex, false);
+        };
+
+        // --- State Serialization (debounced; replaceState so playing does not flood the history) ---
+        portalApp.getStateObject = () => ({
+            leftDeck: portalApp.leftDeck ? portalApp.leftDeck.getState() : null,
+            rightDeck: portalApp.rightDeck ? portalApp.rightDeck.getState() : null,
+            crossfaderValue: portalApp.crossfaderValue,
+            globalFuzzAmount: portalApp.globalFuzzAmount,
+            masterOutputVolume: portalApp.masterOutputVolume,
+            activeColorIndex: portalApp.activeColorIndex,
+            field: [portalApp.fieldX, portalApp.fieldY],
+            sampler: { start: portalApp.sampler.start, end: portalApp.sampler.end, seqSource: portalApp.sampler.seqSource }
+        });
+
+        portalApp.updateStateInURL = () => {
+            if (!portalApp.ready || portalApp._stateTimer) return;
+            portalApp._stateTimer = setTimeout(() => {
+                portalApp._stateTimer = null;
+                try {
+                    const encoded = btoa(JSON.stringify(portalApp.getStateObject()));
+                    history.replaceState(null, '', location.pathname + location.search + '#' + encoded);
+                } catch (error) { /* state in the URL is a convenience only */ }
+            }, 500);
+        };
+
+        portalApp.loadStateFromURL = () => {
+            try {
+                if (window.location.hash.length > 1) {
+                    const state = JSON.parse(atob(window.location.hash.slice(1)));
+                    const num = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+                    portalApp.crossfaderValue = clamp01(num(state.crossfaderValue, 0.5));
+                    portalApp.globalFuzzAmount = clamp01(num(state.globalFuzzAmount, 0.0));
+                    portalApp.masterOutputVolume = clamp01(num(state.masterOutputVolume, 0.5));
+                    portalApp.activeColorIndex = Math.max(0, Math.min(7, Math.round(num(state.activeColorIndex, 0))));
+                    if (state.leftDeck) portalApp.leftDeck.setState(state.leftDeck);
+                    if (state.rightDeck) portalApp.rightDeck.setState(state.rightDeck);
+                    if (Array.isArray(state.field)) { portalApp.fieldX = clamp01(num(state.field[0], 0.3)); portalApp.fieldY = clamp01(num(state.field[1], 0.5)); }
+                    if (state.sampler) {
+                        portalApp.sampler.seqSource = state.sampler.seqSource === 'synth' ? 'synth' : 'sample';
+                        portalApp._savedRegion = [clamp01(num(state.sampler.start, 0)), clamp01(num(state.sampler.end, 1))];
+                    }
+                }
+            } catch (error) {
+                console.warn('Ignoring unreadable state in URL hash.');
+            }
+        };
+
+        // ---------------------------------------------------------
+        // SCION DECK PROTOCOL v1
+        // ---------------------------------------------------------
+        portalApp.params = {
+            bpm:        { label: 'Tempo',           group: 'transport', get: () => portalApp.faders.bpm.get01(),       set: (v) => portalApp.faders.bpm.set01(v) },
+            play:       { label: 'Play',            group: 'transport', get: () => portalApp.isSounding() ? 1 : 0,     set: (v) => { v >= 0.5 ? portalApp.start() : portalApp.stop(); } },
+            crossfade:  { label: 'Crossfade',       group: 'mix',       get: () => portalApp.faders.crossfade.get01(), set: (v) => portalApp.faders.crossfade.set01(v) },
+            master:     { label: 'Master volume',   group: 'mix',       get: () => portalApp.faders.master.get01(),    set: (v) => portalApp.faders.master.set01(v) },
+            droneVol:   { label: 'Field volume',    group: 'mix',       get: () => portalApp.faders.droneVol.get01(),  set: (v) => portalApp.faders.droneVol.set01(v) },
+            seqVol:     { label: 'Sequencer volume', group: 'mix',      get: () => portalApp.faders.seqVol.get01(),    set: (v) => portalApp.faders.seqVol.set01(v) },
+            fuzz:       { label: 'Fuzz',            group: 'fx',        get: () => portalApp.faders.fuzz.get01(),      set: (v) => portalApp.faders.fuzz.set01(v) },
+            influence:  { label: 'Influence',       group: 'fx',        get: () => portalApp.faders.influence.get01(), set: (v) => portalApp.faders.influence.set01(v) },
+            fieldX:     { label: 'Field X (pitch)', group: 'field',     get: () => portalApp.fieldX,                   set: (v) => portalApp.setField(v, portalApp.fieldY, false) },
+            fieldY:     { label: 'Field Y (bloom)', group: 'field',     get: () => portalApp.fieldY,                   set: (v) => portalApp.setField(portalApp.fieldX, v, false) },
+            regionStart:{ label: 'Sample region start', group: 'sample', get: () => portalApp.sampler.start,           set: (v) => { const s = portalApp.sampler; const lo = Math.min(clamp01(v), 0.999); portalApp.setRegion(lo, Math.max(s.end, lo), false); } },
+            regionEnd:  { label: 'Sample region end',   group: 'sample', get: () => portalApp.sampler.end,             set: (v) => { const s = portalApp.sampler; const hi = Math.max(clamp01(v), 0.001); portalApp.setRegion(Math.min(s.start, hi), hi, false); } },
+            seqSource:  { label: 'Sequencer plays sample', group: 'sample', get: () => portalApp.sampler.seqSource === 'sample' ? 1 : 0, set: (v) => portalApp.setSeqSource(v >= 0.5 ? 'sample' : 'synth', true) },
+            stepColor:  { label: 'Row colour / effect', group: 'sequencer', get: () => portalApp.activeColorIndex / 7, set: (v) => portalApp.setActiveColor(clamp01(v) * 7, false) }
+        };
+
+        portalApp.manifest = () => ({
+            name: 'Mighty Morph 08g',
+            kind: 'morphic-field-sequencer-sampler',
+            version: 1,
+            params: Object.keys(portalApp.params).map(id => {
+                const p = portalApp.params[id];
+                return { id, label: p.label, group: p.group, value: p.get() };
+            })
+        });
+
+        portalApp.emitParam = (id, value) => {
+            if (!portalApp.ready || window.parent === window) return;
+            try { window.parent.postMessage({ type: 'scion-param', id, value }, '*'); } catch (err) {}
+        };
+
+        window.scionDeck = {
+            version: 1,
+            manifest: () => portalApp.manifest(),
+            getStream: () => portalApp.getStream(),
+            set: (id, v01) => {
+                const p = portalApp.params[id];
+                const v = Number(v01);
+                if (!p || !isFinite(v)) return false;
+                p.set(clamp01(v));
+                portalApp.updateStateInURL();
+                return true;
+            },
+            get: (id) => { const p = portalApp.params[id]; return p ? p.get() : undefined; },
+            start: () => portalApp.start(),
+            stop: () => portalApp.stop(),
+            setMonitor: (on) => portalApp.setMonitor(on),
+            setBpm: (bpm) => {
+                const b = Number(bpm);
+                if (!isFinite(b)) return;
+                portalApp.rightDeck.setBPM(b);
+                portalApp.faders.bpm.set(portalApp.rightDeck.bpm);
+                portalApp.updateStateInURL();
+            }
+        };
+
+        window.addEventListener('message', (e) => {
+            const m = e.data;
+            if (!m || typeof m !== 'object' || typeof m.type !== 'string' || !portalApp.ready) return;
+            const reply = (msg) => { try { (e.source || window.parent).postMessage(msg, '*'); } catch (err) {} };
+            switch (m.type) {
+                case 'scion-hello': reply({ type: 'scion-manifest', manifest: portalApp.manifest() }); break;
+                case 'scion-set': window.scionDeck.set(m.id, m.value); break;
+                case 'set-bpm': window.scionDeck.setBpm(m.bpm); break;
+                case 'set-monitor': portalApp.setMonitor(m.on !== false); break;
+                case 'resume-audio': portalApp.started ? portalApp.ensureRunning() : portalApp.start(); break;
+                case 'suspend-audio':
+                    if (portalApp.audioContext && portalApp.audioContext.state === 'running') {
+                        const pr = portalApp.audioContext.suspend(); if (pr && pr.catch) pr.catch(() => {});
+                    }
+                    break;
+                case 'request-audio-stream': {
+                    let stream = null;
+                    try { stream = portalApp.getStream(); } catch (err) {}
+                    try { (e.source || window.parent).postMessage({ type: 'audio-stream', id: m.id, stream }, '*'); }
+                    catch (err) {
+                        // MediaStreams are not structured-cloneable in most browsers: point the host at the same-origin bridge
+                        reply({ type: 'audio-stream', id: m.id, stream: null, bridge: 'scionDeck.getStream' });
+                    }
+                    break;
+                }
+            }
+        });
+
+        // ---------------------------------------------------------
+        // Boot: visuals, controls and sample exist immediately; audio starts on the first gesture
+        // ---------------------------------------------------------
+        portalApp.boot = () => {
+            if (portalApp.embed) document.body.classList.add('embed');
+
+            portalApp.leftDeck = new MorphicDeck('deck-a-container', 'canvas-a', droneConfig);
+            portalApp.rightDeck = new MorphicDeck('deck-b-container', 'canvas-b', sequencerConfig);
+
+            portalApp.loadStateFromURL();
+            portalApp.buildFaders();
+            portalApp.setupColorPaletteUI();
+            portalApp.setupSurfaces();
+            portalApp.setupSamplerUI();
+            portalApp.setupChrome();
+
+            // panels: both open where there is room; on a phone / embed the surfaces get the space
+            const small = portalApp.isSmallScreen();
+            portalApp.setPanel('mix', !small && !portalApp.embed);
+            // (on a phone-width screen the sample panel only opens by itself when the screen is tall enough to
+            //  leave the two surfaces clearly larger than the dock)
+            portalApp.setPanel('sample', !portalApp.embed && window.innerHeight >= (window.innerWidth < 620 ? 760 : 560));
+
+            portalApp.loadBuiltInSample();
+            if (portalApp._savedRegion) portalApp.setRegion(portalApp._savedRegion[0], portalApp._savedRegion[1], false);
+            portalApp.setSeqSource(portalApp.sampler.seqSource, true);
+            portalApp.setField(portalApp.fieldX, portalApp.fieldY, false);
+            portalApp.updateCrossfader(portalApp.crossfaderValue);
+            portalApp.updateTransportUI();
+
+            portalApp.ready = true;
+            portalApp.leftDeck.resize(); portalApp.rightDeck.resize();
+            portalApp.drawWave();
+            portalApp.animate();
+
+            if (window.parent !== window) {
+                try { window.parent.postMessage({ type: 'scion-manifest', manifest: portalApp.manifest() }, '*'); } catch (err) {}
+            }
+        };
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', portalApp.boot);
+        else portalApp.boot();
+    </script>
+</body>
+</html>

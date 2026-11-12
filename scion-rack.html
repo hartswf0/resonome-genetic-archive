@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SCION RACK — two decks, one mixer, any param plays any param</title>
+<style>
+:root{--bg:#07090c;--pn:#0d1116;--pn2:#131920;--ln:#243040;--ink:#e2e9f1;--mut:#8a98a9;--a:#5fd4ff;--b:#ffb44a;--m:#d58cff;--ok:#6fe39a;--hot:#ff5d6c}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:12px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--pn2);border:1px solid var(--ln);border-radius:8px;cursor:pointer;padding:0 8px;min-height:44px;min-width:44px;touch-action:manipulation;user-select:none;-webkit-user-select:none;white-space:nowrap}
+button:active{transform:translateY(1px)}
+button.on{background:#1c2a36;border-color:var(--ok);color:var(--ok)}
+button.hot.on{border-color:var(--hot);color:var(--hot);background:#2a1418}
+button:disabled{opacity:.4;cursor:not-allowed}
+select{background:var(--pn2);border:1px solid var(--ln);border-radius:8px;min-height:44px;padding:0 6px;min-width:0;max-width:100%}
+#app{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr) auto;overflow:hidden;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)}
+/* ---------- header ---------- */
+#top{grid-column:1/-1;display:flex;gap:8px;align-items:center;padding:5px 8px;min-height:54px;background:var(--pn);border-bottom:1px solid var(--ln);min-width:0}
+#brand{font-weight:700;letter-spacing:.18em;color:var(--mut);white-space:nowrap}
+.pick{display:flex;align-items:center;gap:5px;flex:1 1 0;min-width:0}
+.pick b{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;color:#000;flex:none}
+.pick select{flex:1 1 0;width:0}
+.ka{background:var(--a)}.kb{background:var(--b)}
+#view{display:flex;flex:none}
+#view button{border-radius:0;min-width:44px;padding:0 4px}
+#view button:first-child{border-radius:8px 0 0 8px}#view button:last-child{border-radius:0 8px 8px 0}
+#urlbox{position:absolute;z-index:30;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 58px);max-width:640px;margin:0 auto;display:none;gap:6px;align-items:center;padding:8px;background:var(--pn);border:1px solid var(--ln);border-radius:10px;box-shadow:0 12px 30px #000a}
+#urlbox.show{display:flex}
+#urlbox input{flex:1;min-width:0;min-height:44px;font-size:16px;background:#06080b;border:1px solid var(--ln);border-radius:8px;padding:0 8px}
+#banner{position:absolute;z-index:25;left:env(safe-area-inset-left,0px);right:env(safe-area-inset-right,0px);top:env(safe-area-inset-top,0px);height:54px;display:none;gap:8px;align-items:center;justify-content:center;padding:4px 8px;background:#1a1024;border-bottom:1px solid var(--m);color:#f0dcff;overflow:hidden}
+#banTxt{min-width:0;font-size:11px;line-height:1.25;max-height:42px;overflow:hidden}
+#banX{flex:none}
+#banner.show{display:flex}
+#banner.toast{background:#10201a;border-color:var(--ok);color:#d9ffe8}
+/* ---------- decks ---------- */
+#decks{grid-row:2;grid-column:1;position:relative;display:grid;grid-template-columns:1fr 1fr;gap:2px;min-height:0;min-width:0;background:#000}
+.deck{position:relative;display:grid;grid-template-rows:22px minmax(0,1fr);min-width:0;min-height:0;background:#000}
+.dhead{display:flex;align-items:center;gap:6px;padding:0 6px;background:var(--pn);font-size:11px;min-width:0;overflow:hidden}
+.dhead .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+.dhead .cnt{color:var(--mut);white-space:nowrap}
+.dhead a{margin-left:auto;color:var(--mut);text-decoration:none;padding:0 6px}
+.chip{flex:none;border:1px solid var(--ln);border-radius:99px;padding:0 6px;font-size:10px;line-height:15px;color:var(--mut);white-space:nowrap}
+.chip.live{color:var(--ok);border-color:var(--ok)}.chip.direct{color:var(--b);border-color:var(--b)}.chip.err{color:var(--hot);border-color:var(--hot)}
+#deckAbox .dhead{box-shadow:inset 0 -2px 0 var(--a)}#deckBbox .dhead{box-shadow:inset 0 -2px 0 var(--b)}
+iframe{width:100%;height:100%;border:0;display:block;background:#000}
+#decks.v-a,#decks.v-b{display:block}
+#decks.v-a .deck,#decks.v-b .deck{position:absolute;inset:0}
+#decks.v-a #deckBbox,#decks.v-b #deckAbox{visibility:hidden;pointer-events:none}
+/* ---------- strip ---------- */
+#strip{grid-row:3;grid-column:1/-1;z-index:6;display:grid;gap:6px 10px;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));background:var(--pn);border-top:1px solid var(--ln);
+  grid-template-columns:250px 160px minmax(0,1fr) 160px 250px;grid-template-areas:"cha xy1 ctr xy2 chb";min-width:0}
+#tabs{display:none}
+.ch{display:grid;gap:4px;align-content:start;min-width:0}
+#chA{grid-area:cha}#chB{grid-area:chb}#xy1{grid-area:xy1}#xy2{grid-area:xy2}#ctr{grid-area:ctr}
+.ch .hd{display:flex;gap:6px;align-items:center;min-width:0;height:16px}
+.ch .hd .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ch .kills{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px}
+.ch .kills button{padding:0;font-size:11px}
+.ch.bypass .fader,.ch.bypass .kills,.ch.bypass .meter{opacity:.38}
+.note{font-size:10px;color:var(--b);height:12px;overflow:hidden;white-space:nowrap}
+.note.err{color:var(--hot)}
+.fader{position:relative;height:44px;touch-action:none;cursor:ew-resize;user-select:none;-webkit-user-select:none;outline:none;min-width:0}
+.fader .tr{position:absolute;left:0;right:0;top:17px;bottom:4px;border:1px solid var(--ln);border-radius:8px;background:#06080b;overflow:hidden}
+.fader .fl{position:absolute;left:0;top:0;bottom:0;width:50%;background:var(--c,#3a4a5c);opacity:.5}
+.fader .kn{position:absolute;top:3px;bottom:3px;width:4px;margin-left:-2px;border-radius:2px;background:var(--c,#cfd8e3);left:50%}
+.fader .lb,.fader .vl{position:absolute;top:1px;line-height:14px;font-size:11px;pointer-events:none;white-space:nowrap}
+.fader .lb{left:2px;color:var(--mut)}.fader .vl{right:2px;color:#fff;font-weight:700}
+.fader:focus-visible .tr{border-color:#fff}
+.meter{display:flex;align-items:center;gap:6px;height:12px;font-size:10px;color:var(--mut)}
+.meter .bar{flex:1;height:8px;border-radius:4px;background:#06080b;border:1px solid var(--ln);overflow:hidden}
+.meter .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok) 0 70%,#f3d04a 85%,var(--hot))}
+.meter span{width:56px;text-align:right;white-space:nowrap}
+.xy{position:relative;border:1px solid var(--ln);border-radius:10px;background:#06080b;touch-action:none;cursor:crosshair;min-height:118px;overflow:hidden;outline:none;user-select:none;-webkit-user-select:none}
+.xy .ar{position:absolute;left:10px;right:10px;top:26px;bottom:26px;pointer-events:none}
+.xy .ar::before{content:"";position:absolute;inset:-9px;border-radius:6px;background:#0a0f15;background-image:linear-gradient(#18202a 1px,transparent 1px),linear-gradient(90deg,#18202a 1px,transparent 1px);background-size:25% 25%}
+.xy .dot{position:absolute;width:18px;height:18px;margin:-9px;border-radius:50%;border:2px solid var(--m);background:#d58cff44;pointer-events:none}
+.xy .hl,.xy .vl2{position:absolute;background:#d58cff55;pointer-events:none}
+.xy .hl{left:-9px;right:-9px;height:1px}.xy .vl2{top:-9px;bottom:-9px;width:1px}
+.xy .t{position:absolute;left:5px;right:5px;font-size:10px;line-height:12px;pointer-events:none;white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.xy .ty{top:2px}.xy .tx{bottom:2px}
+.xy .t b{color:var(--m)}
+#ctr{display:grid;gap:5px;align-content:start;min-width:0}
+#btns{display:grid;grid-template-columns:1.3fr 1.5fr 44px 44px 1.2fr 1fr;gap:5px}
+#btns button{padding:0 2px;min-height:44px;overflow:hidden}
+#bStart{border-color:var(--ok);color:var(--ok);font-weight:700}
+#xrow{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;gap:5px;align-items:center}
+#xrow button{min-height:44px;padding:0}
+#bCutA.on{border-color:var(--a);color:var(--a)}#bCutB.on{border-color:var(--b);color:var(--b)}
+/* ---------- matrix sheet ---------- */
+#sheet{grid-row:2;grid-column:2;width:0;overflow:hidden;background:var(--pn);border-left:1px solid var(--ln);display:flex;flex-direction:column;min-height:0;z-index:4}
+#app.sheet-open #sheet{width:430px}
+#sheet .sh{display:flex;gap:5px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--ln);flex:none;flex-wrap:wrap}
+#sheet .sh h2{font-size:12px;letter-spacing:.14em;margin:0 auto 0 0;color:var(--m)}
+#sbody{flex:1;overflow:auto;padding:8px;-webkit-overflow-scrolling:touch;min-height:0}
+#sbody h3{font-size:11px;letter-spacing:.14em;color:var(--mut);margin:12px 0 6px;font-weight:400}
+#sbody h3:first-child{margin-top:0}
+.asg{display:grid;grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr);gap:4px;align-items:center;padding:6px;border:1px solid var(--ln);border-radius:10px;margin-bottom:6px;background:#0a0e13}
+.asg .rng{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 52px 44px;gap:4px;align-items:center}
+.asg.cc{border-color:#4a3a1c}
+.asg select{width:100%}
+.empty{color:var(--mut);padding:6px 2px}
+.empty.warn{color:var(--b)}.empty.bad{color:var(--hot)}
+table.mx{border-collapse:collapse;width:100%}
+table.mx th{font-weight:400;color:var(--mut);font-size:10px;padding:2px;position:sticky;top:-8px;background:var(--pn)}
+table.mx td{padding:2px}
+table.mx td.pn{max-width:0;width:99%;overflow:hidden}
+table.mx td.pn div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.mx td.pn .pv{height:3px;border-radius:2px;background:#06080b;margin-top:2px}
+table.mx td.pn .pv i{display:block;height:100%;width:0;background:var(--mut)}
+table.mx tr.da td.pn .pv i{background:var(--a)}table.mx tr.db td.pn .pv i{background:var(--b)}
+table.mx td.vv{color:var(--mut);font-size:10px;text-align:right;white-space:nowrap}
+table.mx button{min-height:44px;width:44px;padding:0;color:var(--mut)}
+table.mx button.on{border-color:var(--m);color:var(--m);background:#231530}
+tr.grp td{color:var(--mut);font-size:10px;letter-spacing:.12em;padding-top:8px}
+.addrow{display:flex;gap:6px;flex-wrap:wrap}
+/* ---------- compact (anything narrower than 1240px): MIX/PADS tabs, matrix is a slide-up sheet over the decks ---------- */
+@media (max-width:1239px){
+  #tabs{grid-area:tabs;display:flex;gap:5px;align-items:center;min-width:0}
+  #chA,#xy1{grid-area:pa}#chB,#xy2{grid-area:pb}
+  #strip.p-mix .xy,#strip.p-pads .ch,#strip.p-none .xy,#strip.p-none .ch{display:none}
+  #sheet{grid-column:1;grid-row:2;justify-self:end;width:min(430px,100%)!important;border-left:1px solid var(--m);border-top:1px solid var(--m);transform:translateY(104%);transition:transform .22s ease;visibility:hidden}
+  #app.sheet-open #sheet{transform:none;visibility:visible}
+  #app.learning #sheet{transform:translateY(104%)}
+}
+/* row: tablets, small windows, phones in landscape. One line: [tabs][A][centre][B] */
+@media (min-width:761px) and (max-width:1239px), (min-width:600px) and (max-width:760px) and (max-height:520px){
+  #strip{grid-template-columns:44px minmax(0,1fr) minmax(340px,1.5fr) minmax(0,1fr);grid-template-areas:"tabs pa ctr pb";gap:6px}
+  #strip.p-none{grid-template-columns:44px minmax(0,1fr);grid-template-areas:"tabs ctr"}
+  #tabs{flex-direction:column;align-items:stretch;justify-content:flex-start}
+  #tabs button{padding:0;font-size:11px}
+  #tabs .sp{display:none}
+  #btns{grid-template-columns:1.25fr 1.5fr 44px 44px 1.1fr 1.1fr}
+  #btns button{font-size:11px}
+}
+@media (max-width:790px) and (max-height:520px){ .ch .kills{grid-template-columns:repeat(3,minmax(0,1fr))} .ch .kills [data-k=all]{display:none} }
+@media (max-width:760px){
+  #brand,#bLink{display:none}
+  #top{gap:4px;padding:4px 6px}
+  .pick{gap:3px}.pick b{width:15px;height:44px;border-radius:4px;font-size:11px}
+  #sheet{justify-self:stretch;width:auto!important;border-left:0}
+}
+/* stacked: phones in portrait */
+@media (max-width:599px), (max-width:760px) and (min-height:521px){
+  #decks.v-ab{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+  #strip{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"tabs tabs" "pa pb" "ctr ctr";gap:5px 8px}
+  #tabs button{min-width:64px}
+  #tabs .sp{flex:1;min-width:0;color:var(--mut);font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:right}
+  #strip.p-none{grid-template-areas:"tabs tabs" "ctr ctr"}
+  #btns{grid-template-columns:1.25fr 1.5fr 44px 44px 1.1fr 1fr;gap:4px}
+  #btns button{font-size:11px}
+}
+@media (min-width:1240px){ #app.sheet-open #bMap{border-color:var(--m);color:var(--m)} }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <span id="brand">SCION RACK</span>
+    <label class="pick"><b class="ka">A</b><select id="selA" aria-label="Deck A instrument"></select></label>
+    <div id="view" role="group" aria-label="Deck view">
+      <button data-v="a" title="Show deck A only">A</button><button data-v="ab" title="Show both decks">A+B</button><button data-v="b" title="Show deck B only">B</button>
+    </div>
+    <label class="pick"><b class="kb">B</b><select id="selB" aria-label="Deck B instrument"></select></label>
+    <button id="bLink" title="Copy a link to this exact rack setup">COPY LINK</button>
+  </header>
+  <div id="urlbox"><span id="urlLab">Deck A URL</span><input id="urlIn" type="url" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="../smith-deck/smith-968.html or https://…"><button id="urlGo">LOAD</button><button id="urlX" aria-label="Cancel">✕</button></div>
+  <div id="banner"><span id="banTxt"></span><button id="banX">CANCEL</button></div>
+
+  <main id="decks" class="v-ab">
+    <section class="deck" id="deckAbox">
+      <div class="dhead"><b style="color:var(--a)">A</b><span class="nm" id="nmA"></span><span class="chip" id="stA">idle</span><span class="cnt" id="cnA"></span><a id="opA" target="_blank" rel="noopener" title="Open deck A on its own">↗</a></div>
+      <iframe id="deckA" allow="autoplay; microphone" allowfullscreen title="Deck A"></iframe>
+    </section>
+    <section class="deck" id="deckBbox">
+      <div class="dhead"><b style="color:var(--b)">B</b><span class="nm" id="nmB"></span><span class="chip" id="stB">idle</span><span class="cnt" id="cnB"></span><a id="opB" target="_blank" rel="noopener" title="Open deck B on its own">↗</a></div>
+      <iframe id="deckB" allow="autoplay; microphone" allowfullscreen title="Deck B"></iframe>
+    </section>
+  </main>
+
+  <aside id="sheet" aria-label="Mapping matrix">
+    <div class="sh">
+      <h2>MAPPING MATRIX</h2>
+      <button id="bLearn" title="Wiggle a control in a deck, then a macro (or a control in the other deck)">LEARN</button>
+      <button id="bCC" title="Cross-couple: params of one deck drive params of the other">COUPLE ON</button>
+      <button id="bLink2" title="Copy share link">LINK</button>
+      <button id="bClose" aria-label="Close matrix">✕</button>
+    </div>
+    <div id="sbody"></div>
+  </aside>
+
+  <footer id="strip" class="p-pads">
+    <div id="tabs"><button data-p="mix">MIX</button><button data-p="pads">PADS</button><span class="sp" id="tabInfo"></span></div>
+    <div class="ch" id="chA">
+      <div class="hd"><b style="color:var(--a)">A</b><span class="nm" id="cnmA"></span><span class="chip" id="cstA">idle</span></div>
+      <div class="fader" id="fLvA" style="--c:var(--a)"></div>
+      <div class="kills"><button data-k="lo" class="on">LO</button><button data-k="mid" class="on">MID</button><button data-k="hi" class="on">HI</button><button data-k="all" title="Kill / restore all three bands">KILL</button></div>
+      <div class="meter"><div class="bar"><i id="mA"></i></div><span id="mAv">-∞ dB</span></div>
+      <div class="note" id="ntA"></div>
+    </div>
+    <div class="xy" id="xy1" tabindex="0" aria-label="Macro pad 1: M1 horizontal, M2 vertical"></div>
+    <div id="ctr">
+      <div id="btns">
+        <button id="bStart">▶ START</button>
+        <button id="bTap" title="Tap tempo: sends set-bpm to both decks">TAP 120</button>
+        <button id="bBm" aria-label="BPM down">−</button><button id="bBp" aria-label="BPM up">+</button>
+        <button id="bRec" class="hot" title="Record the mix to a file">● REC</button>
+        <button id="bMap" title="Open the mapping matrix">MAP</button>
+      </div>
+      <div id="xrow">
+        <button id="bCutA" title="Cut deck A out of the mix">CUT A</button>
+        <div class="fader" id="fX"></div>
+        <button id="bCutB" title="Cut deck B out of the mix">CUT B</button>
+      </div>
+      <div class="meter"><div class="bar"><i id="mM"></i></div><span id="mMv" style="width:150px">MASTER -∞ dB</span></div>
+    </div>
+    <div class="xy" id="xy2" tabindex="0" aria-label="Macro pad 2: M3 horizontal, M4 vertical"></div>
+    <div class="ch" id="chB">
+      <div class="hd"><b style="color:var(--b)">B</b><span class="nm" id="cnmB"></span><span class="chip" id="cstB">idle</span></div>
+      <div class="fader" id="fLvB" style="--c:var(--b)"></div>
+      <div class="kills"><button data-k="lo" class="on">LO</button><button data-k="mid" class="on">MID</button><button data-k="hi" class="on">HI</button><button data-k="all" title="Kill / restore all three bands">KILL</button></div>
+      <div class="meter"><div class="bar"><i id="mB"></i></div><span id="mBv">-∞ dB</span></div>
+      <div class="note" id="ntB"></div>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.min(b===undefined?1:b,Math.max(a===undefined?0:a,v));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const app=$('#app');
+
+/* ================= catalog (relative URLs: same origin on Pages and on the local server) ================= */
+const CATALOG=[
+ ['Built-in',[['PROBE test deck (built-in, speaks SCION v1)','test']]],
+ ['Scion decks (protocol v1)',[['deep-field','deep-field.html'],['mighty-morph-08g','mighty-morph-08g.html'],['smith-morph','../smith-deck/smith-morph.html'],['mandalla-smith','../moto/mandalla-smith.html']]],
+ ['Smith deck',[['smith-968','../smith-deck/smith-968.html'],['smith-137','../smith-deck/smith-137.html'],['smith-255','../smith-deck/smith-255.html'],['smith-radio','../smith-deck/smith-radio.html'],['smith-puppet','../smith-deck/smith-puppet.html'],['smith-puppet-complex','../smith-deck/smith-puppet-complex.html'],['deco-mood-03','../smith-deck/deco-mood-03.html'],['double-smith','../smith-deck/double-smith.html'],['dub-base','../smith-deck/dub-base.html'],['sg-01','../smith-deck/sg-01.html']]],
+ ['Moto',[['mandalla','../moto/mandalla.html'],['mandalla-ns','../moto/mandalla-ns.html'],['koto','../moto/koto.html'],['mem','../moto/mem.html'],['nab-fol','../moto/nab-fol.html'],['op2','../moto/op2.html']]],
+ ['Resonome archive',[['deep-res-02','deep-res-02.html'],['deep-res-01','deep-res-01.html'],['deep-res-phys','deep-res-phys.html'],['chladini-plate-01','chladini-plate-01.html'],['mighty-morph-20','mighty-morph-20.html'],['mbeck-10','mbeck-10.html'],['hypno-res-02','hypno-res-02.html'],['morphic-resonance-deck','morphic-resonance-deck.html'],['euler-oscillator','euler-oscillator.html'],['res-engine','res-engine.html']]]
+];
+
+/* ================= built-in PROBE deck: a complete SCION DECK PROTOCOL v1 citizen in ~90 lines ================= */
+function probeDoc(key){
+  const cfg=key==='A'?{name:'PROBE A',wave:'sawtooth',base:55,p:.42,c:.45,u:.5,hue:'#5fd4ff'}:{name:'PROBE B',wave:'square',base:82.5,p:.5,c:.35,u:.7,hue:'#ffb44a'};
+  return ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+
+  'html,body{margin:0;height:100%;background:#07090c;color:#dfe6ee;font:12px ui-monospace,Menlo,Consolas,monospace;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}'+
+  '#pad{position:absolute;left:0;right:0;top:0;bottom:60px;touch-action:none;cursor:crosshair}canvas{width:100%;height:100%;display:block}'+
+  '#hud{position:absolute;left:8px;top:6px;right:8px;pointer-events:none;line-height:1.5;text-shadow:0 1px 2px #000}#hud b{color:HUE}'+
+  '#hint{position:absolute;left:0;right:0;top:45%;text-align:center;pointer-events:none;font-size:14px;letter-spacing:.15em;color:HUE}'+
+  '#pf{position:absolute;left:8px;right:8px;bottom:8px;height:44px;touch-action:none;cursor:ew-resize}'+
+  '#pf .tr{position:absolute;left:0;right:0;top:6px;bottom:6px;border:1px solid #243040;border-radius:8px;background:#06080b;overflow:hidden}'+
+  '#pf .fl{position:absolute;left:0;top:0;bottom:0;background:HUE;opacity:.45}#pf span{position:absolute;top:50%;transform:translateY(-50%);pointer-events:none;text-shadow:0 1px 2px #000}#pf .l{left:8px}#pf .v{right:8px;font-weight:700}'+
+  '</style></head><body><div id="pad"><canvas id="cv"></canvas></div><div id="hud"></div><div id="hint">TOUCH TO PLAY</div>'+
+  '<div id="pf"><div class="tr"><div class="fl" id="pfl"></div></div><span class="l">PULSE DEPTH</span><span class="v" id="pfv"></span></div>'+
+  '<scr'+'ipt>(function(){var CFG='+JSON.stringify(cfg)+';'+
+  'var P={pitch:{label:"Pitch",group:"Tone",v:CFG.p},cutoff:{label:"Cutoff",group:"Tone",v:CFG.c},pulse:{label:"Pulse depth",group:"Rhythm",v:CFG.u}};'+
+  'var ctx,osc,filt,vca,lfo,lfoS,lfoG,out,mon,dest,started=false,monitor=true,bpm=120;'+
+  'function cl(v){v=+v;return v!==v?0:Math.min(1,Math.max(0,v))}'+
+  'function hz(v){return CFG.base*Math.pow(2,v*3)}function fc(v){return 120*Math.pow(60,v)}'+
+  'function build(){if(ctx)return;ctx=new (window.AudioContext||window.webkitAudioContext)();osc=ctx.createOscillator();osc.type=CFG.wave;'+
+  'filt=ctx.createBiquadFilter();filt.type="lowpass";filt.Q.value=7;vca=ctx.createGain();lfo=ctx.createOscillator();lfo.type="square";'+
+  'lfoS=ctx.createBiquadFilter();lfoS.type="lowpass";lfoS.frequency.value=40;lfoG=ctx.createGain();out=ctx.createGain();out.gain.value=0;'+
+  'mon=ctx.createGain();mon.gain.value=monitor?1:0;dest=ctx.createMediaStreamDestination();'+
+  'osc.connect(filt);filt.connect(vca);vca.connect(out);out.connect(mon);mon.connect(ctx.destination);out.connect(dest);lfo.connect(lfoS);lfoS.connect(lfoG);lfoG.connect(vca.gain);'+
+  'osc.start();lfo.start();apply(0)}'+
+  'function apply(tc){if(!ctx)return;var t=ctx.currentTime,k=tc===0?0.001:0.02,d=P.pulse.v;osc.frequency.setTargetAtTime(hz(P.pitch.v),t,k);filt.frequency.setTargetAtTime(fc(P.cutoff.v),t,k);'+
+  'lfoG.gain.setTargetAtTime(d/2,t,k);vca.gain.setTargetAtTime(1-d/2,t,k);lfo.frequency.setTargetAtTime(bpm/60*2,t,0.03)}'+
+  'function start(){build();if(ctx.state!=="running")ctx.resume();out.gain.setTargetAtTime(0.22,ctx.currentTime,0.02);started=true;document.getElementById("hint").style.display="none";draw()}'+
+  'function stop(){if(ctx)out.gain.setTargetAtTime(0,ctx.currentTime,0.02);started=false;draw()}'+
+  'function setMonitor(on){monitor=!!on;if(ctx)mon.gain.setTargetAtTime(monitor?1:0,ctx.currentTime,0.01)}'+
+  'function setBpm(b){b=+b;if(b>0){bpm=Math.min(300,Math.max(20,b));apply();draw()}}'+
+  'function emit(o){if(window.parent&&window.parent!==window){try{window.parent.postMessage(o,"*")}catch(e){}}}'+
+  'function setParam(id,v,fromHost){var p=P[id];if(!p)return;p.v=cl(v);apply();draw();if(!fromHost)emit({type:"scion-param",id:id,value:p.v})}'+
+  'function manifest(){return{name:CFG.name,kind:"probe",params:Object.keys(P).map(function(id){return{id:id,label:P[id].label,group:P[id].group,value:P[id].v}})}}'+
+  'window.scionDeck={version:1,manifest:manifest,getStream:function(){build();return dest.stream},set:function(id,v){setParam(id,v,true)},get:function(id){return P[id]?P[id].v:undefined},start:start,stop:stop,setMonitor:setMonitor,setBpm:setBpm};'+
+  'window.addEventListener("message",function(e){var m=e.data||{},s=e.source;function rep(o){try{s&&s.postMessage(o,"*")}catch(err){}}'+
+  'switch(m.type){case"request-audio-stream":build();try{s.postMessage({type:"audio-stream",id:m.id,stream:dest.stream},"*")}catch(err){}break;'+
+  'case"set-monitor":setMonitor(m.on);break;case"resume-audio":start();break;case"suspend-audio":stop();break;case"set-bpm":setBpm(m.bpm);break;'+
+  'case"scion-hello":rep({type:"scion-manifest",manifest:manifest()});break;case"scion-set":setParam(m.id,m.value,true);break}});'+
+  'var cv=document.getElementById("cv"),g=cv.getContext("2d"),pad=document.getElementById("pad"),hud=document.getElementById("hud");'+
+  'function fmtHz(f){return f>=1000?(f/1000).toFixed(2)+" kHz":f.toFixed(0)+" Hz"}'+
+  'function draw(){var r=pad.getBoundingClientRect(),d=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,r.width*d|0),h=Math.max(1,r.height*d|0);if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}'+
+  'g.fillStyle="#07090c";g.fillRect(0,0,w,h);g.strokeStyle="#18202a";g.lineWidth=1;for(var i=1;i<8;i++){g.beginPath();g.moveTo(w*i/8,0);g.lineTo(w*i/8,h);g.moveTo(0,h*i/8);g.lineTo(w,h*i/8);g.stroke()}'+
+  'var x=P.pitch.v*w,y=(1-P.cutoff.v)*h;g.strokeStyle=CFG.hue;g.globalAlpha=.5;g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.moveTo(0,y);g.lineTo(w,y);g.stroke();g.globalAlpha=1;'+
+  'g.beginPath();g.arc(x,y,(10+P.pulse.v*22)*d,0,6.283);g.fillStyle=started?CFG.hue:"#334";g.globalAlpha=.35;g.fill();g.globalAlpha=1;g.lineWidth=2*d;g.stroke();'+
+  'hud.innerHTML="<b>"+CFG.name+"</b> "+CFG.wave+" · "+bpm.toFixed(0)+" bpm<br>PITCH ↔ <b>"+fmtHz(hz(P.pitch.v))+"</b><br>CUTOFF ↕ <b>"+fmtHz(fc(P.cutoff.v))+"</b>";'+
+  'document.getElementById("pfl").style.width=(P.pulse.v*100)+"%";document.getElementById("pfv").textContent=Math.round(P.pulse.v*100)+"%"}'+
+  'function padAt(e){var r=pad.getBoundingClientRect();setParam("pitch",(e.clientX-r.left)/r.width);setParam("cutoff",1-(e.clientY-r.top)/r.height)}'+
+  'pad.addEventListener("pointerdown",function(e){e.preventDefault();try{pad.setPointerCapture(e.pointerId)}catch(_){}start();padAt(e)});'+
+  'pad.addEventListener("pointermove",function(e){if(e.buttons||e.pointerType==="touch")if(pad.hasPointerCapture&&pad.hasPointerCapture(e.pointerId))padAt(e)});'+
+  'var pf=document.getElementById("pf");function pfAt(e){var r=pf.getBoundingClientRect();setParam("pulse",(e.clientX-r.left)/r.width)}'+
+  'pf.addEventListener("pointerdown",function(e){e.preventDefault();try{pf.setPointerCapture(e.pointerId)}catch(_){}start();pfAt(e)});'+
+  'pf.addEventListener("pointermove",function(e){if(pf.hasPointerCapture&&pf.hasPointerCapture(e.pointerId))pfAt(e)});'+
+  'window.addEventListener("resize",draw);draw();emit({type:"scion-manifest",manifest:manifest()})})();</scr'+'ipt></body></html>').replace(/HUE/g,cfg.hue);
+}
+
+/* ================= state ================= */
+const state={mac:[.5,.5,.5,.5],maps:[],cc:true,xf:.5,bpm:120,running:false,userStopped:false,learn:null,touched:false,view:'ab',panel:'pads'};
+function mkDeck(key){return {key,frame:$('#deck'+key),spec:null,url:'',name:'',loaded:false,gen:0,manifest:null,params:new Map(),stream:null,mode:null,src:null,attempts:0,lastReq:0,
+  lastSet:new Map(),ctxs:[],held:false,cutHeld:false,error:null,legacy:false,swapped:false,stat:'',level:.8,kill:{lo:false,mid:false,hi:false},cut:false,rms:0,nodes:null};}
+const decks={A:mkDeck('A'),B:mkDeck('B')};
+const DL=[decks.A,decks.B];
+const phone=()=>window.matchMedia('(max-width:599px), (max-width:760px) and (min-height:521px)').matches; // stacked portrait layout
+const compact=()=>window.matchMedia('(max-width:1239px)').matches; // tabs + slide-up sheet
+
+/* ================= small UI parts ================= */
+function makeFader(el,o){ // custom horizontal fader: no native range input
+  el.innerHTML='<div class="tr"><div class="fl"></div><div class="kn"></div></div><span class="lb"></span><span class="vl"></span>';
+  el.tabIndex=0;el.setAttribute('role','slider');el.setAttribute('aria-label',o.label);
+  const fl=el.querySelector('.fl'),kn=el.querySelector('.kn'),lb=el.querySelector('.lb'),vl=el.querySelector('.vl');
+  lb.textContent=o.label;let v=o.value;
+  function paint(){fl.style.width=(v*100)+'%';kn.style.left=(v*100)+'%';const t=o.fmt?o.fmt(v):Math.round(v*100)+'%';vl.textContent=t;el.setAttribute('aria-valuetext',t)}
+  function at(e){const r=el.getBoundingClientRect();let nv=clamp((e.clientX-r.left-4)/(r.width-8));if(nv<.012)nv=0;if(nv>.988)nv=1;if(o.detent!==undefined&&Math.abs(nv-o.detent)<.025)nv=o.detent;v=nv;paint();o.set(v)}
+  el.addEventListener('pointerdown',e=>{e.preventDefault();el.focus({preventScroll:true});try{el.setPointerCapture(e.pointerId)}catch(_){}at(e)});
+  el.addEventListener('pointermove',e=>{if(el.hasPointerCapture(e.pointerId))at(e)});
+  el.addEventListener('keydown',e=>{const d=e.key==='ArrowRight'||e.key==='ArrowUp'?.02:e.key==='ArrowLeft'||e.key==='ArrowDown'?-.02:0;if(d){e.preventDefault();v=clamp(v+d);paint();o.set(v)}});
+  paint();
+  return {set(nv){v=clamp(nv);paint()},get:()=>v};
+}
+function makeXY(el,ix,iy){
+  el.innerHTML='<div class="ar"><div class="hl"></div><div class="vl2"></div><div class="dot"></div></div><div class="t ty"><b></b><span></span></div><div class="t tx"><b></b><span></span></div>';
+  const ar=el.querySelector('.ar'),dot=el.querySelector('.dot'),hl=el.querySelector('.hl'),vl=el.querySelector('.vl2'),ty=el.querySelector('.ty'),tx=el.querySelector('.tx');
+  let g=null; // where the finger landed: LEARN picks the axis by travel since pointerdown, never by the landing jump
+  function at(e,down){const r=ar.getBoundingClientRect(),x=clamp((e.clientX-r.left)/r.width),y=clamp(1-(e.clientY-r.top)/r.height);
+    setMacro(ix,x);setMacro(iy,y);
+    if(down)g={x,y};else if(g&&state.learn)learnTravel(ix,iy,Math.abs(x-g.x),Math.abs(y-g.y))}
+  el.addEventListener('pointerdown',e=>{e.preventDefault();el.focus({preventScroll:true});try{el.setPointerCapture(e.pointerId)}catch(_){}wake();at(e,true)});
+  el.addEventListener('pointermove',e=>{if(el.hasPointerCapture(e.pointerId))at(e,false)});
+  const end=()=>{g=null};el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
+  el.addEventListener('keydown',e=>{const k=e.key;const dx=k==='ArrowRight'?.03:k==='ArrowLeft'?-.03:0,dy=k==='ArrowUp'?.03:k==='ArrowDown'?-.03:0;
+    if(dx||dy){e.preventDefault();wake();if(dx)setMacro(ix,clamp(state.mac[ix]+dx),true);if(dy)setMacro(iy,clamp(state.mac[iy]+dy),true)}});
+  const cache=['',''];
+  // target text is fitted, not clipped: full list -> first target + count -> shortened name (full detail lives in the matrix)
+  function fit(row,i,slot){if(!row.clientWidth){cache[slot]='';return}const tg=macroTargets(i),key=tg.join('|')+'@'+row.clientWidth;if(cache[slot]===key)return;const sp=row.lastChild;
+    const forms=tg.length?[tg.join(', '),tg[0]+(tg.length>1?' +'+(tg.length-1):''),tg[0].slice(0,9)+'…'+(tg.length>1?' +'+(tg.length-1):''),tg[0].slice(0,5)+'…']:['unassigned','—'];
+    row.title=tg.length?'M'+(i+1)+' → '+tg.join(', '):'M'+(i+1)+' unassigned';
+    for(const f of forms){sp.textContent=(tg.length?' → ':' ')+f;if(row.scrollWidth<=row.clientWidth)break}
+    cache[slot]=key}
+  const n3=v=>String(Math.round(v*100)).padStart(3,' ');
+  return {paint(){const x=state.mac[ix],y=state.mac[iy];dot.style.left=vl.style.left=(x*100)+'%';dot.style.top=hl.style.top=((1-y)*100)+'%';
+    ty.firstChild.textContent='M'+(iy+1)+' ↕ '+n3(y);tx.firstChild.textContent='M'+(ix+1)+' ↔ '+n3(x);fit(ty,iy,0);fit(tx,ix,1)}};
+}
+let banT=0;
+function banner(txt,toast){const b=$('#banner');$('#banTxt').textContent=txt;b.classList.add('show');b.classList.toggle('toast',!!toast);$('#banX').style.display=toast?'none':'';clearTimeout(banT);$('#banTxt').title=txt;if(toast)banT=setTimeout(()=>b.classList.remove('show'),toast===true?1800:toast)}
+function hideBanner(){$('#banner').classList.remove('show')}
+
+/* ================= audio graph ================= */
+let ctx=null,mix,limiter,clip,master,recDest,anM,rec=null,recChunks=[],recT0=0;
+function ensureAudio(){
+  if(ctx)return ctx;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  mix=ctx.createGain();limiter=ctx.createDynamicsCompressor();
+  // master: -3 dB bus trim (two decks at unity stay out of gain reduction), fast limiter, then a hard ceiling.
+  // The DynamicsCompressor adds automatic make-up gain and lets attack transients through, so on its own it is not a brickwall:
+  // its make-up is cancelled in `master` and a waveshaper (linear below 0.75, saturating to 0.88, input clamped) guarantees |out| <= 0.88 (-1.1 dBFS).
+  const THR=-3,RATIO=20;mix.gain.value=.708;
+  limiter.threshold.value=THR;limiter.knee.value=0;limiter.ratio.value=RATIO;limiter.attack.value=.002;limiter.release.value=.12;
+  clip=ctx.createWaveShaper();{const N=8193,c=new Float32Array(N),T=.75,C=.89;for(let i=0;i<N;i++){const x=i/(N-1)*2-1,a=Math.abs(x);c[i]=a<=T?x:Math.sign(x)*(T+(C-T)*Math.tanh((a-T)/(C-T)))}clip.curve=c;clip.oversample='none'}
+  master=ctx.createGain();master.gain.value=Math.pow(10,(THR*(1-1/RATIO))*.6/20);anM=ctx.createAnalyser();anM.fftSize=2048;anM.smoothingTimeConstant=0;recDest=ctx.createMediaStreamDestination();
+  mix.connect(limiter);limiter.connect(master);master.connect(clip);clip.connect(ctx.destination);clip.connect(recDest);clip.connect(anM);
+  for(const d of DL){
+    const n={};const bq=(type,f)=>{const b=ctx.createBiquadFilter();b.type=type;b.frequency.value=f;b.Q.value=Math.SQRT1_2;return b};
+    n.inp=ctx.createGain();n.sum=ctx.createGain();n.band={lo:ctx.createGain(),mid:ctx.createGain(),hi:ctx.createGain()};
+    // 3-band isolator, 24 dB/oct Linkwitz-Riley splits at 250 Hz and 2.5 kHz; a kill is a true kill
+    const l1=bq('lowpass',250),l2=bq('lowpass',250),h1=bq('highpass',2500),h2=bq('highpass',2500),m1=bq('highpass',250),m2=bq('highpass',250),m3=bq('lowpass',2500),m4=bq('lowpass',2500);
+    n.inp.connect(l1);l1.connect(l2);l2.connect(n.band.lo);
+    n.inp.connect(m1);m1.connect(m2);m2.connect(m3);m3.connect(m4);m4.connect(n.band.mid);
+    n.inp.connect(h1);h1.connect(h2);h2.connect(n.band.hi);
+    for(const k in n.band){n.band[k].gain.value=d.kill[k]?0:1;n.band[k].connect(n.sum)}
+    n.level=ctx.createGain();n.level.gain.value=lvGain(d.level);n.an=ctx.createAnalyser();n.an.fftSize=2048;n.an.smoothingTimeConstant=0;
+    n.cut=ctx.createGain();n.cut.gain.value=d.cut?0:1;n.xf=ctx.createGain();
+    n.sum.connect(n.level);n.level.connect(n.an);n.level.connect(n.cut);n.cut.connect(n.xf);n.xf.connect(mix);
+    d.nodes=n;
+  }
+  applyXf(true);
+  return ctx;
+}
+const lvGain=v=>v*v*1.5625; // 0.8 -> unity, top = +3.9 dB
+const lvDb=v=>v<=0?'-∞ dB':(20*Math.log10(lvGain(v))).toFixed(1)+' dB';
+function applyXf(now){ if(!ctx)return; const t=state.xf*Math.PI/2,a=Math.cos(t),b=Math.sin(t),tc=now?0.001:0.015; // equal power
+  decks.A.nodes.xf.gain.setTargetAtTime(a,ctx.currentTime,tc);decks.B.nodes.xf.gain.setTargetAtTime(b,ctx.currentTime,tc)}
+function setLevel(d,v){d.level=v;if(ctx)d.nodes.level.gain.setTargetAtTime(lvGain(v),ctx.currentTime,.015)}
+function setKill(d,k,on){d.kill[k]=on;if(ctx)d.nodes.band[k].gain.setTargetAtTime(on?0:1,ctx.currentTime,.012);paintKills(d)}
+function setCut(d,on){d.cut=on;if(ctx)d.nodes.cut.gain.setTargetAtTime(on?0:1,ctx.currentTime,.008);$('#bCut'+d.key).classList.toggle('on',on);directCut(d)}
+function paintKills(d){const box=$('#ch'+d.key+' .kills');box.querySelectorAll('button').forEach(b=>{const k=b.dataset.k;
+  if(k==='all'){const all=d.kill.lo&&d.kill.mid&&d.kill.hi;b.classList.toggle('on',all);b.classList.toggle('hot',true)}else b.classList.toggle('on',!d.kill[k])})}
+
+/* ================= deck loading, handshake, stream acquisition ================= */
+function win(d){return d.frame.contentWindow}
+function sameOrigin(d){try{const w=win(d);if(!w)return null;void w.document.body;return w}catch(e){return null}}
+function bridge(d){const w=sameOrigin(d);try{return w&&w.scionDeck&&typeof w.scionDeck==='object'?w.scionDeck:null}catch(e){return null}}
+function post(d,msg){try{const w=win(d);w&&w.postMessage(msg,'*')}catch(e){}}
+function resolveSpec(spec){ if(spec==='test')return null; try{const u=new URL(spec,location.href);if(!/^https?:$/.test(u.protocol))return null;if(!u.searchParams.has('embed'))u.searchParams.set('embed','1');return u.href}catch(e){return null}}
+function nameOf(spec){ if(spec==='test')return 'PROBE'; try{return decodeURIComponent(new URL(spec,location.href).pathname.split('/').pop().replace(/\.html?$/,''))||spec}catch(e){return spec}}
+function loadDeck(d,spec){
+  if(spec!=='test'&&!resolveSpec(spec)){banner('Not a loadable URL: '+spec,2500);spec=d.spec||'test'}
+  disconnect(d);if(d.cut&&d.cutHeld)setCut(d,false);d.spec=spec;d.gen++;d.loaded=false;d.manifest=null;d.params=new Map();d.attempts=0;d.lastReq=0;d.lastSet=new Map();d.ctxs=[];d.held=d.cutHeld=false;d.error=null;d.legacy=false;
+  const f=d.frame;
+  if(spec==='test'){f.removeAttribute('src');f.srcdoc=probeDoc(d.key);d.url='';d.name='PROBE '+d.key}
+  else{d.url=resolveSpec(spec);f.removeAttribute('srcdoc');f.src=d.url;d.name=nameOf(spec);probeUrl(d)}
+  const op=$('#op'+d.key);if(d.url){op.href=d.url.replace(/([?&])embed=1(&|$)/,(m,a,b)=>b?a:'').replace(/[?&]$/,'');op.style.display=''}else op.style.display='none';
+  syncPickers();paintDeck(d);renderMatrix();writeUrl();
+}
+// an iframe gives no load error: ask the server (same origin: real status; elsewhere: at least "reachable at all")
+function probeUrl(d){const gen=d.gen,fail=msg=>{if(d.gen!==gen)return;d.error=msg;dropMaps(d,()=>true);paintDeck(d);renderMatrix()};
+  try{const same=new URL(d.url).origin===location.origin;
+    fetch(d.url,same?{method:'HEAD',cache:'no-store'}:{mode:'no-cors',cache:'no-store'}).then(r=>{if(same&&!r.ok)fail(r.status===404?'404 · page not found':'HTTP '+r.status+' · did not load')},()=>fail('unreachable · did not load'))}catch(e){}}
+// mappings that point at params a freshly swapped-in deck does not have are removed, not left looking assigned
+function dropMaps(d,gone){if(!d.swapped)return;d.swapped=false;const n=state.maps.length;
+  state.maps=state.maps.filter(m=>![m.src,m.dst].some(k=>!isMacro(k)&&splitKey(k).d===d&&gone(splitKey(k).id)));
+  const k=n-state.maps.length;if(k){renderMatrix();paintPads();writeUrl();if(!state.learn)banner(k+' mapping'+(k>1?'s':'')+' to deck '+d.key+' removed — '+d.name+' has no such param',2600)}}
+function swapDeck(d,spec){d.swapped=true;loadDeck(d,spec)}
+function disconnect(d){if(d.src){try{d.src.disconnect()}catch(e){}}d.src=null;d.stream=null;d.mode=null}
+function onFrameLoad(d){
+  if(!d.spec)return;d.loaded=true;const gen=d.gen;d.touched=false;watchDeck(d);hookCtx(d);
+  setTimeout(()=>{if(d.gen===gen&&!d.manifest){d.legacy=true;dropMaps(d,()=>true);paintDeck(d);renderMatrix();paintPads()}},1200);
+  [40,350,1000,2500,5000].forEach(ms=>setTimeout(()=>{if(d.gen===gen&&!d.manifest)hello(d)},ms));
+  if(state.running)setTimeout(()=>{if(d.gen===gen){startDeck(d);burst(d)}},120);
+  if(state.bpmTouched)setTimeout(()=>{if(d.gen===gen)sendBpm(d)},300);
+}
+function hello(d){const b=bridge(d);if(b&&typeof b.manifest==='function'){try{const m=b.manifest();if(m){setManifest(d,m);return}}catch(e){}}post(d,{type:'scion-hello'})}
+function setManifest(d,m){
+  if(!m||!Array.isArray(m.params))return;
+  d.manifest=m;d.params=new Map();
+  for(const p of m.params){if(!p||p.id===undefined)continue;const id=String(p.id);d.params.set(id,{id,label:String(p.label||id),group:String(p.group||''),value:clamp(+p.value||0)})}
+  if(m.name)d.name=String(m.name);d.legacy=false;
+  dropMaps(d,id=>!d.params.has(id));
+  paintDeck(d);renderMatrix();paintPads();
+}
+function legacyStream(w){ // same-origin bridges the legacy pages expose
+  try{if(typeof w.__mandallaGetAudioStream==='function'){const s=w.__mandallaGetAudioStream();if(s&&s.getAudioTracks)return s}}catch(e){}
+  // smith-* family: a top-level `let destinationStream` (MediaStreamAudioDestinationNode); lexical globals are only reachable by evaluating in the deck's realm
+  try{const s=w.eval("(function(){var n=['destinationStream','streamDestination','parentStreamDest','recordDest','recDest','mediaDest','streamDest'];for(var i=0;i<n.length;i++){try{var v=eval(n[i]);if(v&&v.stream&&v.stream.getAudioTracks)return v.stream;if(v&&v.getAudioTracks&&v.getAudioTracks().length)return v}catch(e){}}return null})()");if(s)return s}catch(e){}
+  return null;
+}
+function tryConnect(d,active){
+  if(d.stream||!d.loaded)return !!d.stream;
+  const w=sameOrigin(d);
+  if(w){
+    const b=bridge(d);
+    if(b&&typeof b.getStream==='function'){try{const s=b.getStream();if(s&&s.getAudioTracks)return connect(d,s,'bridge')}catch(e){}}
+    const s=legacyStream(w);if(s)return connect(d,s,'legacy');
+  }
+  if(active&&performance.now()-d.lastReq>350){d.lastReq=performance.now();post(d,{type:'request-audio-stream',id:d.frame.id})}
+  d.attempts++;paintDeck(d);
+  return false;
+}
+function connect(d,stream,mode){
+  if(d.stream===stream)return true;
+  try{ensureAudio();if(!stream.getAudioTracks().length)return false;const node=ctx.createMediaStreamSource(stream);disconnect(d);node.connect(d.nodes.inp);d.src=node;d.stream=stream;d.mode=mode}catch(e){return false}
+  setMonitor(d,false); // the rack is now the only path to the speakers: no doubled audio
+  if(!state.userStopped)ctx.resume().catch(()=>{});
+  paintDeck(d);return true;
+}
+function setMonitor(d,on){const b=bridge(d);try{if(b&&b.setMonitor)b.setMonitor(on)}catch(e){}
+  const w=sameOrigin(d);try{if(w&&typeof w.__mandallaSetMonitor==='function')w.__mandallaSetMonitor(on)}catch(e){}
+  post(d,{type:'set-monitor',on:!!on})}
+function startDeck(d){const b=bridge(d);if(b&&typeof b.start==='function'){try{b.start();return}catch(e){}}
+  const w=sameOrigin(d);if(w&&typeof w.__mandallaResumeAudio==='function'){try{Promise.resolve(w.__mandallaResumeAudio()).then(()=>tryConnect(d,false)).catch(()=>{});return}catch(e){}}
+  if(d.held){d.held=false;releaseDirect(d)}
+  post(d,{type:'resume-audio'})}
+function stopDeck(d){const b=bridge(d);if(b&&typeof b.stop==='function'){try{b.stop();return}catch(e){}}
+  const w=sameOrigin(d);if(w&&typeof w.__mandallaSuspendAudio==='function'){try{Promise.resolve(w.__mandallaSuspendAudio()).catch(()=>{});return}catch(e){}}
+  post(d,{type:'suspend-audio'});
+  if(!d.stream&&d.loaded&&holdDirect(d))d.held=true}
+/* A legacy deck with no reachable stream plays "direct". The rack cannot mix it, but for same-origin pages it can still hold the
+   deck's AudioContext(s): contexts made after load are recorded by wrapping the constructor, earlier ones are looked up by name. */
+function hookCtx(d){d.ctxs=[];const w=sameOrigin(d);if(!w||bridge(d))return;
+  for(const n of ['AudioContext','webkitAudioContext']){try{const O=w[n];if(typeof O!=='function'||O.__scion)continue;
+    const W=function(...a){const c=new O(...a);d.ctxs.push(c);return c};W.prototype=O.prototype;W.__scion=true;try{Object.setPrototypeOf(W,O)}catch(e){}w[n]=W}catch(e){}}}
+function directCtxs(d){const w=sameOrigin(d);if(!w||d.stream)return [];const out=d.ctxs.slice();
+  try{const f=w.eval("(function(){var n=['audioCtx','audioContext','audioctx','actx','ctx','ac','context','AC'],o=[];for(var i=0;i<n.length;i++){try{var v=eval(n[i]);if(v&&typeof v.suspend==='function'&&typeof v.createGain==='function')o.push(v)}catch(e){}}return o})()");
+    for(const c of f)if(!out.includes(c))out.push(c)}catch(e){}
+  return out.filter(c=>c.state!=='closed')}
+function holdDirect(d){let n=0;for(const c of directCtxs(d)){n++;if(c.state==='running')c.suspend().catch(()=>{})}return n}
+function releaseDirect(d){if(d.cut&&d.cutHeld)return;for(const c of directCtxs(d)){if(c.state==='suspended')c.resume().catch(()=>{})}}
+function directCut(d){if(d.stream)return;const proto=!sameOrigin(d)&&!!d.manifest; // a protocol deck on another origin: CUT is set-monitor off
+  if(d.cut){if(proto){post(d,{type:'set-monitor',on:false});d.cutHeld=true}else if(holdDirect(d))d.cutHeld=true}
+  else if(d.cutHeld){d.cutHeld=false;if(proto)post(d,{type:'set-monitor',on:true});else if(!d.held)releaseDirect(d)}}
+function burst(d){const gen=d.gen;[0,200,600,1200,2500].forEach(ms=>setTimeout(()=>{if(d.gen===gen&&!d.stream){tryConnect(d,true)}},ms))}
+function setRunning(on,drive){
+  state.running=on;const b=$('#bStart');b.textContent=on?'■ STOP':'▶ START';b.classList.toggle('on',on);
+  if(on){state.userStopped=false;ensureAudio();ctx.resume().catch(()=>{});if(drive)for(const d of DL){if(d.loaded){startDeck(d);burst(d)}}}
+  else if(drive){state.userStopped=true;for(const d of DL)d.touched=false;for(const d of DL)stopDeck(d);if(ctx)ctx.suspend().catch(()=>{});
+    const loose=DL.filter(d=>statusOf(d).c==='direct'&&!d.held&&!d.manifest);if(loose.length)banner('Deck '+loose.map(d=>d.key).join(' + ')+' plays direct and is out of the rack\'s reach — stop it inside the deck',3200)}
+}
+function activated(){return navigator.userActivation?navigator.userActivation.hasBeenActive:state.touched}
+// A first touch anywhere (START, a macro, or inside a deck) must end up audible through the mixer:
+// "The player touched inside a deck": same-origin decks get capture listeners on their window; others are detected by focus moving into the frame.
+function deckTouched(d){
+  state.touched=true;if(d.held){d.held=false;releaseDirect(d)}if(d.touched&&d.stream&&state.running)return;d.touched=true;
+  if(state.userStopped){state.userStopped=false;if(ctx)ctx.resume().catch(()=>{})} // touching a deck after STOP must not be silent
+  if(!d.stream){d.attempts=0;burst(d)}
+  if(!state.running){setRunning(true,false);
+    // bring the other protocol deck up too so the crossfader has two live sides
+    for(const o of DL){if(o!==d&&o.loaded&&bridge(o)){startDeck(o);burst(o)}}}
+}
+function watchDeck(d){const w=sameOrigin(d);if(!w)return;const h=()=>deckTouched(d);
+  for(const t of ['pointerdown','touchstart','mousedown','keydown']){try{w.addEventListener(t,h,{capture:true,passive:true})}catch(e){}}}
+setInterval(()=>{ // keep chasing streams for decks that are live but not yet in the mixer (never just because a picker was opened)
+  if(!activated()||!state.running)return;
+  for(const d of DL){if(!d.stream&&d.loaded&&d.attempts<40)tryConnect(d,false)}
+},300);
+window.addEventListener('blur',()=>{setTimeout(()=>{for(const d of DL){if(document.activeElement===d.frame)deckTouched(d)}},60)});
+window.addEventListener('pointerdown',()=>{state.touched=true},true);
+
+window.addEventListener('message',e=>{
+  const m=e.data;if(!m||typeof m!=='object')return;
+  const d=DL.find(x=>{try{return e.source===x.frame.contentWindow}catch(_){return false}});if(!d)return;
+  switch(m.type){
+    case 'scion-manifest':setManifest(d,m.manifest);break;
+    case 'scion-param':onDeckParam(d,String(m.id),clamp(+m.value||0));break;
+    case 'audio-stream':if(m.stream&&m.stream.getAudioTracks)connect(d,m.stream,'post');break;
+  }
+});
+
+/* ================= mapping engine ================= */
+const pk=(d,id)=>d.key+'.'+id;
+function splitKey(k){const i=k.indexOf('.');return {d:decks[k.slice(0,i)],id:k.slice(i+1)}}
+const isMacro=k=>/^m[0-3]$/.test(k);
+function labelOf(k){if(isMacro(k))return 'M'+(+k[1]+1);const {d,id}=splitKey(k);if(!d)return k;const p=d.params.get(id);return d.key+'·'+(p?p.label:id+((d.manifest||d.legacy||d.error)?' (n/a)':''))}
+function macroTargets(i){return state.maps.filter(m=>m.src==='m'+i).map(m=>labelOf(m.dst))}
+function shape(m,v){return clamp(m.lo+(m.hi-m.lo)*(m.inv?1-v:v))}
+function setParam(d,id,v){
+  if(!d)return;v=clamp(v);d.lastSet.set(id,{v,t:performance.now()});
+  const p=d.params.get(id);if(p)p.value=v;dirtyVals=true;
+  const b=bridge(d);if(b&&typeof b.set==='function'){try{b.set(id,v);return}catch(e){}}
+  post(d,{type:'scion-set',id,value:v});
+}
+function applyFrom(src,v){
+  const macro=isMacro(src);if(!macro&&!state.cc)return;
+  for(const m of state.maps){if(m.src!==src)continue;const {d,id}=splitKey(m.dst);setParam(d,id,shape(m,v))}
+}
+function setMacro(i,v,user){
+  const prev=state.mac[i];state.mac[i]=v;paintPads();
+  if(user&&state.learn)learnMacro(i,v,prev);
+  applyFrom('m'+i,v);
+}
+function onDeckParam(d,id,v){
+  const ls=d.lastSet.get(id);
+  if(ls&&performance.now()-ls.t<250&&Math.abs(ls.v-v)<.03)return; // echo of something the rack just set: never re-trigger (no feedback loops)
+  let p=d.params.get(id);if(!p){p={id,label:id,group:'',value:v};d.params.set(id,p)}
+  p.value=v;dirtyVals=true;
+  if(state.learn)learnParam(d,id,v);
+  applyFrom(pk(d,id),v);
+}
+function addMap(src,dst,o){
+  if(src===dst)return null;
+  let m=state.maps.find(x=>x.src===src&&x.dst===dst);
+  if(!m){m=Object.assign({src,dst,lo:0,hi:1,inv:false},o||{});state.maps.push(m)}
+  renderMatrix();paintPads();writeUrl();return m;
+}
+function delMap(m){const i=state.maps.indexOf(m);if(i>=0)state.maps.splice(i,1);renderMatrix();paintPads();writeUrl()}
+
+/* ---- learn: wiggle a deck control, then a macro (macro -> control) or a control in the other deck (first drives second) ---- */
+function startLearn(){
+  state.learn={stage:1,rng:new Map(),first:null,mac0:state.mac.slice(),rng2:new Map()};
+  app.classList.add('learning');$('#bLearn').classList.add('on');if(compact()&&state.panel!=='pads')setPanel('pads');
+  const hasM=DL.some(d=>d.manifest);
+  banner(hasM?'LEARN 1/2 · move a control inside a deck':'LEARN · no deck has announced params yet — move a control inside a SCION deck');
+}
+function endLearn(msg){state.learn=null;app.classList.remove('learning');$('#bLearn').classList.remove('on');if(msg)banner(msg,2200);else hideBanner()}
+function track(map,key,v){let r=map.get(key);if(!r){r={lo:v,hi:v};map.set(key,r)}r.lo=Math.min(r.lo,v);r.hi=Math.max(r.hi,v);return r.hi-r.lo}
+function best(map){let bk=null,bv=-1;map.forEach((r,k)=>{if(r.hi-r.lo>bv){bv=r.hi-r.lo;bk=k}});return bk}
+function learnParam(d,id,v){
+  const L=state.learn,key=pk(d,id);
+  if(L.first&&splitKey(L.first).d!==d){ // a control in the OTHER deck: cross-couple first -> this
+    if(track(L.rng2,key,v)>.04){const src=L.first,dst=best(L.rng2);state.cc=true;paintCC();addMap(src,dst);endLearn('COUPLED  '+labelOf(src)+' → '+labelOf(dst))}
+    return;
+  }
+  const span=track(L.rng,key,v);
+  if(span>.03||L.first){const f=best(L.rng);if(f!==L.first||L.stage===1){L.first=f;L.stage=2;L.mac0=state.mac.slice();
+    banner('LEARN 2/2 · '+labelOf(f)+' picked → drag a macro pad along the axis to bind, or move a deck '+(d.key==='A'?'B':'A')+' control to couple')}}
+}
+function learnBind(i){const dst=state.learn.first;addMap('m'+i,dst);endLearn('BOUND  M'+(i+1)+' → '+labelOf(dst))}
+function learnMacro(i,v){ // keyboard / API: one macro moves at a time
+  const L=state.learn;if(L.stage!==2||!L.first)return;
+  if(Math.abs(v-L.mac0[i])>.05)learnBind(i);
+}
+function learnTravel(ix,iy,dx,dy){ // pad drag: the axis the finger actually travelled along since touch-down wins
+  const L=state.learn;if(L.stage!==2||!L.first)return;
+  if(Math.max(dx,dy)>.1)learnBind(dx>=dy?ix:iy);
+}
+
+/* ================= URL: decks in ?a=&b=, mappings in #map= ================= */
+const encK=k=>isMacro(k)?k:k[0]+'.'+encodeURIComponent(k.slice(2));
+const decK=k=>isMacro(k)?k:(/^[AB]\./.test(k)?k[0]+'.'+decodeURIComponent(k.slice(2)):null);
+function serializeMaps(){return state.maps.map(m=>[encK(m.src),encK(m.dst),Math.round(m.lo*100),Math.round(m.hi*100),m.inv?1:0].join(',')).join(';')}
+function parseMaps(s){const out=[];for(const e of s.split(';')){if(!e)continue;const p=e.split(',');let src,dst;try{src=decK(p[0]||'');dst=decK(p[1]||'')}catch(_){continue}
+  if(!src||!dst||isMacro(dst)||src===dst)continue;const lo=clamp((+p[2]||0)/100),hi=p[3]===undefined||p[3]===''?1:clamp((+p[3]||0)/100);out.push({src,dst,lo,hi,inv:p[4]==='1'})}return out}
+let urlT=0;
+function shareUrl(){const u=new URL(location.href);u.searchParams.set('a',decks.A.spec||'test');u.searchParams.set('b',decks.B.spec||'test');
+  u.hash='map='+serializeMaps()+'&cc='+(state.cc?1:0);return u.href}
+function writeUrl(){clearTimeout(urlT);urlT=setTimeout(()=>{try{history.replaceState(null,'',shareUrl())}catch(e){}},150)}
+function readUrl(){
+  const u=new URL(location.href),h=new URLSearchParams(u.hash.replace(/^#/,''));
+  const a=u.searchParams.get('a')||'test',b=u.searchParams.get('b')||'test';
+  if(h.has('map'))state.maps=parseMaps(h.get('map'));
+  else if(a==='test'&&b==='test')state.maps=parseMaps('m0,A.pitch,0,100,0;m1,A.cutoff,0,100,0;m2,B.pitch,0,100,0;m3,B.cutoff,0,100,0');
+  if(h.has('cc'))state.cc=h.get('cc')!=='0';
+  return {a,b};
+}
+function copyLink(){const url=shareUrl();try{history.replaceState(null,'',url)}catch(e){}
+  const done=()=>banner('Link copied — it restores both decks and every mapping',2000);
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(done,()=>banner('Link is in the address bar',2000));else banner('Link is in the address bar',2000)}
+
+/* ================= pickers ================= */
+function buildPicker(sel){
+  let h='';for(const [fam,items] of CATALOG){h+='<optgroup label="'+esc(fam)+'">'+items.map(([n,u])=>'<option value="'+esc(u)+'">'+esc(n)+'</option>').join('')+'</optgroup>'}
+  h+='<optgroup label="Anything else"><option value="__url">Paste a URL…</option></optgroup>';sel.innerHTML=h;
+}
+function syncPickers(){for(const d of DL){const sel=$('#sel'+d.key);let o=Array.from(sel.options).find(x=>x.value===d.spec);
+  if(!o&&d.spec){o=document.createElement('option');o.value=d.spec;o.textContent=nameOf(d.spec)+' (URL)';sel.lastElementChild.insertBefore(o,sel.lastElementChild.firstChild)}
+  if(o)sel.value=d.spec}}
+let urlFor=null;
+function openUrlBox(d){urlFor=d;$('#urlLab').textContent='Deck '+d.key+' URL';$('#urlIn').value=d.spec==='test'?'':d.spec;$('#urlbox').classList.add('show');$('#urlIn').focus()}
+function closeUrlBox(){$('#urlbox').classList.remove('show');urlFor=null;syncPickers()}
+for(const d of DL){const sel=$('#sel'+d.key);buildPicker(sel);
+  sel.addEventListener('change',()=>{const v=sel.value;if(v==='__url')openUrlBox(d);else{$('#urlbox').classList.remove('show');urlFor=null;swapDeck(d,v)}});
+  d.frame.addEventListener('load',()=>onFrameLoad(d))}
+$('#urlGo').onclick=()=>{const v=$('#urlIn').value.trim(),d=urlFor;if(!v||!d)return;closeUrlBox();swapDeck(d,v)};
+$('#urlIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('#urlGo').click();if(e.key==='Escape')closeUrlBox()});
+$('#urlX').onclick=closeUrlBox;
+
+/* ================= painting ================= */
+function statusOf(d){
+  if(d.error)return {t:'error',c:'err',n:d.error,k:'err'};
+  if(d.stream)return {t:{bridge:'bridge',legacy:'legacy bridge',post:'postMessage'}[d.mode],c:'live',n:'',k:'live'};
+  if(d.loaded&&activated()&&d.attempts>=5){const reach=directCtxs(d).length>0||!!d.manifest; // protocol decks obey suspend-audio / set-monitor over postMessage
+    return {t:'direct',c:'direct',k:'direct'+(reach?1:0),reach,n:reach?'direct: STOP + CUT only':'direct: not in the mixer',
+      tip:'This deck plays through its own output. Level, EQ, crossfader and recording do not reach it'+(reach?'; STOP and CUT hold its audio engine.':'; stop it inside the deck.')}}
+  return {t:d.loaded?'ready':'loading',c:'',n:'',k:d.loaded?'ready':'loading'};
+}
+function paintDeck(d){
+  const s=statusOf(d),k=d.key;
+  $('#nm'+k).textContent=$('#cnm'+k).textContent=d.name;
+  for(const id of ['#st'+k,'#cst'+k]){const c=$(id);c.textContent=s.t;c.className='chip '+s.c}
+  $('#cn'+k).textContent=d.error?d.error:d.manifest?d.params.size+' params':(d.legacy?'legacy · no manifest':'');
+  $('#ch'+k).classList.toggle('bypass',s.c==='direct'||s.c==='err');const nt=$('#nt'+k);nt.textContent=s.n;nt.title=s.tip||'';nt.classList.toggle('err',s.c==='err');
+  const cut=$('#bCut'+k),dead=(s.c==='direct'&&!s.reach)||s.c==='err';cut.disabled=dead;
+  cut.title=dead?'Deck '+k+' is out of the rack\'s reach: CUT cannot silence it':s.c==='direct'?'Deck '+k+' plays direct: CUT holds its audio engine':'Cut deck '+k+' out of the mix';
+  if(s.c==='direct'&&d.cut)directCut(d); // a cut direct deck stays cut even if it wakes itself up
+  $('#tabInfo').textContent='A '+statusOf(decks.A).t+' · B '+statusOf(decks.B).t;
+  const sk=s.k+(d.legacy?'L':'');if(sk!==d.stat){d.stat=sk;renderMatrix()}
+}
+const pads=[makeXY($('#xy1'),0,1),makeXY($('#xy2'),2,3)];
+function paintPads(){pads[0].paint();pads[1].paint()}
+function paintCC(){const b=$('#bCC');b.textContent=state.cc?'COUPLE ON':'COUPLE OFF';b.classList.toggle('on',state.cc)}
+
+/* ---- matrix sheet ---- */
+let dirtyVals=false;const rowFaders=[];
+function paramOptions(sel,withMacros){
+  let h='';if(withMacros)h+='<optgroup label="Macros">'+[0,1,2,3].map(i=>'<option value="m'+i+'">M'+(i+1)+(i%2?' ↕ pad '+(i>>1?2:1):' ↔ pad '+(i>>1?2:1))+'</option>').join('')+'</optgroup>';
+  let found=isMacro(sel);
+  for(const d of DL){if(!d.params.size)continue;h+='<optgroup label="Deck '+d.key+' · '+esc(d.name)+'">';
+    d.params.forEach(p=>{const k=pk(d,p.id);if(k===sel)found=true;h+='<option value="'+esc(k)+'">'+d.key+'·'+esc(p.label)+(p.group?' ('+esc(p.group)+')':'')+'</option>'});h+='</optgroup>'}
+  if(!found&&sel)h+='<option value="'+esc(sel)+'">'+esc(sel)+' (not loaded)</option>';
+  return h;
+}
+function renderMatrix(){
+  const body=$('#sbody');if(!body)return;const sc=body.scrollTop;rowFaders.length=0;
+  let h='';
+  for(const d of DL){const st=statusOf(d),who='Deck '+d.key+' · '+esc(d.name)+': ';
+    if(d.error)h+='<div class="empty bad">'+who+'could not load ('+esc(d.error)+'). Pick another instrument or check the URL.</div>';
+    else if(d.manifest)continue;
+    else if(st.c==='direct')h+='<div class="empty warn">'+who+'legacy deck playing direct through its own output. Level, EQ, crossfader and recording do not reach it'+(st.reach?'; START/STOP and CUT hold its audio engine, BPM is sent.':'; stop it inside the deck.')+'</div>';
+    else if(d.legacy)h+='<div class="empty">'+who+'legacy deck, no manifest — nothing to map, but crossfade, level, EQ and BPM still apply.</div>';
+    else h+='<div class="empty">'+who+(d.loaded?'waiting for a manifest…':'loading…')+'</div>'}
+  const mac=state.maps.filter(m=>isMacro(m.src)),cc=state.maps.filter(m=>!isMacro(m.src));
+  const row=(m)=>{const i=state.maps.indexOf(m);return '<div class="asg'+(isMacro(m.src)?'':' cc')+'" data-i="'+i+'"><select class="s" aria-label="Source">'+paramOptions(m.src,true)+'</select><span>→</span><select class="d" aria-label="Target">'+paramOptions(m.dst,false)+'</select>'+
+    '<div class="rng"><div class="fader lo"></div><div class="fader hi"></div><button class="inv'+(m.inv?' on':'')+'" title="Invert">INV</button><button class="del" aria-label="Delete assignment">✕</button></div></div>'};
+  h+='<h3>QUICK MATRIX — tap to assign a macro</h3>';
+  if(DL.some(d=>d.params.size)){
+    h+='<table class="mx"><thead><tr><th style="text-align:left">param</th><th></th><th>M1↔</th><th>M2↕</th><th>M3↔</th><th>M4↕</th></tr></thead><tbody>';
+    for(const d of DL){if(!d.params.size)continue;h+='<tr class="grp"><td colspan="6">DECK '+d.key+' · '+esc(d.name.toUpperCase())+'</td></tr>';
+      d.params.forEach(p=>{const k=pk(d,p.id);h+='<tr class="d'+d.key.toLowerCase()+'" data-k="'+esc(k)+'"><td class="pn"><div>'+esc(p.label)+(p.group?' <span style="color:var(--mut)">'+esc(p.group)+'</span>':'')+'</div><div class="pv"><i></i></div></td><td class="vv"></td>'+
+        [0,1,2,3].map(i=>'<td><button class="cell'+(state.maps.some(m=>m.src==='m'+i&&m.dst===k)?' on':'')+'" data-m="'+i+'" aria-label="M'+(i+1)+' to '+esc(p.label)+'">'+(state.maps.some(m=>m.src==='m'+i&&m.dst===k)?'●':'·')+'</button></td>').join('')+'</tr>'})}
+    h+='</tbody></table>';
+  } else h+='<div class="empty">No deck has announced a manifest yet.</div>';
+  h+='<h3>MACRO ASSIGNMENTS</h3>'+(mac.length?mac.map(row).join(''):'<div class="empty">None yet. Tap a cell in the grid above, or press LEARN.</div>');
+  h+='<h3>CROSS-COUPLE '+(state.cc?'':'(off) ')+'— one deck plays the other</h3>'+(cc.length?cc.map(row).join(''):'<div class="empty">None yet. LEARN: wiggle a control in one deck, then one in the other.</div>');
+  h+='<div class="addrow"><button id="addM">＋ MACRO → PARAM</button><button id="addAB">＋ A drives B</button><button id="addBA">＋ B drives A</button><button id="clr">CLEAR ALL</button></div>';
+  body.innerHTML=h;
+  body.querySelectorAll('.asg').forEach(el=>{const m=state.maps[+el.dataset.i];
+    const s=el.querySelector('.s'),dd=el.querySelector('.d');s.value=m.src;dd.value=m.dst;
+    s.onchange=()=>{if(s.value!==m.dst){m.src=s.value}renderMatrix();paintPads();writeUrl()};
+    dd.onchange=()=>{if(dd.value!==m.src){m.dst=dd.value}renderMatrix();paintPads();writeUrl()};
+    makeFader(el.querySelector('.lo'),{label:'at min',value:m.lo,set:v=>{m.lo=v;writeUrl();reapply(m)}});
+    makeFader(el.querySelector('.hi'),{label:'at max',value:m.hi,set:v=>{m.hi=v;writeUrl();reapply(m)}});
+    el.querySelector('.inv').onclick=()=>{m.inv=!m.inv;el.querySelector('.inv').classList.toggle('on',m.inv);writeUrl();reapply(m)};
+    el.querySelector('.del').onclick=()=>delMap(m)});
+  const first=(d)=>{const it=d.params.keys().next();return it.done?null:pk(d,it.value)};
+  const unused=(src,d)=>{for(const id of d.params.keys()){const k=pk(d,id);if(!state.maps.some(m=>m.src===src&&m.dst===k))return k}return null};
+  body.querySelector('#addM').onclick=()=>{for(let i=0;i<4;i++)for(const d of DL){const k=unused('m'+i,d);if(k&&!state.maps.some(m=>m.src==='m'+i)){addMap('m'+i,k);return}}
+    const d=DL.find(x=>x.params.size);if(d){const k=unused('m0',d);if(k)addMap('m0',k)}else banner('No deck has params to map yet',2000)};
+  const cpl=(a,b)=>{const s=first(a);if(!s||!b.params.size){banner('Both decks need a manifest to cross-couple',2200);return}const k=unused(s,b);if(k){state.cc=true;paintCC();addMap(s,k)}};
+  body.querySelector('#addAB').onclick=()=>cpl(decks.A,decks.B);body.querySelector('#addBA').onclick=()=>cpl(decks.B,decks.A);
+  body.querySelector('#clr').onclick=()=>{state.maps=[];renderMatrix();paintPads();writeUrl()};
+  body.querySelectorAll('.cell').forEach(b=>b.onclick=()=>{const k=b.closest('tr').dataset.k,src='m'+b.dataset.m;const m=state.maps.find(x=>x.src===src&&x.dst===k);if(m)delMap(m);else addMap(src,k)});
+  body.scrollTop=sc;dirtyVals=true;
+}
+function reapply(m){const v=isMacro(m.src)?state.mac[+m.src[1]]:(()=>{const {d,id}=splitKey(m.src);const p=d&&d.params.get(id);return p?p.value:null})();
+  if(v===null||(!isMacro(m.src)&&!state.cc))return;const {d,id}=splitKey(m.dst);setParam(d,id,shape(m,v))}
+function paintVals(){dirtyVals=false;if(!app.classList.contains('sheet-open'))return;
+  document.querySelectorAll('table.mx tr[data-k]').forEach(tr=>{const {d,id}=splitKey(tr.dataset.k);const p=d&&d.params.get(id);if(!p)return;
+    tr.querySelector('.pv i').style.width=(p.value*100)+'%';tr.querySelector('.vv').textContent=Math.round(p.value*100)})}
+function toggleSheet(on){const open=on===undefined?!app.classList.contains('sheet-open'):on;app.classList.toggle('sheet-open',open);$('#bMap').classList.toggle('on',open);if(open){renderMatrix()}}
+
+/* ================= mixer controls ================= */
+const fX=makeFader($('#fX'),{label:'A ◀ CROSSFADE ▶ B',value:.5,detent:.5,fmt:v=>v===.5?'CENTER':v<.5?'A '+Math.round((1-v)*100):'B '+Math.round(v*100),set:v=>{state.xf=v;wake();applyXf()}});
+for(const d of DL){
+  makeFader($('#fLv'+d.key),{label:'LEVEL '+d.key,value:d.level,detent:.8,fmt:lvDb,set:v=>{wake();setLevel(d,v)}});
+  $('#ch'+d.key+' .kills').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;wake();const k=b.dataset.k;
+    if(k==='all'){const all=d.kill.lo&&d.kill.mid&&d.kill.hi;for(const x of ['lo','mid','hi'])setKill(d,x,!all)}else setKill(d,k,!d.kill[k])});
+  $('#bCut'+d.key).onclick=()=>{wake();setCut(d,!d.cut)};
+  paintKills(d);
+}
+function wake(){ensureAudio();if(!state.running&&!state.userStopped)setRunning(true,true)} // touching any mixer control or pad first starts the rack
+$('#bStart').onclick=()=>setRunning(!state.running,true);
+// tap tempo -> set-bpm to both decks
+let taps=[];
+function sendBpm(d){const b=bridge(d);if(b&&typeof b.setBpm==='function'){try{b.setBpm(state.bpm);return}catch(e){}}
+  const w=sameOrigin(d);try{if(w&&typeof w.__mandallaSetBpm==='function'){w.__mandallaSetBpm(state.bpm);return}}catch(e){}
+  post(d,{type:'set-bpm',bpm:state.bpm})}
+function setBpm(b){state.bpm=clamp(Math.round(b*10)/10,40,240);state.bpmTouched=true;$('#bTap').textContent='TAP '+(Math.round(state.bpm*10)/10);for(const d of DL)sendBpm(d)}
+$('#bTap').addEventListener('pointerdown',e=>{e.preventDefault();const t=performance.now();if(taps.length&&t-taps[taps.length-1]>2000)taps=[];taps.push(t);if(taps.length>5)taps.shift();
+  const b=$('#bTap');b.classList.add('on');setTimeout(()=>b.classList.remove('on'),90);
+  if(taps.length>=2){setBpm(60000/((taps[taps.length-1]-taps[0])/(taps.length-1)))}});
+$('#bTap').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#bTap').dispatchEvent(new PointerEvent('pointerdown'))}});
+$('#bBm').onclick=()=>setBpm(Math.round(state.bpm)-1);$('#bBp').onclick=()=>setBpm(Math.round(state.bpm)+1);
+// record the mix
+$('#bRec').onclick=()=>{
+  const b=$('#bRec');
+  if(rec){try{rec.stop()}catch(e){}return}
+  ensureAudio();ctx.resume().catch(()=>{});
+  if(!window.MediaRecorder){banner('Recording is not supported in this browser',2500);return}
+  let opt;for(const mt of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(mt)){opt={mimeType:mt};break}}
+  try{rec=new MediaRecorder(recDest.stream,opt)}catch(e){rec=null;banner('Recording failed to start',2500);return}
+  recChunks=[];recT0=performance.now();
+  rec.ondataavailable=ev=>{if(ev.data&&ev.data.size)recChunks.push(ev.data)};
+  rec.onstop=()=>{const type=rec.mimeType||'audio/webm',ext=/mp4/.test(type)?'m4a':/ogg/.test(type)?'ogg':'webm';const blob=new Blob(recChunks,{type});rec=null;b.classList.remove('on');b.textContent='● REC';
+    state.lastRecording={size:blob.size,type};
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='scion-rack-'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext;a.style.display='none';document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},1500);banner('Mix saved · '+(blob.size/1024).toFixed(0)+' kB'+(DL.some(d=>!d.stream)?' (direct decks are not in the file)':''),2600)};
+  rec.start(250);b.classList.add('on');
+};
+// view, panels, sheet
+function setView(v){state.view=v;$('#decks').className='v-'+v;document.querySelectorAll('#view button').forEach(b=>b.classList.toggle('on',b.dataset.v===v))}
+document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+function setPanel(p){state.panel=p;$('#strip').className='p-'+p;paintPads();document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===p))}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setPanel(state.panel===b.dataset.p?'none':b.dataset.p));
+$('#bMap').onclick=()=>toggleSheet();$('#bClose').onclick=()=>toggleSheet(false);
+$('#bLearn').onclick=()=>{state.learn?endLearn():startLearn()};$('#banX').onclick=()=>endLearn();
+$('#bCC').onclick=()=>{state.cc=!state.cc;paintCC();renderMatrix();writeUrl()};
+$('#bLink').onclick=copyLink;$('#bLink2').onclick=copyLink;
+
+/* ================= meters ================= */
+const buf=new Float32Array(2048);let fT=performance.now(),fN=0,fps=0;
+function rmsOf(an){an.getFloatTimeDomainData(buf);let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];return Math.sqrt(s/buf.length)}
+function meter(bar,txt,r,pre){const db=r>1e-5?20*Math.log10(r):-Infinity;bar.style.width=clamp((db+60)/60)*100+'%';txt.textContent=(pre||'')+(db===-Infinity?'-∞':db.toFixed(0))+' dB'}
+const mEl={A:[$('#mA'),$('#mAv')],B:[$('#mB'),$('#mBv')],M:[$('#mM'),$('#mMv')]};
+function frame(){
+  requestAnimationFrame(frame);
+  fN++;const now=performance.now();if(now-fT>=1000){fps=fN*1000/(now-fT);fN=0;fT=now;for(const d of DL)paintDeck(d)}
+  if(ctx){const live=ctx.state==='running'; // a suspended context leaves stale samples in the analysers: show silence, not the last frame
+    for(const d of DL){d.rms=live?rmsOf(d.nodes.an):0;meter(mEl[d.key][0],mEl[d.key][1],d.rms)}
+    const r=live?rmsOf(anM):0;const gr=live?limiter.reduction:0;meter(mEl.M[0],mEl.M[1],r,'MASTER ');if(gr<-0.3)mEl.M[1].textContent+=' · LIM '+gr.toFixed(1)}
+  if(rec){$('#bRec').textContent='■ '+((now-recT0)/1000).toFixed(0)+'s'}
+  if(dirtyVals)paintVals();
+}
+
+/* ================= boot ================= */
+const init=readUrl();
+setView(phone()?'a':'ab');setPanel(state.maps.length?'pads':'mix');paintCC();paintPads(); // pads first only when they do something
+loadDeck(decks.A,init.a);loadDeck(decks.B,init.b);
+if(!compact())toggleSheet(true);
+requestAnimationFrame(frame);
+
+// for tests and for the curious
+window.scionRack={version:1,state,decks,get ctx(){return ctx},get fps(){return fps},ensureAudio,setMacro:(i,v)=>setMacro(i,clamp(v),true),addMap,delMap,setParam,loadDeck:(k,s)=>loadDeck(decks[k],s),
+  setCrossfade(v){state.xf=clamp(v);fX.set(state.xf);applyXf()},setBpm,shareUrl,toggleSheet,setView,get limiter(){return limiter},analyser:k=>k==='M'?anM:decks[k].nodes&&decks[k].nodes.an};
+})();
+</script>
+</body>
+</html>
